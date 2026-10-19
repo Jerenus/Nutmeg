@@ -3,7 +3,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档 | 现役系统结构总图（权威） |
-| 版本 | v1.4 · 2026-10-08 |
+| 版本 | v1.6 · 2026-10-19 |
 | 范围 | 定位 · 系统总图 · 每日时序 · 判断层（含足彩人群层） · 出票审票与账务 · RSI 实验层 · 回放 gym · 数据对象 · 全量分析过程 · 工程流程 · 文档地图 · 术语表 |
 | 读者 | Jun（下注者与决策人）· Claude 主循环 · Codex / OpenClaw 会话 |
 | 权威关系 | 原则与规则以 SOP 三件套为准；数字以 `.nutmeg-data/scoreboard.json` 与内核为准；本文与它们冲突时以它们为准，并回来改本文 |
@@ -465,27 +465,30 @@ stateDiagram-v2
 
 - 登记原件 `experiments/registry/<ID>.json`（claim / mechanism / window / falsifier / stop_rule / duties），登记后冻结；改冻结字段只能另立新实验。
 - **判决只许系统，部署只许人**。退役（2026-10-02 起）同时把该实验的义务置为 retired，排程、到期、巡检都不再列它。
-- 「前瞻」的唯一证明：产物时刻早于开球（研究文件 `captured_at`、观察仪产物 mtime）。
+- 「前瞻」的唯一证明：产物时刻早于开球（研究文件 `captured_at`、观察仪产物 mtime）；依赖判断的结账适配器只收 `provably_prospective is True` 的行。
+- **判决协议 v2（2026-10-19，Jun 裁「冻结原文为准」）**：`Falsifier` 按登记的 `bound` 判；「累计 n 场结账」＝在**首次 n ≥ n_min 的结算 grade 上只判一次**（之前每天重判＝可选停止，F14 第 5 次才翻 survived）；登记带 `date_to` 的截止仍未够数记 expired；CR2 按原文第二次结账。判决后只有监测实验（`rsi_loop.MONITORS`）继续每日 grade。退役可 `--keep-duties`（观察仪产物另有读者时）。CI 只取决于样本集合（排序后自助）；新登记按日聚类。
+- **出口（2026-10-19）**：登记原件可写 `exits`（`on_survived / on_falsified / on_expired` → `rubric_cap:` / `rule:` / `retire_rule:` / `packet_column:` / `display_only` / `none`）；没写出口的照样登记，记「观察型」。
+- **落位守卫**：每个登记原件必须在 结账（`GRADED_EXPERIMENTS`）/ 不结账（`UNGRADED`，写原因）/ 已关闭（`CLOSED`）三处之一（`tests/decision/test_rsi_loop.py`）；`rsi status` 对内核里落空的实验打 ⚠️。
 
-### 5.2 实验清单（2026-10-04 快照）
+### 5.2 实验清单（2026-10-19 快照）
 
-| 实验 | 层 | 问的是什么 | 状态 / n |
+| 实验 | 层 | 问的是什么 | 状态 |
 |---|---|---|---|
-| R0 | 覆盖 | 竞彩全板每场有前瞻深研 | observing 101/200 |
-| R1 | 覆盖 | 并集样本池每场有前瞻深研 | observing 37/200 |
-| F9 | 判断 | 拨动天平的场次 Brier 优于市场 | observing；残差 −0.2pp CI[−0.9,+0.6] |
-| F14 | 判断（主） | 表态面集合命中率高于其市场覆盖率 | registered 0/60 |
-| F10 | 判断（主） | 0.60–0.80 热门带命中高于价格 | registered 17/150；+19.5pp CI[+1.8,+32.5] |
-| F15 | 判断（主） | 终盘 ≥0.70 大热被低估 | registered 0/100 |
-| G1 | 结构（主） | gym 规则 `jczq_fav_pairs` 平注 ROI>0 | registered 0/100 |
-| K1 | 判断 | rubric 两读合并 κ ≥ 0.40 | registered 0/100 |
-| F5 · F8 · F11 · F13 | 结构 / 判断 | 价格带、其他、保险点名、崩塌叙事 | 见 `nutmeg rsi status` |
-| F2 · F1c | 价格因子 | 让球线位移 / 书商分歧度 | **retired 2026-10-02**（窗口内到不了 n_min） |
-| F3 · F4 | 判断 / 结构 | 足彩 top1≥60% 模态面（F10 的前身）/ 门成本 | **retired 2026-10-04**（F3 由 F10 承接；F4 的观测仪 `plan commit` 已删） |
-| CR* | 结构（人群） | 某类面开出时任九奖金偏离市场意外度（全国人群多买/少买），见 3.4 | 2026-10-07 起；首条候选「多买平局」待签字 |
+| F14b | 判断（主） | 表态偏离市场排序时，比市场同尺寸 top-k 准吗（逐场配对，按日聚类） | 2026-10-19 登记，窗 10-20 → 12-31，n_min 120 |
+| F10 | 判断（主） | 0.60–0.80 热门带命中高于价格 | 76/150 |
+| F17 · F18 | 判断 | 名气热门被高估 / 单关许可证分得开热门 | 16/120 · 0/60（F18 10-19 起接进结账） |
+| K2 | 判断 | rubric 逐项 κ（按项次加权）≥ 0.40 | 2026-10-19 登记，窗 10-20 → 11-30，n_min 1,500 |
+| CR2 | 结构（人群） | 高关注大热被全国人群多买 | 8/30 期（原文：30 期判、60 期仍跨线提 retire） |
+| F9 | 判断（监测） | 拨动场 Brier 优于市场 | v2 结账 10-10 inconclusive；之后只做有害监测 |
+| F14 · F11 | 判断 | 表态面命中 vs 覆盖 / 保险点名识别翻车 | **v2 证伪**（10-12 n=77 / 10-17 n=80；F11 → C19 永久退休） |
+| K1 | 判断 | rubric 合并 κ | v2 结账 10-08 survived（由 K2 接替） |
+| R0 · R1 | 覆盖 | 每场有前瞻深研 | 运维覆盖率指标，不判决（义务照跑：93.1% / 89.7%） |
+| F19 | 判断 | 「真实·价内」翻车面已定价 | 不结账：价内/未价未对象化 |
+| F5 · F8 · F13 · F15 · F16 · G1 | — | — | **退役 2026-10-19**（F5/F16 义务照跑） |
+| F1c · F2 · F3 · F4 | — | — | 退役 2026-10-02 / 10-04 |
 
 > [!NOTE]
-> `nutmeg rsi status` 是实验状态的唯一事实源；本表只是快照。
+> `nutmeg rsi status` 是实验状态的唯一事实源；本表只是快照。证据 `docs/superpowers/evidence/2026-10-19-rsi-protocol-v2.md`。
 
 ### 5.3 每日闭环（10:45 `rsi loop`）
 
@@ -498,7 +501,7 @@ flowchart TB
   end
   subgraph JUDGE["结账与判决"]
     direction LR
-    L4["4 grade_prospective<br/>F5 F9 F10 F11 F13<br/>F14 F15 F16 F17 G1 K1"] --> L5["5 verdict_due<br/>到期判决（系统）"] --> L6["6 factor_propose<br/>T13 提案 · 含 rubric 逐项"]
+    L4["4 grade_prospective<br/>F9（监测）F10 F14b<br/>F17 F18 K2 CR2"] --> L5["5 verdict_due<br/>单次结账（系统）"] --> L6["6 factor_propose<br/>T13 提案 · 含 rubric 逐项"]
   end
   subgraph CMP["指数、计数与提交"]
     direction LR
@@ -521,7 +524,8 @@ flowchart TB
 - `experiments/factors.json`：因子分 fact（只记录）与 probability（可测可提案）；**propose 从不写权重**，改权重只许人经 `rsi deploy`。
 - 提案规则：n ≥ 60、只收可证明前瞻的行、高于置换地板、训练窗与测试窗同号才 `propose_change`；够 n 而与地板不可分 → `propose_zero`（证伪路径）。
 - **rubric 逐项因子**（11 个 `rubric_<id>`，`experiments/rubric_rows.py`）：行＝{项成立, 效应面开出, 效应面市场价, 前瞻}；只结账在用版本（`SUPPORTED_VERSIONS`）。
-- **版本治理**：增删项必须先有证据文档 → `RUBRIC_CHANGELOG` → 升版本号 → 退役项写 `until`、新项写 `since`。
+- **版本治理**：增删项必须先有证据文档 → `RUBRIC_CHANGELOG` → 升版本号 → 退役项写 `until`、新项写 `since`、只退上限写 `cap_until`。
+- **r2（2026-10-19）**：9 项 propose_zero + F_rotation（反号）上限退役，拨动只剩 `F_suspension`；问题表不变，退役上限的项照测（`EFFECT_ITEMS`）。
 
 ### 5.5 语料
 
@@ -741,3 +745,4 @@ flowchart TB
 | v1.3 | 2026-10-07 | 新增 3.4 人群层（官方奖金反推人群偏离、CR 假说、线索与人群地图，图 6；原图 6–10 顺延为 7–11）；总图加 zgzcw 源与人群层节点；定时任务表、实验清单、运行文件、文档地图、术语表同步 |
 | v1.4 | 2026-10-08 | 第二轮瘦身：共享模块行（赛果 / 每场行 / 面 / 去水 / 抓取只许一处实现）；`jczq.research` 末步改 `research refresh`；内核结算赛果改 `jc-results`；图 7 登记簿不再写内核；通知账本；内核表族注明已删代码的空表；证据链 10-08 行；文档地图加 RULEBOOK 归档与深研流程；`nutmeg/` 61,871→50,629 行、256 模块 |
 | v1.5 | 2026-10-08 | §9 加写代码四条纪律（Karpathy 编码准则按本项目改写）与单一来源守卫测试；新增定时器 `ops.deadcode`（每周一死代码周报，launchd 13→14） |
+| v1.6 | 2026-10-19 | §5 RSI：判决协议 v2（按登记 bound 判、单次结账、到期、CI 只取决于样本集合、前瞻门）、出口字段与观察型、落位守卫；实验清单重排（F14/F11 v2 证伪、F14b/K2 登记、六项退役、R0/R1 转运维指标）；图 9 第 4/5 步；rubric r2 上限退役 |
