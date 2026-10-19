@@ -41,7 +41,7 @@ model: opus
 判断目标是**两队本场的最终强度对比**，不是逐面算 310。赔率是**噪声识别器与情绪参考**：结论与价格一致 → 正常表达；不一致 → 必须回答「市场看到了什么我没看到」，认定是情绪就坚持、是信息就修正。**已被开盘→当前位移吸收的事件不重复计。**
 - `verdict`：方向 + 程度；`home_state` / `away_state`：本场真实强度（阵容完整度、本场状态），各一两句，带来源。
 - `style_matchup`：谁的打法克制谁（高位压迫 vs 出球脆、低位 vs 破低位能力、定位球高点…）；`tactical_scenarios`：最可能的 1–3 种剧本（谁控球、谁反击、先失球后怎么变）。
-- `underdog_path`：弱势方取胜/取分路径与强度；它被市场低估多少，答在 rubric `S_underdog_path`。
+- `underdog_path`（**必答**，2026-10-19）：弱势方取胜/取分路径与强度。`side` 只写 `home|away`（市场非热门的那一队；均势也要选一边）；`strength` 只写 `none|weak|real|strong`（`weak`＝看不到可点名的招，`real`＝有点名的人与招，`strong`＝路径能直接赢球）；`routes` 写固定招短语。它是分析包「翻车面·标签」与决策树样本的来源，漏写或写词典外的值入库桥报 WARN。它被市场低估多少，答在 rubric `S_underdog_path`。
 - `events`：利好利空事件清单，只作叙述（pp 可不填）。
 
 ## 锚方结构完整度（`anchor_integrity` + `hole_location`）

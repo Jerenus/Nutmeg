@@ -408,6 +408,39 @@ def test_intake_transcribes_research_stance_and_strength_balance():
     assert leg["strength_balance"] == balance
 
 
+def _underdog_warns(result):
+    return [i for i in result.issues if i.field == "underdog_path"]
+
+
+def test_missing_underdog_path_warns_without_blocking():
+    """2026-10-19 Jun 定 side/strength 必填（决策树样本的翻车面标签）。缺了只 WARN：
+    拒收会烧 40 场/日预算并在 R0/R1 覆盖上留缺口（与 rubric 漏写同一纪律）。"""
+    result = intake(_research(strength_balance={"verdict": "home_edge"}), _leg())
+    assert result.blocked is False
+    assert [i.level for i in _underdog_warns(result)] == ["WARN"]
+
+
+def test_off_lexicon_underdog_side_or_strength_warns_and_is_kept_verbatim():
+    balance = {"verdict": "home_edge",
+               "underdog_path": {"side": "visitors", "strength": "moderate", "routes": []}}
+    result = intake(_research(strength_balance=balance), _leg())
+    assert result.blocked is False
+    assert len(_underdog_warns(result)) == 2
+    assert result.leg["strength_balance"] == balance                 # 只报不改
+
+
+def test_controlled_underdog_path_is_silent():
+    balance = {"verdict": "away_edge",
+               "underdog_path": {"side": "home", "exists": True, "routes": ["定位球"],
+                                 "strength": "real"}}
+    assert _underdog_warns(intake(_research(strength_balance=balance), _leg())) == []
+
+
+def test_pre_strength_v2_research_without_balance_is_not_flagged():
+    """09-26 前的旧 schema 没有 strength_balance 整块，不追溯报缺。"""
+    assert _underdog_warns(intake(_research(), _leg())) == []
+
+
 def test_overlong_crash_marker_is_stripped_into_note_as_a_warning():
     """标签位写叙述：内容已剥离进 note，不再整份驳回（周六006/013 2026-09-26）。"""
     long = ("观察项（不挂旗）：大分7轮4平、除4-1那场外6场只进2球。"

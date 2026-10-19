@@ -50,6 +50,8 @@ HOLE_LOCATION_UNITS = frozenset(
     {"attack", "creation", "spine", "defense", "goalkeeper", "both", "none"}
 )
 HOLE_LOCATION_SIDES = frozenset({"home", "away", "both", "none"})
+UNDERDOG_PATH_SIDES = frozenset({"home", "away"})
+UNDERDOG_PATH_STRENGTHS = frozenset({"none", "weak", "real", "strong"})
 MAX_TAG_LEN = 48
 """词典项都是短 snake_case 名；超过这个长度的几乎一定是叙述被写进了标签位。"""
 
@@ -136,6 +138,30 @@ def _check_hole_location(
                     f"hole_location.{key} `{value}` 不在闭合值域 {sorted(allowed)}",
                 )
             )
+
+
+def _check_underdog_path(
+    balance: object,
+    *,
+    match_no: int,
+    issues: list[IntakeIssue],
+) -> None:
+    """`strength_balance.underdog_path.{side,strength}` 必填（2026-10-19 Jun 定：翻车面标签
+    进决策树样本）。只 WARN 不拒收；09-26 前没有 strength_balance 的旧研究不追溯。"""
+    if not isinstance(balance, dict):
+        return
+    path = balance.get("underdog_path")
+    if not isinstance(path, dict):
+        issues.append(IntakeIssue(
+            "WARN", match_no, "underdog_path", "缺 strength_balance.underdog_path",
+        ))
+        return
+    for key, allowed in (("side", UNDERDOG_PATH_SIDES), ("strength", UNDERDOG_PATH_STRENGTHS)):
+        if path.get(key) not in allowed:
+            issues.append(IntakeIssue(
+                "WARN", match_no, "underdog_path",
+                f"underdog_path.{key} `{path.get(key)}` 不在闭合值域 {sorted(allowed)}",
+            ))
 
 
 def _sanitize_tags(
@@ -512,8 +538,11 @@ def intake(research: dict, leg: dict, *, match_no: int | None = None) -> IntakeR
     _check_hole_location(
         research.get("hole_location"), match_no=match_no, issues=issues
     )
+    _check_underdog_path(
+        research.get("strength_balance"), match_no=match_no, issues=issues
+    )
 
-    note = str(research.get("summary", "") or "")[:400]
+    note =str(research.get("summary", "") or "")[:400]
     if stripped:
         note = (note + "｜【入库剥离】" + "；".join(stripped))[:900]
 
