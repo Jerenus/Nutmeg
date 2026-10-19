@@ -111,7 +111,7 @@ def test_sweep_does_not_execute_expired_duty(tmp_path: Path):
             "--issue",
             "99199",
             "--now",
-            "2099-09-19T21:00:00+08:00",
+            "2099-09-19T20:30:00+08:00",
             "--data-dir",
             str(data_dir),
         ],
@@ -121,6 +121,22 @@ def test_sweep_does_not_execute_expired_duty(tmp_path: Path):
     assert "DUTY_EXPIRED: S1:sample 1" in result.stderr
     assert "ran=0" in result.output and "expired=1" in result.output
     assert "failed=0" in result.output
+
+
+def test_expired_duty_warns_once_not_every_hour(tmp_path: Path):
+    """2026-10-19：同一批过期实例每小时刷一遍（R0/R1 各 30–40 次、F1c/F2 各 21 次）。
+    只在过期后的第一次巡检（开球后 65 分钟内）告警；之后照样计入 expired、不再刷。"""
+    data_dir, day, runner = _prepare_duty(
+        tmp_path, instrument=["uv", "run", "false", "--day", "{day}"]
+    )
+
+    def sweep(now: str):
+        return runner.invoke(app, ["rsi", "sweep", "--day", day, "--issue", "99199",
+                                   "--now", now, "--data-dir", str(data_dir)])
+
+    first, later = sweep("2099-09-19T20:30:00+08:00"), sweep("2099-09-19T23:00:00+08:00")
+    assert "DUTY_EXPIRED" in first.stderr and "expired=1" in first.output
+    assert "DUTY_EXPIRED" not in later.stderr and "expired=1" in later.output
 
 
 def test_sweep_skips_issue_instrument_when_day_has_no_zucai_issue(tmp_path: Path):

@@ -20,6 +20,10 @@ import re
 from collections import Counter, defaultdict
 from datetime import datetime
 
+from nutmeg.data.prices import devig  # 去水只许一处（tests/test_single_source.py，2026-10-19 接入）
+from nutmeg.decision.prospective import prospective_fields
+from nutmeg.decision.zucai_identity import load_channel_map
+
 D = ".nutmeg-data"
 FACES = ("3", "1", "0")
 KEY = {"3": "home", "1": "draw", "0": "away"}
@@ -49,13 +53,12 @@ def tri(d):
     return out
 
 
-def devig(odds):
+def fair_from_odds(odds):
+    """{home,draw,away} 或 {3,1,0} 赔率 → {3,1,0} 去水 fair；缺面或非正赔率 → None。"""
     o = tri({k: odds.get(k) for k in ("home", "draw", "away")}) if isinstance(odds, dict) else None
     if not o or min(o.values()) <= 0:
         return None
-    inv = {k: 1 / v for k, v in o.items()}
-    s = sum(inv.values())
-    return {k: v / s for k, v in inv.items()}
+    return devig(o)
 
 
 def fav_of(m):
@@ -63,18 +66,9 @@ def fav_of(m):
 
 
 def prospective(captured, kickoff):
-    if not captured or not kickoff:
-        return None
-    try:
-        c = datetime.fromisoformat(str(captured).replace("Z", "+00:00"))
-        k = datetime.fromisoformat(str(kickoff).replace("Z", "+00:00"))
-        if c.tzinfo is None and k.tzinfo is not None:
-            c = c.replace(tzinfo=k.tzinfo)
-        if k.tzinfo is None and c.tzinfo is not None:
-            k = k.replace(tzinfo=c.tzinfo)
-        return c < k
-    except Exception:
-        return None
+    """判断早于开球（单一来源 `nutmeg.decision.prospective`；无时区的时刻按北京时间读）。"""
+    return prospective_fields(judged_at=captured, kickoff_bj=kickoff,
+                              judged_at_source=None)["provably_prospective"]
 
 
 def hole_from_research(rs, fav_side):
@@ -230,7 +224,7 @@ def main():
                 had = y.get("had") or {}
                 try:
                     hadp = (
-                        devig(
+                        fair_from_odds(
                             {
                                 "home": float(had.get("h")),
                                 "draw": float(had.get("d")),
@@ -357,8 +351,8 @@ def main():
             c = (co.get(code) or {}).get("sharp") or {}
             if c:
                 row["price_closing"] = {
-                    "fair": devig(c.get("odds")),
-                    "opening": devig(c.get("opening_odds")),
+                    "fair": fair_from_odds(c.get("odds")),
+                    "opening": fair_from_odds(c.get("opening_odds")),
                     "books": c.get("bookmaker_count"),
                     "fetched_at": (co.get(code) or {}).get("fetched_at"),
                     "src": "closing_odds.sharp",
@@ -367,7 +361,7 @@ def main():
             if b:
                 row["price_read_time"] = {
                     "fair": tri(b.get("fair_probability")),
-                    "opening": devig(b.get("opening_odds")),
+                    "opening": fair_from_odds(b.get("opening_odds")),
                     "books": b.get("bookmaker_count"),
                     "src": "bold_odds",
                 }
@@ -442,12 +436,8 @@ def main():
         if not legs or not (a.d0 <= (deadline or "2026-01-01") <= a.d1):
             continue
         draw = (OFF.get(issue) or "").split()
-        cm = (
-            load(f"{D}/zucai/{issue}-channel-map.json")
-            or load(f"{D}/zucai/{issue}-channel-map.auto.json")
-            or {}
-        )
-        no2mid = {v: k for k, v in cm.items()} if isinstance(cm, dict) else {}
+        # 对号表只许一处读（人工表优先、场号统一为 int；2026-10-19 接入单一来源）
+        no2mid = {no: mid for mid, no in load_channel_map(f"{D}/zucai", issue).items()}
         sid = load(f"{D}/zucai/{issue}-store-ids.json") or {}
         for no, v in sid.items() if isinstance(sid, dict) else []:
             if isinstance(v, dict) and str(v.get("match_id", "")).startswith("match-"):
@@ -521,8 +511,8 @@ def main():
             c = (co.get(str(k)) or co.get(k) or {}).get("sharp") or {}
             if c and "price_closing" not in row:
                 row["price_closing"] = {
-                    "fair": devig(c.get("odds")),
-                    "opening": devig(c.get("opening_odds")),
+                    "fair": fair_from_odds(c.get("odds")),
+                    "opening": fair_from_odds(c.get("opening_odds")),
                     "books": c.get("bookmaker_count"),
                     "fetched_at": (co.get(str(k)) or {}).get("fetched_at"),
                     "src": f"zucai/{issue}-closing-odds.sharp",
@@ -537,8 +527,8 @@ def main():
                 row["intl_drift"]["captured_at"] = oi.get("captured_at")
                 if "price_closing" not in row and o.get("odds"):
                     row["price_closing"] = {
-                        "fair": devig(o["odds"]),
-                        "opening": devig(o.get("opening_odds")),
+                        "fair": fair_from_odds(o["odds"]),
+                        "opening": fair_from_odds(o.get("opening_odds")),
                         "books": o.get("books"),
                         "fetched_at": oi.get("captured_at"),
                         "src": f"zucai/{issue}-odds-intl",

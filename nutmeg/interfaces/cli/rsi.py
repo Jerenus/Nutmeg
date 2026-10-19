@@ -565,6 +565,8 @@ def sweep(
     k = _kernel(data_dir)
     now_iso = now or _now().isoformat(timespec="seconds")
     resolved_day = day or _business_day(datetime.fromisoformat(now_iso))
+    warn_after = (datetime.fromisoformat(now_iso) - timedelta(minutes=65)).isoformat(
+        timespec="seconds")
     counts = {
         "ran": 0,
         "skipped_fulfilled": 0,
@@ -583,8 +585,7 @@ def sweep(
     def _err(message: str) -> None:
         typer.echo(f"[{now_iso}] {message}", err=True)
 
-    # F1c 的采集器读 F2 的观察单：F2 先跑（2026-09-29 F1c 两次因文件未生成而崩）
-    ordered = sorted(duties.values(), key=lambda d: (not d.duty_id.startswith("F2:"), d.duty_id))
+    ordered = sorted(duties.values(), key=lambda d: d.duty_id)
     for duty in ordered:
         if duty.status == "retired":
             # 实验已废止：义务不再跑（2026-10-05：F4 退役后 sweep 每小时跑已删除的 `nutmeg plan`，
@@ -606,10 +607,12 @@ def sweep(
 
         expired = [row for row in open_rows if row.due_at <= now_iso]
         runnable = [row for row in open_rows if row.due_at > now_iso]
-        if expired:
-            counts["expired"] += len(expired)
+        counts["expired"] += len(expired)
+        # 只在过期后的第一次巡检告警（巡检每小时一次）：2026-10-19 前同一批过期实例每小时刷一遍
+        fresh = [row for row in expired if row.due_at > warn_after]
+        if fresh:
             _err(
-                f"⚠️DUTY_EXPIRED: {duty.duty_id} {len(expired)} 条已过开球"
+                f"⚠️DUTY_EXPIRED: {duty.duty_id} {len(fresh)} 条已过开球"
                 "（前瞻资格已失）")
         if not runnable:
             continue
@@ -1074,11 +1077,7 @@ def team_load(day: str = _DAY, data_dir: Path = _DATA_DIR) -> None:
 def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR,
           samples: Path = _SAMPLES_OPT, registry_dir: Path = _REGISTRY_DIR) -> None:
     """Run an experiment's deterministic grading adapter."""
-    from nutmeg.decision.rsi_grading import (
-        PROSPECTIVE_ADAPTERS,
-        LeakError,
-        grade_f2_prospective,
-    )
+    from nutmeg.decision.rsi_grading import PROSPECTIVE_ADAPTERS
     from nutmeg.decision.rsi_loop import MONITORS
     from nutmeg.ontology.rsi.models import VERDICT_PROTOCOL
 
@@ -1112,23 +1111,17 @@ def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR,
         if mode not in ("replay", "prospective"):
             _fail(f"{exp} 只支持 --mode replay|prospective")
         g = grade_crowd(doc, Path(data_dir) / "zucai", mode=mode)
-    elif exp == "F2":
-        try:
-            g = grade_f2_prospective(
-                ledger_path=Path("experiments/prereg-26126-F2-ledger.json"),
-                zucai_dir=data_dir / "zucai",
-                primary_bucket=e.buckets[-1],
-            )
-        except LeakError as exc:
-            _fail(f"泄漏拒收：{exc}")
     elif exp in PROSPECTIVE_ADAPTERS and exp != "G1" and mode == "prospective":
         from nutmeg.decision import rsi_samples
 
-        ledger = rsi_samples.load(samples)
-        g, events = rsi_samples.grade(ledger, exp, _corpus_rows(), PROSPECTIVE_ADAPTERS[exp],
-                                      window=e.window, at=_now().isoformat(timespec="seconds"))
+        with rsi_samples.locked(samples):
+            ledger = rsi_samples.load(samples)
+            g, events = rsi_samples.grade(ledger, exp, _corpus_rows(), PROSPECTIVE_ADAPTERS[exp],
+                                          window=e.window,
+                                          at=_now().isoformat(timespec="seconds"))
+            if events:
+                rsi_samples.save(samples, ledger)
         if events:
-            rsi_samples.save(samples, ledger)
             kinds: dict[str, int] = {}
             for event in events:
                 kinds[event["kind"]] = kinds.get(event["kind"], 0) + 1
@@ -1173,18 +1166,20 @@ def samples_cmd(exp: str | None = _EXP_OPT, retract: str | None = _RETRACT,
     """样本账：各实验冻结成员数与漂移事件；--retract 由人剔除一个成员（留痕）。"""
     from nutmeg.decision import rsi_samples
 
-    ledger = rsi_samples.load(samples)
     if retract:
         if not exp or not reason or not by:
             _fail("--retract 须同时给 --exp、--reason、--by")
-        try:
-            gone = rsi_samples.retract(ledger, exp, retract, reason=reason, by=by,
-                                       at=_now().isoformat(timespec="seconds"))
-        except KeyError as exc:
-            _fail(str(exc))
-        rsi_samples.save(samples, ledger)
+        with rsi_samples.locked(samples):
+            ledger = rsi_samples.load(samples)
+            try:
+                gone = rsi_samples.retract(ledger, exp, retract, reason=reason, by=by,
+                                           at=_now().isoformat(timespec="seconds"))
+            except KeyError as exc:
+                _fail(str(exc))
+            rsi_samples.save(samples, ledger)
         typer.echo(f"{exp} 剔除 {gone['key']}（{reason}，{by}）")
         return
+    ledger = rsi_samples.load(samples)
     for name, info in rsi_samples.summary(ledger).items():
         if exp and name != exp:
             continue

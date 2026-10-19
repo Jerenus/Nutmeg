@@ -26,17 +26,28 @@ class ProductReadRepository:
 
     # ── RSI 实验（阶段②观察界面的读路径；与工作台同一 as_of 口径）──────────
     def experiments(self, *, as_of: str) -> list[dict]:
+        from datetime import datetime
+
+        from nutmeg.decision.bj_time import BJ
         from nutmeg.ontology.repository.rsi import RsiRepository
         from nutmeg.ontology.rsi.models import Falsifier, project_status
 
+        # 按时刻比，不按字符串比：created_at 是 +08:00、as_of 常是 UTC——2026-10-19 前字符串比较
+        # 让登记后 8 小时内的实验被当成「未来」跳过，gaps 也错位
+        cutoff = datetime.fromisoformat(as_of).astimezone(BJ)
+        as_of_bj = cutoff.isoformat(timespec="seconds")
         with self._engine.connect() as connection:
             repo = RsiRepository(connection)
             out: list[dict] = []
             for e in repo.experiments():
-                if e.created_at > as_of:
+                if datetime.fromisoformat(e.created_at).astimezone(BJ) > cutoff:
                     continue
                 f = Falsifier.from_dict(e.falsifier)
                 g = repo.latest_grade(e.exp_id, mode="prospective", stratum=f.stratum)
+                # n 与 `rsi status` 同源：有 grade 用 grade；没有 grade 的覆盖率实验（R0/R1）
+                # 用前瞻观测行数（2026-10-19 前观察台显示 0，命令行 319）
+                n_cum = g.n_cum if g else repo.prospective_n_rows(
+                    e.exp_id, window=e.window, stratum=f.stratum)
                 v = repo.latest_verdict(e.exp_id)
                 d = repo.latest_deployment(e.exp_id)
                 out.append(
@@ -49,14 +60,14 @@ class ProductReadRepository:
                         "registered_at": e.registered_at,
                         "falsifier": e.falsifier,
                         "n_min": f.n_min,
-                        "n_cum": g.n_cum if g else 0,
+                        "n_cum": n_cum,
                         "ci": [g.ci_low_pp, g.ci_high_pp] if g else None,
                         "distance_to_falsifier_pp": (
                             g.distance_to_falsifier_pp if g else None
                         ),
                         "verdict": v.verdict if v else None,
                         "deployment": d.decision if d else None,
-                        "gaps": repo.gaps(e.exp_id, now=as_of),
+                        "gaps": repo.gaps(e.exp_id, now=as_of_bj),
                         "status": project_status(
                             n_observations=repo.count_observations(e.exp_id),
                             latest_prospective_n=g.n_cum if g else 0,

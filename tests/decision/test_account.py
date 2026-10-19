@@ -28,12 +28,12 @@ def _data(tmp_path: Path) -> Path:
 def test_month_report_splits_channels_and_counts_exploration(tmp_path: Path, monkeypatch) -> None:
     data = _data(tmp_path)
     monkeypatch.setattr("nutmeg.decision.account.experiment_board",
-                        lambda _d: {"F14": {"layer": "judgment", "tier": "observation", "n": 12,
-                                            "n_min": 60, "metric_pp": 4.2, "ci": [-1.0, 9.4],
-                                            "verdict": None},
-                                    "G1": {"layer": "structural", "tier": "observation", "n": 100,
-                                           "n_min": 100, "metric_pp": -12.0, "ci": [-20.0, -6.0],
-                                           "verdict": "falsified"}})
+                        lambda _d: {"F14b": {"layer": "judgment", "tier": "observation", "n": 12,
+                                             "n_min": 120, "metric_pp": 4.2, "ci": [-1.0, 9.4],
+                                             "verdict": None},
+                                    "F14": {"layer": "judgment", "tier": "observation", "n": 77,
+                                            "n_min": 60, "metric_pp": 5.2, "ci": [-3.6, 14.0],
+                                            "verdict": "falsified"}})
     report = month_report(data, "2026-10")
     assert report["net"] == 180.0 and report["by_channel"] == {"jczq": -120.0, "zucai": 300.0}
     assert report["tripped"] is False and report["entries"] == 2
@@ -41,7 +41,8 @@ def test_month_report_splits_channels_and_counts_exploration(tmp_path: Path, mon
     assert report["verdicts"] == {"not_due": 1, "falsified": 1}
     text = render_month(report)
     assert "净值 vs 空仓**：+180" in text and "竞彩 -120 / 足彩 +300" in text
-    assert "| G1（主） | structural | 100 / 100 | -12.0 | [-20.0, -6.0] | falsified |" in text
+    assert "| F14b（主） | judgment | 12 / 120 | +4.2 | [-1.0, +9.4] | 未到期 |" in text
+    assert "| F14（次） | judgment | 77 / 60 | +5.2 | [-3.6, +14.0] | falsified |" in text
     assert "falsified 1" in text and "EXP 票，¥6" in text
 
 

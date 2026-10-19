@@ -4,8 +4,6 @@
 - 自助法一律先排序再抽（`_boot_mean_ci` / `_boot_diff_ci`，2026-10-19）：样本账重载会改行序，
   此前同一批样本每天一个 CI（F14 10-14/10-15 同 n=120 两个下界），判决可以只由行序翻转。
 - 依赖判断的实验只收 `provably_prospective is True` 的行（`_proven`，2026-10-19）。
-- grade_f2_prospective：F2 的前瞻结账——读 F2 ledger 与当期 issue.json，任何一期的
-  captured_at 晚于该期最早开球 → LeakError **拒收并点名期号**，不是静默丢弃（U8-④）。
 """
 from __future__ import annotations
 
@@ -15,15 +13,9 @@ import random
 import statistics
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
-from pathlib import Path
 
 from nutmeg.decision.faces import CODE_OF
 from nutmeg.decision.scoring import brier
-
-
-class LeakError(ValueError):
-    """样本来自开球之后——拒收。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,38 +89,6 @@ def bootstrap_residual_pp(rows: Sequence[dict], *, face: str, seed: int = 7,
     resid = [(1.0 if r["actual"] == face else 0.0) - float(r["fair"][face]) for r in rows]
     point, lo, hi = _boot_mean_ci(resid, seed=seed, boots=boots)
     return ResidualCI(n, point * 100, lo * 100, hi * 100)
-
-
-def _earliest_kickoff(zucai_dir: Path, issue: str) -> datetime | None:
-    """该期最早开球（naive 北京时间，与 ledger 的 captured_at 同口径比较）。"""
-    p = Path(zucai_dir) / f"{issue}-issue.json"
-    if not p.exists():
-        return None
-    kos = [datetime.fromisoformat(m["kickoff_bj"])
-           for m in json.loads(p.read_text("utf-8"))["matches"] if m.get("kickoff_bj")]
-    return min(kos) if kos else None
-
-
-def grade_f2_prospective(*, ledger_path: Path, zucai_dir: Path, primary_bucket: str,
-                         computed_by: str = "nutmeg.decision.rsi_grading.grade_f2_prospective",
-                         ) -> GradeResult:
-    raw = Path(ledger_path).read_bytes()
-    ledger = json.loads(raw)
-    rows: list[dict] = []
-    for issue, entry in ledger.get("issues", {}).items():
-        if not entry.get("prospective", True):
-            continue
-        ko = _earliest_kickoff(zucai_dir, issue)
-        captured = datetime.fromisoformat(entry["captured_at"])
-        if ko is not None and captured >= ko:
-            raise LeakError(f"期 {issue} 的观察单采于 {captured.isoformat()}，"
-                            f"不早于最早开球 {ko.isoformat()}——拒收（不是丢弃）")
-        rows.extend(r for r in entry["rows"] if r.get("bucket") == primary_bucket)
-    ci = bootstrap_residual_pp(rows, face="home")
-    return GradeResult(stratum="zucai", n_cum=ci.n, metric_value_pp=ci.value_pp,
-                       ci_low_pp=ci.ci_low_pp, ci_high_pp=ci.ci_high_pp, cost_axis_pp=None,
-                       as_of_policy="earliest_kickoff", inputs_hash=inputs_hash(raw),
-                       computed_by=computed_by)
 
 
 # ── 前瞻结账适配器（2026-09-22 接入 F5 / F9；F3 与 F4 2026-10-04 退役，适配器随之删除）─────

@@ -14,9 +14,12 @@
 """
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import hashlib
 import json
-from collections.abc import Callable, Sequence
+import os
+from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 
 from nutmeg.decision.rsi_grading import GradeResult
@@ -38,8 +41,25 @@ def load(path: Path) -> dict:
 
 
 def save(path: Path, ledger: dict) -> None:
-    Path(path).write_text(
-        json.dumps(ledger, ensure_ascii=False, sort_keys=True, indent=1) + "\n", "utf-8")
+    """原子写：先写同目录临时文件再 rename——写到一半被打断不会留下半份账。"""
+    path = Path(path)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(ledger, ensure_ascii=False, sort_keys=True, indent=1) + "\n",
+                   "utf-8")
+    os.replace(tmp, path)
+
+
+@contextlib.contextmanager
+def locked(path: Path) -> Iterator[None]:
+    """读-改-写整段加文件锁（2026-10-19）：结算钩子与 10:45 闭环都会结账写账，
+    时间重叠时后写的会覆盖先写的。锁文件放在账旁边（`.lock` 后缀），不进 git。"""
+    lock = Path(path).with_name(Path(path).name + ".lock")
+    with open(lock, "w") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def row_hash(row: dict) -> str:

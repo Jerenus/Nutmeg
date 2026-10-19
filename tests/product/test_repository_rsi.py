@@ -76,3 +76,6 @@ def test_experiments_timeline_and_duties_due(tmp_path: Path):
     due = repo.duties_due("2026-09-19", now="2026-09-18T21:00:00+08:00")
     assert [d["duty_id"] for d in due] == ["F2:obs"]
     assert repo.experiments(as_of="2026-09-18T19:00:00+08:00") == []  # 登记之前看不见
+    # 2026-10-19：UTC 的 as_of 按时刻比（登记 20:00+08:00 ＝ 12:00Z；13:00Z 已经看得见）
+    assert [e["exp_id"] for e in repo.experiments(as_of="2026-09-18T13:00:00+00:00")] == ["F2"]
+    assert repo.experiments(as_of="2026-09-18T11:00:00+00:00") == []

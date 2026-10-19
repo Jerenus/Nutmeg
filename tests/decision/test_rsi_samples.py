@@ -176,3 +176,25 @@ def test_cli_grade_freezes_samples_and_samples_command_reports_and_retracts(tmp_
     assert retracted.exit_code == 0, retracted.output
     third = runner.invoke(app, grade)
     assert "n=1" in third.output
+
+
+def test_save_is_atomic_and_the_lock_serialises_read_modify_write(tmp_path):
+    """2026-10-19：结算钩子与闭环可能同时结账——整段读-改-写加锁、原子落盘。"""
+    import threading
+
+    path = tmp_path / "rsi-samples.json"
+    rsi_samples.save(path, rsi_samples.empty())
+
+    def bump(i: int) -> None:
+        with rsi_samples.locked(path):
+            ledger = rsi_samples.load(path)
+            ledger["events"].append({"exp": "X", "identity": str(i), "kind": "k"})
+            rsi_samples.save(path, ledger)
+
+    threads = [threading.Thread(target=bump, args=(i,)) for i in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(rsi_samples.load(path)["events"]) == 8
+    assert not (tmp_path / "rsi-samples.json.tmp").exists()

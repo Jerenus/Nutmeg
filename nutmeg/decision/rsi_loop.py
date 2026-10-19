@@ -55,10 +55,11 @@ STEP_ORDER = (
 # 与正在编辑的会话抢 stash。rsi-samples.json 是结账步写的样本账（2026-10-05）。
 LOOP_OUTPUT_PATHS = (
     "experiments/attempts.log",
-    "experiments/corpus-v2.json",
     "experiments/rsi-samples.json",
     "experiments/scoreboard-tallies.json",
 )
+# experiments/corpus-v2.json 2026-10-19 起不进 git：每天重建的派生物（.gitignore），
+# 判决的冻结证据是样本账
 # 每个登记实验必须落在下面四处之一（tests/decision/test_rsi_loop.py 守卫；2026-10-19 起——
 # F10/F11 09-27 登记后漏结账三天、F18 10-15 开窗后 n=0，都是「有适配器没进清单」）。
 # 结账：有前瞻适配器、未退役、未结账（或是监测）的实验
@@ -90,6 +91,13 @@ def graded_experiments(root: Path) -> tuple[str, ...]:
     crowd = sorted(p.stem for p in (Path(root) / "experiments" / "registry").glob("CR*.json"))
     return GRADED_EXPERIMENTS + tuple(c for c in crowd if c not in CLOSED)
 
+
+# 步骤依赖（2026-10-19）：上游失败时这些步记 skipped，不拿旧语料结账、判决、出提案
+DEPENDS_ON = {
+    "grade_prospective": ("corpus_build",),
+    "verdict_due": ("corpus_build", "grade_prospective"),
+    "factor_propose": ("corpus_build",),
+}
 
 # 主指标（2026-10-01 评估换轴；2026-10-19 F14 v2 证伪后由 F14b 接替）：结构与决策——F10 热门带；
 # F9（程度判断）等降为次指标：每天 8–15 场的 Brier 差在赛季内分不开噪声。
@@ -439,16 +447,26 @@ def run_loop(ctx: LoopContext, *, force: bool = False) -> LoopReport | None:
     """跑一整圈。同日报告已存在且未 force → 返回 None（幂等）。"""
     ctx.out_dir.mkdir(parents=True, exist_ok=True)
     marker = ctx.out_dir / f"{ctx.date}.json"
-    if marker.exists() and not force:
+    if marker.exists() and not force and not _had_failures(marker):
         return None
     started = datetime.now().astimezone().isoformat(timespec="seconds")
     plan = planned_commands(ctx)
     steps: list[StepResult] = []
+    failed_so_far: set[str] = set()
     for name in STEP_ORDER:
         if name in ctx.skip:
             steps.append(StepResult(name, "skipped", 0.0, "skipped by --skip"))
             continue
-        steps.append(_run_step(ctx, name, plan[name]))
+        blocked = [dep for dep in DEPENDS_ON.get(name, ()) if dep in failed_so_far]
+        if blocked:
+            steps.append(StepResult(name, "skipped", 0.0,
+                                    f"上游 {', '.join(blocked)} 失败，不拿旧语料跑"))
+            failed_so_far.add(name)
+            continue
+        result = _run_step(ctx, name, plan[name])
+        if result.status == "failed":
+            failed_so_far.add(name)
+        steps.append(result)
     collected = _collect(steps, root=ctx.root)
     inbox = update_inbox(ctx.out_dir, ctx.date, collected.inbox)
     actions = [render_inbox_item(item) for item in inbox]
@@ -464,6 +482,14 @@ def run_loop(ctx: LoopContext, *, force: bool = False) -> LoopReport | None:
     )
     write_report(report, ctx.out_dir)
     return report
+
+
+def _had_failures(marker: Path) -> bool:
+    """同日报告里有失败步骤 → 允许再触发重跑（2026-10-19 前同日一律跳过，失败要等明天）。"""
+    try:
+        return bool(json.loads(marker.read_text(encoding="utf-8")).get("failed_steps"))
+    except (OSError, ValueError):
+        return False
 
 
 def _grade_exp(grade: dict) -> str:

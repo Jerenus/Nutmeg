@@ -2,8 +2,8 @@
 
 月报五块：① 本月净值 vs 空仓（记分牌 tickets，分竞彩/足彩）与止损线；② 探索预算用量
 （betslips 里 note 以 `EXP:` 开头的实购票）；③ 主指标「实际 vs 规则 v3 vs 空仓」（gym 按 Read
-belief 回放本月竞彩板面日）；④ 判断力主/次指标最新结账（F14/G1/F15/F10/F9）；⑤ 实验判决计数
-（survived / falsified / 未到期）。只读，不写判断。
+belief 回放本月竞彩板面日）；④ 判断力主/次指标最新结账（F14b/F10 主，F9/F17/F18/K2/CR2 次）；
+⑤ 实验判决计数（survived / falsified / 未到期）。只读，不写判断。
 """
 from __future__ import annotations
 
@@ -15,8 +15,9 @@ from nutmeg.decision.bankroll import MONTHLY_STOP_LOSS_YUAN, month_net
 
 EXP_PREFIX = "EXP:"
 EXP_BUDGET_PER_DAY = 30
-PRIMARY = ("F14", "G1", "F15", "F10")
-SECONDARY = ("F9", "F13", "F11", "F5")
+# 2026-10-19 判决协议 v2：F14 证伪由 F14b 接替；G1/F15/F13/F5 退役；F14/F11 留在次表看判决
+PRIMARY = ("F14b", "F10")
+SECONDARY = ("F9", "F17", "F18", "K2", "CR2", "F14", "F11")
 # 宪法三个主指标之一（Dream 2026-10-04 退役后由 gym 承接）：实际出票 vs 规则 v3 vs 空仓
 RULE_V3_POLICIES = (("real", "实际出票"), ("jczq_rule_v3", "规则 v3"), ("flat", "空仓"))
 # 足彩的同一面镜子（2026-10-06）：人在初稿上改出来的票 vs 机器初稿（处方忠实）vs 空仓
@@ -147,10 +148,19 @@ def experiment_board(data_dir: Path) -> dict:
         kernel = build_ontology_kernel(AppSettings(data_dir=Path(data_dir).resolve()))
         kernel.initialize()
         out: dict[str, dict] = {}
+        from nutmeg.decision.rsi_loop import MONITORS
+        from nutmeg.ontology.rsi.models import VERDICT_PROTOCOL
+
         with OntologyUnitOfWork(kernel.engine) as uow:
             for exp in uow.rsi.experiments():
-                grade = uow.rsi.latest_grade(exp.exp_id, mode="prospective", stratum="pooled")
+                stratum = str((exp.falsifier or {}).get("stratum") or "pooled")
+                grade = uow.rsi.latest_grade(exp.exp_id, mode="prospective", stratum=stratum)
                 verdict = uow.rsi.latest_verdict(exp.exp_id)
+                settled = (verdict is not None and exp.exp_id not in MONITORS
+                           and verdict.criterion_snapshot.get("protocol") == VERDICT_PROTOCOL)
+                if settled:
+                    # 已结账（协议 v2）：显示判决所依的结算 grade；监测实验（F9）照旧看最新读数
+                    grade = uow.rsi.grade(verdict.grade_id) or grade
                 ci = None
                 if grade:
                     ci = [round(grade.ci_low_pp, 2), round(grade.ci_high_pp, 2)]
@@ -343,8 +353,9 @@ def render_month(report: dict) -> str:
     v = report["verdicts"]
     lines += ["", f"**实验判决**：survived {v.get('survived', 0)} · "
                   f"falsified {v.get('falsified', 0)} · 未到期 {v.get('not_due', 0)}",
-              "", "> 读法：净值相对空仓是唯一的钱指标；主指标是结构（F14/G1）与价格带（F15/F10），"
-                  "F9 是程度判断（belief≈市场）。证伪数不是坏消息——它是这套系统的产出。"]
+              "", "> 读法：净值相对空仓是唯一的钱指标；主指标是结构（F14b：表态偏离市场时 vs 市场"
+                  " top-k）与热门带（F10），F9 是有害监测（belief≈市场）。判决按登记原文、每个实验"
+                  "只判一次。证伪数不是坏消息——它是这套系统的产出。"]
     return "\n".join(lines) + "\n"
 
 

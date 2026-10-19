@@ -81,7 +81,7 @@ def test_run_loop_classifies_not_due_failed_and_collects_human_actions(tmp_path)
 
 def test_run_loop_is_idempotent_per_day_unless_forced(tmp_path):
     log: list[list[str]] = []
-    ctx = _ctx(tmp_path, log)
+    ctx = _ctx(tmp_path, log, skip=("team_strength",))   # 干净的一天（有失败步骤会重跑，见下）
     first = run_loop(ctx)
     calls_after_first = len(log)
     assert first is not None
@@ -101,7 +101,8 @@ def test_commit_outputs_step_commits_only_the_loop_files_without_hooks(tmp_path)
     script = cmd[2]
     assert "git status --porcelain --" in script and "git commit --no-verify" in script
     assert all(path in script for path in LOOP_OUTPUT_PATHS)
-    assert "experiments/corpus-v2.json" in LOOP_OUTPUT_PATHS
+    assert "experiments/corpus-v2.json" not in LOOP_OUTPUT_PATHS   # 2026-10-19 起不进 git
+    assert "experiments/rsi-samples.json" in LOOP_OUTPUT_PATHS
     assert "-- experiments/attempts.log" in script          # pathspec 提交，不碰别人暂存的
 
 
@@ -229,3 +230,26 @@ def test_inbox_ids_are_stable_and_ages_accumulate_until_the_item_goes_away(tmp_p
     assert state["rubric_cap:F_suspension"]["closed_at"] == "2026-10-28"
     again = update_inbox(tmp_path, "2026-11-01", [item])           # 再出现＝重新起算
     assert again[0]["first_seen"] == "2026-11-01" and again[0]["id"] == first[0]["id"]
+
+
+def test_a_failed_corpus_build_skips_the_steps_that_would_read_a_stale_corpus(tmp_path):
+    """2026-10-19：语料重建失败后照样拿旧语料结账、判决。依赖它的步改记 skipped；
+    当天报告有失败步骤时，再触发会重跑（不再被「同日已有报告」挡住）。"""
+    calls: list[str] = []
+
+    def runner(cmd):
+        text = " ".join(cmd)
+        calls.append(text)
+        if "corpus_build.py" in text:
+            return subprocess.CompletedProcess(cmd, 1, "", "Traceback: boom")
+        return subprocess.CompletedProcess(cmd, 0, "ok\n", "")
+
+    ctx = LoopContext(root=tmp_path, data_dir=tmp_path / "data", date="2026-10-20",
+                      runner=runner)
+    report = run_loop(ctx)
+    by_name = {s.name: s for s in report.steps}
+    for name in ("grade_prospective", "verdict_due", "factor_propose"):
+        assert by_name[name].status == "skipped" and "corpus_build" in by_name[name].summary
+    assert not any("rsi grade" in c or "rsi verdict" in c for c in calls)
+    assert report.failed_steps == ["corpus_build"]
+    assert run_loop(ctx) is not None                       # 有失败步骤：再触发就重跑

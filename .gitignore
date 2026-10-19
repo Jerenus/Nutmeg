@@ -28,3 +28,9 @@ memory/
 
 # Word edition of docs/ARCHITECTURE.md: generated on demand (scripts/build_architecture_docx.py), not versioned
 docs/ARCHITECTURE.docx
+
+# RSI（2026-10-19）：语料 v2 每天由闭环重建（派生物，判决的冻结证据在 experiments/rsi-samples.json），
+# 不再每日提交（此前占全部 git 历史约 20%）；样本账的锁与原子写临时文件
+experiments/corpus-v2.json
+experiments/*.lock
+experiments/*.tmp
