@@ -14,5 +14,6 @@
  "buckets": [],
  "rule_ids": [],
  "source_doc": "docs/superpowers/evidence/2026-09-27-rule-diet.md",
- "registered_at": "2026-09-27"
+ "registered_at": "2026-09-27",
+ "exits": {"on_survived": "packet_column:热门带", "on_falsified": "display_only", "on_expired": "none"}
 }

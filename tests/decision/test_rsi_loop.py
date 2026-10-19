@@ -138,10 +138,9 @@ def test_concluded_verdicts_are_classified_and_new_ones_listed_once(tmp_path: Pa
     assert statuses == {"F14": "concluded", "F10": "not_due", "F17": "ok"}
     tails = [c["tail"] for c in step.detail["commands"]]
     assert tails[1].startswith("F10: ")
-    _, _, verdicts, actions, _ = _collect([step])
-    assert len(verdicts) == 3
-    assert [a for a in actions if a.startswith("判决已出")] == [
-        "判决已出（单次结账）：F17 → survived（结算 n=120） → 按登记的出口执行"]
+    collected = _collect([step])
+    assert len(collected.verdicts) == 3 and collected.inbox == []
+    assert collected.notes == ["判决已出（观察型，作为正样本）：F17 → survived（结算 n=120）"]
 
 
 def test_every_registered_experiment_is_graded_or_explained():
@@ -159,3 +158,74 @@ def test_every_registered_experiment_is_graded_or_explained():
     assert not set(GRADED_EXPERIMENTS) & (set(UNGRADED) | set(CLOSED))
     assert set(GRADED_EXPERIMENTS) <= set(PROSPECTIVE_ADAPTERS)
     assert set(MONITORS) <= set(GRADED_EXPERIMENTS)
+
+
+def _registry(root: Path, exp: str, exits: dict | None) -> None:
+    reg = root / "experiments" / "registry"
+    reg.mkdir(parents=True, exist_ok=True)
+    doc = {"exp_id": exp, **({"exits": exits} if exits else {})}
+    (reg / f"{exp}.json").write_text(json.dumps(doc), encoding="utf-8")
+
+
+def test_new_verdicts_route_to_their_registered_exit():
+    """2026-10-19 Jun 裁 4：展示类出口自动生效只记一笔；改规则/码表的出口进收件箱；
+    没写出口的＝观察型，作为正样本记一笔。"""
+    import tempfile
+
+    from nutmeg.decision.rsi_loop import StepResult, _collect
+
+    root = Path(tempfile.mkdtemp())
+    _registry(root, "F18", {"on_survived": "packet_column:许可证",
+                            "on_falsified": "retire_rule:licence-dan-gate", "on_expired": "none"})
+    _registry(root, "F10", {"on_survived": "packet_column:热门带", "on_falsified": "display_only",
+                            "on_expired": "none"})
+    _registry(root, "F99", None)
+    step = StepResult("verdict_due", "ok", 1.0, "", {"commands": [
+        {"cmd": "rsi verdict --exp F18", "status": "ok", "tail": "F18 → falsified（结算 n=60）"},
+        {"cmd": "rsi verdict --exp F10", "status": "ok", "tail": "F10 → survived（结算 n=150）"},
+        {"cmd": "rsi verdict --exp F99", "status": "ok", "tail": "F99 → survived（结算 n=40）"},
+    ]})
+    collected = _collect([step], root=root)
+    inbox = collected.inbox
+    assert [i["key"] for i in inbox] == ["exit:F18:falsified"]
+    assert "retire_rule:licence-dan-gate" in inbox[0]["text"]
+    assert any("F10" in n and "packet_column:热门带" in n and "自动" in n for n in collected.notes)
+    assert any("F99" in n and "观察型" in n for n in collected.notes)
+
+
+def test_rubric_proposals_map_to_the_live_caps_and_upward_moves_are_not_executable():
+    from nutmeg.decision.rsi_loop import StepResult, _collect
+
+    rows = [
+        {"factor_id": "rubric_F_suspension", "layer": "probability", "decision": "propose_zero",
+         "proposed_weight_pp": 0.0, "current_weight_pp": 0.0, "strict": {"n": 140}},
+        {"factor_id": "rubric_F_absence_home", "layer": "probability",
+         "decision": "propose_zero", "proposed_weight_pp": 0.0, "current_weight_pp": 0.0,
+         "strict": {"n": 160}},                                   # r2 上限已是 0：不需动作
+        {"factor_id": "belief_offset_anchor", "layer": "probability",
+         "decision": "propose_change", "proposed_weight_pp": 15.0, "current_weight_pp": 0.0,
+         "strict": {"n": 223}},                                   # 非 rubric 因子：权重无执行开关
+    ]
+    step = StepResult("factor_propose", "ok", 1.0, "", {"commands": [
+        {"cmd": "rsi weights propose --all", "status": "ok", "tail": "",
+         "json": rows}]})
+    collected = _collect([step])
+    assert [i["key"] for i in collected.inbox] == ["rubric_cap:F_suspension"]
+    assert "4pp → 0" in collected.inbox[0]["text"]
+    assert "rubric_F_absence_home" in collected.quiet
+    assert any("belief_offset_anchor" in n and "无执行开关" in n for n in collected.notes)
+
+
+def test_inbox_ids_are_stable_and_ages_accumulate_until_the_item_goes_away(tmp_path):
+    from nutmeg.decision.rsi_loop import update_inbox
+
+    item = {"key": "rubric_cap:F_suspension", "text": "t", "default": "d", "command": ""}
+    first = update_inbox(tmp_path, "2026-10-20", [item])
+    later = update_inbox(tmp_path, "2026-10-27", [item])
+    assert first[0]["id"] == later[0]["id"] and later[0]["age_days"] == 7
+    assert later[0]["first_seen"] == "2026-10-20"
+    assert update_inbox(tmp_path, "2026-10-28", []) == []
+    state = json.loads((tmp_path / "inbox.json").read_text(encoding="utf-8"))
+    assert state["rubric_cap:F_suspension"]["closed_at"] == "2026-10-28"
+    again = update_inbox(tmp_path, "2026-11-01", [item])           # 再出现＝重新起算
+    assert again[0]["first_seen"] == "2026-11-01" and again[0]["id"] == first[0]["id"]

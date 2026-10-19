@@ -1371,6 +1371,51 @@ def loop(
         raise typer.Exit(code=1)
 
 
+def _evidence_label(e, v, d, g, f) -> str:
+    from nutmeg.ontology.rsi.models import VERDICT_PROTOCOL
+
+    if d is not None and d.decision == "retire":
+        return "退役"
+    if v is not None and v.criterion_snapshot.get("protocol") == VERDICT_PROTOCOL:
+        if v.criterion_snapshot.get("expired"):
+            return "测不出（到期）"
+        return {"survived": "实证", "falsified": "已证伪",
+                "inconclusive": "测不出"}.get(v.verdict, v.verdict)
+    return f"未证 {g.n_cum if g else 0}/{f.n_min}"
+
+
+@rsi_app.command("columns")
+def columns(data_dir: Path = _DATA_DIR, registry_dir: Path = _REGISTRY_DIR) -> None:
+    """分析包各列的实证状态（2026-10-19）：登记出口写了 `packet_column:<列>` 的实验 →
+    实证 / 已证伪 / 测不出 / 未证 n/n_min / 退役。分析包 §0 原样抄这一行。"""
+    from nutmeg.decision.rsi_prereg import load_registry_doc
+
+    by_column: dict[str, list[str]] = {}
+    k = _kernel(data_dir)
+    with OntologyUnitOfWork(k.engine) as uow:
+        for path in sorted(Path(registry_dir).glob("*.json")):
+            if path.name.startswith("_"):
+                continue
+            doc = load_registry_doc(path)
+            cols = sorted({a.split(":", 1)[1] for a in (doc.get("exits") or {}).values()
+                           if a.startswith("packet_column:")})
+            e = uow.rsi.experiment(doc["exp_id"]) if cols else None
+            if e is None:
+                continue
+            f = Falsifier.from_dict(e.falsifier)
+            label = _evidence_label(
+                e, uow.rsi.latest_verdict(e.exp_id), uow.rsi.latest_deployment(e.exp_id),
+                uow.rsi.latest_grade(e.exp_id, mode="prospective", stratum=f.stratum), f)
+            for col in cols:
+                by_column.setdefault(col, []).append(f"{e.exp_id} {label}")
+    if not by_column:
+        typer.echo("列实证：（没有登记出口指向分析包的实验）")
+        return
+    typer.echo("列实证：" + " ｜ ".join(f"{col} {'·'.join(v)}"
+                                       for col, v in sorted(by_column.items()))
+               + "（未证的列只是展示或纪律，不是有实证的判据）")
+
+
 @rsi_app.command("status")
 def status(exp: str | None = _EXP_OPT, data_dir: Path = _DATA_DIR) -> None:
     """一屏：状态 / n_cum / CI / 距 falsifier / gaps / 下一期义务。"""

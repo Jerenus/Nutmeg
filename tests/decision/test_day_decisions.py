@@ -125,3 +125,19 @@ def test_log_preview_keeps_the_faces_and_the_ex_ante_p(tmp_path: Path):
                        faces={"1": "31", "2": "3"}, p=0.1034)
     row = json.loads(path.read_text("utf-8").splitlines()[-1])
     assert row["faces"] == {"1": "31", "2": "3"} and row["p"] == 0.1034
+
+
+def test_rsi_inbox_items_keep_their_stable_id_age_and_default(tmp_path):
+    """2026-10-19：闭环收件箱进决策页——id 不再按位置、默认动作不再一律「不动」。"""
+    from nutmeg.decision.day_decisions import build_decisions
+
+    brief = {"date": "2026-10-27", "rsi": {"human_actions": ["x"], "failed_steps": [],
+             "inbox": [{"id": "RSI-1a2b3c", "key": "rubric_cap:F_suspension",
+                        "text": "rubric F_suspension：上限 4pp → 0",
+                        "default": "下一版 rubric 改上限",
+                        "first_seen": "2026-10-20", "age_days": 7, "command": ""}]}}
+    rows = [r for r in build_decisions(brief, [], data_dir=tmp_path,
+                                       now=__import__("datetime").datetime(2026, 10, 27))
+            if r["kind"] == "rsi"]
+    assert [r["id"] for r in rows] == ["rsi:RSI-1a2b3c"]
+    assert "积压 7 天" in rows[0]["subject"] and rows[0]["default_action"] == "下一版 rubric 改上限"

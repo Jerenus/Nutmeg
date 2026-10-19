@@ -272,7 +272,8 @@ def _rsi(data_dir: Path, date: str) -> dict | None:
     if not doc:
         return None
     return {k: doc.get(k)
-            for k in ("human_actions", "proposals", "verdicts", "grades", "failed_steps")}
+            for k in ("human_actions", "proposals", "verdicts", "grades", "failed_steps",
+                      "inbox", "notes")}
 
 
 def _factors(root: Path, rsi: dict | None) -> list[dict]:

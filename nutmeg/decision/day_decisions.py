@@ -154,9 +154,20 @@ def build_decisions(
 ) -> list[dict]:
     rows: list[dict] = live_register_decisions(Path(data_dir), brief["date"], now=now)
     rsi = brief.get("rsi") or {}
-    for i, action in enumerate(rsi.get("human_actions") or []):
-        rows.append({"id": f"rsi:{i}", "kind": "rsi", "subject": action, "deadline": None,
-                     "default_action": "不动（hold）", "status": "open", "source": "rsi-loop"})
+    if rsi.get("inbox") is not None:
+        # 2026-10-19 起闭环出收件箱：固定 id、积压天数、真实的默认动作
+        # （不再按位置编号、一律「不动」）
+        for item in rsi["inbox"]:
+            rows.append({"id": f"rsi:{item['id']}", "kind": "rsi",
+                         "subject": f"{item['text']}（积压 {item['age_days']} 天，自 "
+                                    f"{item['first_seen']}）",
+                         "deadline": None, "default_action": item["default"],
+                         "status": "open", "source": "rsi-loop"})
+    else:
+        for i, action in enumerate(rsi.get("human_actions") or []):
+            rows.append({"id": f"rsi:{i}", "kind": "rsi", "subject": action, "deadline": None,
+                         "default_action": "不动（hold）", "status": "open",
+                         "source": "rsi-loop"})
     for step in rsi.get("failed_steps") or []:
         rows.append({
             "id": f"loop:{step}", "kind": "failed_step",

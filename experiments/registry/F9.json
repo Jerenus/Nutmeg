@@ -30,5 +30,6 @@
       "artifact_glob": ".nutmeg-data/jczq/daily/{day}/balance.json",
       "description": "F9：并集逐场天平位移账"
     }
-  ]
+  ],
+ "exits": {"on_survived": "display_only", "on_falsified": "display_only", "on_expired": "none"}
 }

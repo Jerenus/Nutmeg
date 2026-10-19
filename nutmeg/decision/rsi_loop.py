@@ -27,6 +27,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -118,6 +119,8 @@ class LoopReport:
     human_actions: list[str]
     failed_steps: list[str]
     quiet_factors: list[str] = field(default_factory=list)  # propose_zero 且现值已为 0：不需动作
+    inbox: list[dict] = field(default_factory=list)   # 待人决定（固定 id、起始日、积压天数）
+    notes: list[str] = field(default_factory=list)    # 自动生效的出口、观察型判决、只记账的提案
 
     def to_dict(self) -> dict:
         return {
@@ -287,13 +290,88 @@ def _run_step(ctx: LoopContext, name: str, commands: list[list[str]]) -> StepRes
     )
 
 
-def _collect(
-    steps: list[StepResult],
-) -> tuple[list[dict], list[dict], list[dict], list[str], list[str]]:
+@dataclass
+class Collected:
+    proposals: list[dict]
+    grades: list[dict]
+    verdicts: list[dict]
+    inbox: list[dict]       # 需要人动作的：{key, text, default, command}；update_inbox 定 id 与天数
+    notes: list[str]        # 自动生效的出口、观察型判决、不可执行的提案——只记账
+    quiet: list[str]        # 建议 0、现值 0：照着做什么都不会变（2026-09-30 降噪）
+
+
+# 判决 → 登记出口（2026-10-19 Jun 裁 4）。跨线与到期都走 on_expired（没有结论）。
+_VERDICT_EXIT = {"survived": "on_survived", "falsified": "on_falsified",
+                 "inconclusive": "on_expired"}
+# 要人动的出口：改规则 / 码表 / rubric 上限都走 RULEBOOK 治理；其余（展示、列标）自动生效
+_HUMAN_EXITS = ("rule:", "retire_rule:", "rubric_cap:")
+_RUBRIC_GOVERNANCE = "证据文档 → RUBRIC_CHANGELOG → 升版本（RULEBOOK「九」治理）"
+
+
+def _registered_exits(root: Path | None, exp: str) -> dict | None:
+    if root is None:
+        return None
+    path = Path(root) / "experiments" / "registry" / f"{exp}.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8")).get("exits")
+    except (OSError, ValueError):
+        return None
+
+
+def _route_verdict(exp: str, tail: str, root: Path | None, inbox: list[dict],
+                   notes: list[str]) -> None:
+    verdict = tail.split("→", 1)[-1].strip().split("（", 1)[0].strip()
+    exits = _registered_exits(root, exp) or {}
+    action = exits.get(_VERDICT_EXIT.get(verdict, ""), "none")
+    if not exits or all(v == "none" for v in exits.values()):
+        notes.append(f"判决已出（观察型，作为正样本）：{tail}")
+    elif action.startswith(_HUMAN_EXITS):
+        inbox.append({"key": f"exit:{exp}:{verdict}",
+                      "text": f"{exp} 判 {verdict} → 登记出口 `{action}`",
+                      "default": "按出口执行（改规则/码表走 RULEBOOK 治理：证据文档 + 变更记录）",
+                      "command": ""})
+    else:
+        notes.append(f"判决已出：{tail} → 出口 `{action}` 自动生效（只改展示）")
+
+
+def _route_proposal(p: dict, inbox: list[dict], notes: list[str], quiet: list[str]) -> None:
+    from nutmeg.decision.rubric_items import ITEMS, cap_at
+
+    fid, decision = p["factor_id"], p["decision"]
+    proposed = float(p.get("proposed_weight_pp") or 0.0)
+    if fid.startswith("rubric_") and fid[len("rubric_"):] in ITEMS:
+        # rubric 逐项因子：「权重」就是该项的拨动上限（rubric_items.py），不是 factors.json 的 0
+        item = fid[len("rubric_"):]
+        cap = cap_at(ITEMS[item])
+        lowers_to = 0.0 if decision == "propose_zero" or proposed <= 0 else proposed
+        if decision not in ("propose_zero", "propose_change"):
+            return
+        if lowers_to < cap:
+            inbox.append({"key": f"rubric_cap:{item}",
+                          "text": f"rubric {item}：T13 {decision}（严格 n={p.get('strict_n')}）"
+                                  f"→ 上限 {cap}pp → {lowers_to:g}",
+                          "default": f"下一版 rubric 改上限（{_RUBRIC_GOVERNANCE}）",
+                          "command": f"uv run nutmeg rsi weights propose --factor {fid}"})
+        elif decision == "propose_zero":
+            quiet.append(fid)
+        else:
+            notes.append(f"因子 {fid}：propose_change → {proposed:g}pp 高于现上限 {cap}pp，"
+                         "不可执行（上限只许往下调）")
+        return
+    if decision == "propose_zero" and not p.get("current_weight_pp"):
+        quiet.append(fid)
+    elif decision in ("propose_change", "propose_zero"):
+        notes.append(f"因子 {fid}：{decision} → {proposed:g}pp（严格 n={p.get('strict_n')}）"
+                     "——因子权重无执行开关，只记账")
+
+
+def _collect(steps: list[StepResult], *, root: Path | None = None) -> Collected:
     proposals: list[dict] = []
     grades: list[dict] = []
     verdicts: list[dict] = []
-    actions: list[str] = []
+    inbox: list[dict] = []
+    notes: list[str] = []
+    quiet: list[str] = []
     for step in steps:
         for item in step.detail.get("commands", []):
             if step.name == "factor_propose":
@@ -313,19 +391,48 @@ def _collect(
                     {"cmd": item["cmd"], "status": item["status"], "line": item["tail"]}
                 )
                 if item["status"] == "ok":
-                    # 协议 v2：每个实验只判一次，判决行只会出现这一天
-                    actions.append(f"判决已出（单次结账）：{item['tail']} → 按登记的出口执行")
-    quiet: list[str] = []
+                    # 协议 v2：每个实验只判一次，判决行只会出现结账那一天
+                    exp = item["cmd"].split("--exp", 1)[-1].split()[0]
+                    _route_verdict(exp, item["tail"], root, inbox, notes)
     for p in proposals:
-        if p["decision"] == "propose_zero" and not p["current_weight_pp"]:
-            quiet.append(p["factor_id"])  # 建议 0、现值 0：照着做什么都不会变（2026-09-30 降噪）
-            continue
-        if p["decision"] in ("propose_change", "propose_zero"):
-            actions.append(
-                f"因子 {p['factor_id']}：{p['decision']} → 建议 {p['proposed_weight_pp']}pp"
-                f"（现 {p['current_weight_pp']}pp，严格 n={p['strict_n']}）；改权重只许 rsi deploy"
-            )
-    return proposals, grades, verdicts, actions, quiet
+        _route_proposal(p, inbox, notes, quiet)
+    return Collected(proposals, grades, verdicts, inbox, notes, quiet)
+
+
+def update_inbox(out_dir: Path, date: str, items: list[dict]) -> list[dict]:
+    """待人决定的收件箱（2026-10-19）：同一件事一个固定 id，记起始日与积压天数；
+    当天没再出现＝已处理（记 closed_at），再出现重新起算。2026-10-19 前「待人决定」按位置编号、
+    不记天数——10-06 定的修正案 13 天没人动也看不出来。"""
+    from datetime import date as _date
+
+    path = Path(out_dir) / "inbox.json"
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        state = {}
+    today = {item["key"] for item in items}
+    out = []
+    for item in items:
+        entry = state.get(item["key"])
+        if entry is None or entry.get("closed_at"):
+            entry = {"id": "RSI-" + hashlib.sha1(item["key"].encode()).hexdigest()[:6],
+                     "first_seen": date}
+        entry["last_seen"] = date
+        state[item["key"]] = entry
+        age = (_date.fromisoformat(date) - _date.fromisoformat(entry["first_seen"])).days
+        out.append({**item, "id": entry["id"], "first_seen": entry["first_seen"],
+                    "age_days": age})
+    for key, entry in state.items():
+        if key not in today and not entry.get("closed_at"):
+            entry["closed_at"] = date
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, ensure_ascii=False, indent=1, sort_keys=True), "utf-8")
+    return out
+
+
+def render_inbox_item(item: dict) -> str:
+    line = (f"[{item['id']}·{item['age_days']}天] {item['text']} → 默认：{item['default']}")
+    return line + (f"（`{item['command']}`）" if item.get("command") else "")
 
 
 def run_loop(ctx: LoopContext, *, force: bool = False) -> LoopReport | None:
@@ -342,15 +449,18 @@ def run_loop(ctx: LoopContext, *, force: bool = False) -> LoopReport | None:
             steps.append(StepResult(name, "skipped", 0.0, "skipped by --skip"))
             continue
         steps.append(_run_step(ctx, name, plan[name]))
-    proposals, grades, verdicts, actions, quiet = _collect(steps)
+    collected = _collect(steps, root=ctx.root)
+    inbox = update_inbox(ctx.out_dir, ctx.date, collected.inbox)
+    actions = [render_inbox_item(item) for item in inbox]
     failed = [s.name for s in steps if s.status == "failed"]
     if failed:
         actions.append(f"步骤失败需人看：{', '.join(failed)}")
     report = LoopReport(
         date=ctx.date, started_at=started,
         finished_at=datetime.now().astimezone().isoformat(timespec="seconds"),
-        steps=steps, proposals=proposals, grades=grades, verdicts=verdicts,
-        human_actions=actions, failed_steps=failed, quiet_factors=quiet,
+        steps=steps, proposals=collected.proposals, grades=collected.grades,
+        verdicts=collected.verdicts, human_actions=actions, failed_steps=failed,
+        quiet_factors=collected.quiet, inbox=inbox, notes=collected.notes,
     )
     write_report(report, ctx.out_dir)
     return report
@@ -373,6 +483,8 @@ def render_markdown(report: LoopReport) -> str:
             f"- （另有 {len(report.quiet_factors)} 个因子 propose_zero 且现值已为 0，不需动作："
             f"{', '.join(report.quiet_factors)}）"
         )
+    if report.notes:
+        lines += ["", "## 自动生效 / 只记账", ""] + [f"- {n}" for n in report.notes]
     lines += ["", "## 步骤", "", "| 步 | 状态 | 秒 | 摘要 |", "| --- | --- | --- | --- |"]
     lines += [f"| {s.name} | {s.status} | {s.seconds} | {s.summary[:160]} |" for s in report.steps]
     if report.grades:

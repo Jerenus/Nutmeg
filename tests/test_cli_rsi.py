@@ -1354,3 +1354,22 @@ def test_fulfill_accepts_the_jczq_identity_when_the_duty_was_scheduled_under_zuc
     assert runner.invoke(app, cmd).exit_code == 0
     with sqlite3.connect(db) as connection:
         assert connection.execute(query).fetchall() == [("jc-shared", 1), ("zc-shared", 1)]
+
+
+def test_columns_reports_the_evidence_status_of_packet_columns(tmp_path):
+    """2026-10-19：分析包 §0 抄这一行——许可证、热门带这些列背后的实验走到哪一步了。"""
+    d = _data_dir(tmp_path)
+    reg = tmp_path / "registry"
+    reg.mkdir()
+    doc = {**DOC, "exp_id": "F18", "duties": [],
+           "exits": {"on_survived": "packet_column:许可证", "on_falsified": "retire_rule:x",
+                     "on_expired": "none"}}
+    (reg / "F18.json").write_text(json.dumps(doc), encoding="utf-8")
+    (reg / "F99.json").write_text(json.dumps({**DOC, "exp_id": "F99", "duties": []}),
+                                  encoding="utf-8")
+    for path in (reg / "F18.json", reg / "F99.json"):
+        CliRunner().invoke(app, ["rsi", "register", "--by", "Jun", str(path), "--data-dir", str(d)])
+    r = CliRunner().invoke(app, ["rsi", "columns", "--data-dir", str(d),
+                                 "--registry-dir", str(reg)])
+    assert r.exit_code == 0, r.output
+    assert "许可证 F18 未证 0/140" in r.output and "F99" not in r.output
