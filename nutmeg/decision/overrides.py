@@ -65,7 +65,7 @@ def derive_override_tilt(rubric: dict, items: dict, *, prior: dict, kickoff: str
         raise ValueError("改判项: " + "; ".join(errors))
     tilt = rubric_to_tilt(norm, prior, captured_at=at)
     if tilt:
-        tilt["derived_from"] = f"rubric:{norm['version']}+override"
+        tilt["derived_from"] = f"{tilt['derived_from']}+override"   # 按当前版本上限聚合
     return tilt, norm
 
 
@@ -144,7 +144,7 @@ def effective_research(research_path: Path) -> dict:
         doc["rubric"] = norm
         stance = derive_stance(stance, norm, latest.get("prior"), captured_at=latest.get("at"))
         if stance.get("tilt"):
-            stance["tilt"]["derived_from"] = f"rubric:{norm['version']}+override"
+            stance["tilt"]["derived_from"] += "+override"      # 按当前版本上限聚合
     else:
         stance["tilt"] = latest["tilt"]
         stance["why_not_market"] = "tilt_evidence" if latest["tilt"] else "none"

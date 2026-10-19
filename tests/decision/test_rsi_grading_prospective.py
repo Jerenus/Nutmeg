@@ -9,6 +9,7 @@ def _row(key, actual, fair, *, src="zucai", issue=None, date="2026-09-20", belie
     return {
         "key": key, "actual": actual, "fair": fair, "src": src, "issue": issue, "date": date,
         "belief": belief or fair, "belief_moved": belief is not None and belief != fair,
+        "provably_prospective": True,
     }
 
 
@@ -42,6 +43,8 @@ def test_f9_brier_delta_is_positive_when_belief_beats_market_and_zero_without_mo
     assert g.n_cum == 1 and g.metric_value_pp > 0
     empty = grade_f9_prospective(rows[1:2], window={"date_from": "2026-09-20"})
     assert empty.n_cum == 0 and empty.metric_value_pp == 0.0
+    unproven = {**rows[0], "provably_prospective": None}      # 2026-10-19：证明不了早于开球不收
+    assert grade_f9_prospective([unproven], window={"date_from": "2026-09-20"}).n_cum == 0
 
 
 def test_adapter_registry_names_match_experiments():
@@ -50,8 +53,9 @@ def test_adapter_registry_names_match_experiments():
     # 2026-10-02：K1（判断 rubric 两读 kappa）登记并接入
     # 2026-10-09：F16（赛程负荷，损耗台账）、F17（名气热卖，Polymarket 关注度）登记并接入
     # 2026-10-14：F18（单关许可证，26140 §10b）登记并接入
-    assert set(PROSPECTIVE_ADAPTERS) == {"F5", "F9", "F10", "F11", "F13", "F14", "F15", "F16",
-                                         "F17", "F18", "G1", "K1"}
+    # 2026-10-19：F14b（表态 vs 市场 top-k 逐场配对）、K2（逐项 κ）登记并接入
+    assert set(PROSPECTIVE_ADAPTERS) == {"F5", "F9", "F10", "F11", "F13", "F14", "F14b", "F15",
+                                         "F16", "F17", "F18", "G1", "K1", "K2"}
 
 
 def test_k1_pools_item_pairs_and_scores_full_agreement_as_100():
@@ -113,3 +117,13 @@ def test_g1_rois_the_gym_ledger_by_day():
     assert g.n_cum == 2 and round(g.metric_value_pp, 2) == round(1 / 8 * 100, 2)
     assert g.ci_low_pp <= g.metric_value_pp <= g.ci_high_pp
     assert grade_g1_prospective([], window={"date_from": "2026-10-02"}, ledger=[]).n_cum == 0
+
+
+def test_adapters_drop_rows_after_the_window_end():
+    """2026-10-19 起新登记带 date_to：截止之后的行不再入账。"""
+    from nutmeg.decision.rsi_grading import grade_f10_prospective
+
+    fav = {"home": 0.70, "draw": 0.20, "away": 0.10}
+    rows = [_row("a", "3", fav, date="2026-12-31"), _row("b", "3", fav, date="2027-01-01")]
+    g = grade_f10_prospective(rows, window={"date_from": "2026-10-20", "date_to": "2026-12-31"})
+    assert g.n_cum == 1 and g.selected_keys == ("a",)

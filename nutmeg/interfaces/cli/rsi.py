@@ -427,6 +427,12 @@ def register(
         e = uow.rsi.experiment(doc["exp_id"])
     typer.echo(f"已登记 {e.exp_id}  tier={e.tier} layer={e.layer} population={e.population}\n"
                f"  frozen_hash={e.frozen_hash[:16]}…  duties={len(doc.get('duties') or [])}")
+    from nutmeg.decision.rsi_prereg import is_observation_only
+
+    if is_observation_only(doc):
+        typer.echo("  观察型：没写出口（exits），照样登记、作为正样本积累；判决不改任何开关")
+    else:
+        typer.echo("  出口：" + "；".join(f"{k}={v}" for k, v in doc["exits"].items()))
 
 
 @rsi_app.command("schedule")
@@ -1073,12 +1079,25 @@ def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR,
         LeakError,
         grade_f2_prospective,
     )
+    from nutmeg.decision.rsi_loop import MONITORS
+    from nutmeg.ontology.rsi.models import VERDICT_PROTOCOL
 
     k = _kernel(data_dir)
     with OntologyUnitOfWork(k.engine) as uow:
         e = uow.rsi.experiment(exp)
+        deployment = uow.rsi.latest_deployment(exp) if e is not None else None
+        settled = [v for v in (uow.rsi.verdicts(exp) if e is not None else [])
+                   if v.criterion_snapshot.get("protocol") == VERDICT_PROTOCOL]
     if e is None:
         _fail(f"{exp} 未登记")
+    if deployment is not None and deployment.decision == "retire":
+        typer.echo(f"{exp} 已退役（{deployment.decided_at[:10]}），不再结账")
+        return
+    if settled and exp not in MONITORS:
+        last = settled[-1]
+        typer.echo(f"{exp} 已结账（{VERDICT_PROTOCOL}）→ {last.verdict} @ {last.decided_at[:10]}，"
+                   "不再结账（非监测实验）")
+        return
     if exp.startswith("CR"):
         # 人群假说（2026-10-07）：判据在登记原件里（trigger/crowd_bias/窗口），内核只存冻结指纹。
         from nutmeg.decision.crowd_model import grade_crowd
@@ -1119,22 +1138,32 @@ def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR,
         g = PROSPECTIVE_ADAPTERS[exp](rows, window=e.window)
     else:
         _fail(f"{exp} 的结账适配器尚未接入（replay_spec.harness={e.replay_spec})")
-    from nutmeg.ontology.errors import IdempotencyConflictError
-
-    try:
+    f = Falsifier.from_dict(e.falsifier)
+    with OntologyUnitOfWork(k.engine) as uow:
+        latest = uow.rsi.latest_grade(exp, mode=mode, stratum=g.stratum)
+    if latest is not None and _same_grade(latest, g):
+        # 输入与结果都没变：每日闭环重跑时这是常态。2026-10-19 前键只含 inputs_hash——
+        # 适配器改了照样重放旧 grade、输入 A→B→A 时判决读到 B；现在比对最新一份再决定插不插。
+        typer.echo(f"{exp} [{mode}] 输入未变（{g.inputs_hash[:16]}），沿用已有 grade")
+    else:
+        now = _now()
         _run(k.rsi_actions.grade_experiment, GradeExperimentRequest(
             exp_id=exp, mode=mode, stratum=g.stratum, n_cum=g.n_cum,
             metric_value_pp=g.metric_value_pp, ci_low_pp=g.ci_low_pp, ci_high_pp=g.ci_high_pp,
             cost_axis_pp=g.cost_axis_pp, as_of_policy=g.as_of_policy, computed_by=g.computed_by,
             inputs_hash=g.inputs_hash,
-            idempotency_key=f"rsi-grade:{exp}:{mode}:{g.inputs_hash[:16]}",
-            requested_at=_now(), **_SYSTEM))
-    except IdempotencyConflictError:
-        # 同一份输入已结过账（键=inputs_hash）：每日闭环重跑时这是常态，不是冲突。
-        typer.echo(f"{exp} [{mode}] 输入未变（{g.inputs_hash[:16]}），沿用已有 grade")
-    f = Falsifier.from_dict(e.falsifier)
+            idempotency_key=f"rsi-grade:{exp}:{mode}:{g.inputs_hash[:16]}:{now.isoformat()}",
+            requested_at=now, **_SYSTEM))
     typer.echo(f"{exp} [{mode}] n={g.n_cum}  残差 {g.metric_value_pp:+.2f}pp  "
                f"CI[{g.ci_low_pp:+.2f}, {g.ci_high_pp:+.2f}]  距 n_min {max(0, f.n_min - g.n_cum)}")
+
+
+def _same_grade(row, g) -> bool:
+    return (row.inputs_hash == g.inputs_hash and row.computed_by == g.computed_by
+            and row.n_cum == g.n_cum
+            and all(abs(float(a) - float(b)) < 1e-9 for a, b in (
+                (row.metric_value_pp, g.metric_value_pp), (row.ci_low_pp, g.ci_low_pp),
+                (row.ci_high_pp, g.ci_high_pp))))
 
 
 @rsi_app.command("samples")
@@ -1170,30 +1199,43 @@ def samples_cmd(exp: str | None = _EXP_OPT, retract: str | None = _RETRACT,
 
 @rsi_app.command("verdict")
 def verdict(exp: str = _EXP, data_dir: Path = _DATA_DIR) -> None:
-    """按冻结判据判 falsified / survived / inconclusive（系统身份；未到期拒绝）。"""
+    """按冻结判据判 falsified / survived / inconclusive（系统身份；未到期拒绝）。
+
+    协议 v2（2026-10-19）：在首次 n ≥ n_min 的结算 grade 上判一次；已结账再调 → 拒绝。"""
     k = _kernel(data_dir)
+    now = _now()
     _run(k.rsi_actions.record_verdict, RecordVerdictRequest(
-        exp_id=exp, idempotency_key=f"rsi-verdict:{exp}:{_now().date()}",
-        requested_at=_now(), **_SYSTEM))
+        exp_id=exp, idempotency_key=f"rsi-verdict-v2:{exp}:{now.isoformat()}",
+        requested_at=now, **_SYSTEM))
     with OntologyUnitOfWork(k.engine) as uow:
         v = uow.rsi.latest_verdict(exp)
-    typer.echo(f"{exp} → {v.verdict}（判据快照 {v.criterion_snapshot}）")
+        g = uow.rsi.grade(v.grade_id)
+    typer.echo(f"{exp} → {v.verdict}（结算 n={g.n_cum} CI[{g.ci_low_pp:+.2f},{g.ci_high_pp:+.2f}]"
+               f" @ {g.graded_at[:10]}；判据快照 {v.criterion_snapshot}）")
+
+
+_KEEP_DUTIES = typer.Option(False, "--keep-duties",
+                            help="退役但义务照跑（观察仪产物另有读者；理由里写明谁在读）")
 
 
 @rsi_app.command("deploy")
 def deploy(exp: str = _EXP, reason: str = _REASON, rule: str | None = _RULE, hold: bool = _HOLD,
            retire: bool = _RETIRE, extend: str | None = _EXTEND,
+           keep_duties: bool = _KEEP_DUTIES,
            by: str = _BY,
            data_dir: Path = _DATA_DIR) -> None:
     """上线 / 搁置 / 废止 / 延续（只许人）。"""
     decision = "hold" if hold else "retire" if retire else "extend" if extend else "deploy"
+    if keep_duties and decision != "retire":
+        _fail("--keep-duties 只配 --retire")
     k = _kernel(data_dir)
     _run(k.rsi_actions.approve_deployment, ApproveDeploymentRequest(
         exp_id=exp, decision=decision, reason=reason, rule_id=rule, adjudication_ref=None,
-        extend_to_exp_id=extend, acted_by=by,
+        extend_to_exp_id=extend, acted_by=by, keep_duties=keep_duties,
         idempotency_key=f"rsi-deploy:{exp}:{decision}:{_now().date()}",
         requested_at=_now(), **_HUMAN))
-    typer.echo(f"{exp} → {decision}" + (f" (rule {rule})" if rule else ""))
+    typer.echo(f"{exp} → {decision}" + (f" (rule {rule})" if rule else "")
+               + ("（义务照跑）" if keep_duties else ""))
 
 
 @rsi_app.command("amend")
@@ -1332,8 +1374,12 @@ def loop(
 @rsi_app.command("status")
 def status(exp: str | None = _EXP_OPT, data_dir: Path = _DATA_DIR) -> None:
     """一屏：状态 / n_cum / CI / 距 falsifier / gaps / 下一期义务。"""
+    from nutmeg.decision.rsi_loop import GRADED_EXPERIMENTS, UNGRADED
+    from nutmeg.ontology.rsi.models import VERDICT_PROTOCOL
+
     k = _kernel(data_dir)
     now_iso = _now().isoformat(timespec="seconds")
+    unplaced: list[str] = []
     with OntologyUnitOfWork(k.engine) as uow:
         exps = [uow.rsi.experiment(exp)] if exp else uow.rsi.experiments()
         for e in exps:
@@ -1343,6 +1389,11 @@ def status(exp: str | None = _EXP_OPT, data_dir: Path = _DATA_DIR) -> None:
             g = uow.rsi.latest_grade(e.exp_id, mode="prospective", stratum=f.stratum)
             v = uow.rsi.latest_verdict(e.exp_id)
             d = uow.rsi.latest_deployment(e.exp_id)
+            settled = v is not None and v.criterion_snapshot.get("protocol") == VERDICT_PROTOCOL
+            retired = d is not None and d.decision == "retire"
+            if not (settled or retired or e.exp_id.startswith("CR")
+                    or e.exp_id in GRADED_EXPERIMENTS or e.exp_id in UNGRADED):
+                unplaced.append(e.exp_id)
             st = project_status(n_observations=uow.rsi.count_observations(e.exp_id),
                                 latest_prospective_n=g.n_cum if g else 0, n_min=f.n_min,
                                 latest_verdict=v.verdict if v else None,
@@ -1359,6 +1410,12 @@ def status(exp: str | None = _EXP_OPT, data_dir: Path = _DATA_DIR) -> None:
             if g:
                 line += (f"  CI[{g.ci_low_pp:+.1f},{g.ci_high_pp:+.1f}]"
                          f" 距falsifier {g.distance_to_falsifier_pp:+.1f}pp")
+            if settled:
+                sg = uow.rsi.grade(v.grade_id)
+                line += (f"  ‖ v2 结账 {v.verdict}：n={sg.n_cum} "
+                         f"CI[{sg.ci_low_pp:+.1f},{sg.ci_high_pp:+.1f}] @ {sg.graded_at[:10]}")
+            if e.exp_id in UNGRADED:
+                line += f"  ‖ 不结账：{UNGRADED[e.exp_id]}"
             if gaps:
                 line += f"  gaps={gaps}"
             typer.echo(line)
@@ -1381,3 +1438,6 @@ def status(exp: str | None = _EXP_OPT, data_dir: Path = _DATA_DIR) -> None:
         ]
         for duty in pending:
             typer.echo(f"pending: {duty.duty_id}（待实现采集器）")
+    for exp_id in unplaced:
+        typer.echo(f"⚠️未接结账：{exp_id} 未退役、未结账，却既不在结账清单也不在不结账清单"
+                   "（nutmeg/decision/rsi_loop.py）")

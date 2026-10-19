@@ -676,8 +676,8 @@ def test_evidence_timestamps_are_stamped_by_the_system(tmp_path):
     """派生 tilt 的 evidence 与 rubric 项都由系统盖章；分析员自填的时刻只留 *_declared。"""
     root = _board(tmp_path, n=1)
     doc = json.loads(GOOD)
-    doc["rubric"] = {"version": "r1", "items": {
-        "F_goalkeeper": {"answer": "away", "p": 0.9, "source": "s",
+    doc["rubric"] = {"version": "r2", "items": {                  # r2 起只有 F_suspension 拨动
+        "F_suspension": {"answer": "away", "p": 0.9, "source": "s",
                          "captured_at": "2026-09-19T00:00:00+08:00"},
         "S_anchor_side": {"answer": "home"}}}
 
@@ -690,7 +690,7 @@ def test_evidence_timestamps_are_stamped_by_the_system(tmp_path):
     [evidence] = written["stance"]["tilt"]["evidence"]
     assert evidence["captured_at"] == written["captured_at"]
     assert evidence["captured_at_declared"] == "2026-09-19T00:00:00+08:00"
-    item = written["rubric"]["items"]["F_goalkeeper"]
+    item = written["rubric"]["items"]["F_suspension"]
     assert item["captured_at"] == written["captured_at"]
     assert item["captured_at_declared"] == "2026-09-19T00:00:00+08:00"
 
@@ -711,7 +711,7 @@ def test_missing_or_bad_rubric_never_rejects_a_deep_research(tmp_path):
                                                 "S_anchor_side": {"answer": "home"}},
                      "belief": {"3": 3}}
     out = _validate(json.dumps(doc), leg)
-    assert out["rubric_missing"] is False and out["rubric"]["version"] == "r1"
+    assert out["rubric_missing"] is False and out["rubric"]["version"] == "r2"
     assert out["rubric"]["items"]["F_absence_home"]["abstain"]
     assert out["rubric"]["items"]["F_goalkeeper"]["answer"] == "unknown"
     assert out["rubric"]["items"]["S_anchor_side"]["answer"] == "home"
@@ -724,7 +724,10 @@ def test_rubric_items_are_stamped_and_tilt_is_derived_from_them(tmp_path):
     doc["stance"] = {**doc["stance"], "tilt": {"face": "3", "expires_if": "x", "evidence": [
         {"tier": "official", "kind": "absence_official", "pp": 5, "source": "s",
          "captured_at": "2026-09-19T08:00:00+08:00"}]}}
-    doc["rubric"] = {"version": "r1", "items": {
+    doc["rubric"] = {"version": "r2", "items": {
+        "F_suspension": {"answer": "away", "p": 0.9, "source": "https://club.example/news",
+                         "captured_at": "2026-09-19T08:00:00+08:00"},
+        # r2 上限退役：照记不拨
         "F_absence_away": {"p": 0.9, "source": "https://club.example/news",
                            "captured_at": "2026-09-19T08:00:00+08:00"},
         "F_absence_home": {"p": 0.9},                      # 无来源 → 强制弃权
@@ -739,14 +742,15 @@ def test_rubric_items_are_stamped_and_tilt_is_derived_from_them(tmp_path):
     written = json.loads((root / "daily" / "2026-09-19" / "research-周五001.json")
                          .read_text(encoding="utf-8"))
     tilt = written["stance"]["tilt"]
-    assert tilt["derived_from"] == "rubric:r1" and tilt["shift"]["0"] < 0 < tilt["shift"]["3"]
-    assert [e["item"] for e in tilt["evidence"]] == ["F_absence_away"]
+    assert tilt["derived_from"] == "rubric:r2" and tilt["shift"]["0"] < 0 < tilt["shift"]["3"]
+    assert [e["item"] for e in tilt["evidence"]] == ["F_suspension"]
     assert written["stance"]["tilt_declared"]["face"] == "3"          # 分析员手写的 tilt 只留痕
     assert written["stance"]["why_not_market"] == "tilt_evidence"
     items = written["rubric"]["items"]
     assert items["F_absence_home"]["abstain"] and items["F_absence_home"]["coerced"]
-    assert items["F_absence_away"]["captured_at"] == written["captured_at"]
-    assert items["F_absence_away"]["captured_at_declared"] == "2026-09-19T08:00:00+08:00"
+    assert items["F_suspension"]["captured_at"] == written["captured_at"]
+    assert items["F_suspension"]["captured_at_declared"] == "2026-09-19T08:00:00+08:00"
+    assert items["F_absence_away"]["answer"] == "yes"                 # 退役上限的项照记
     assert written["rubric"]["belief"] == {"3": 0.55, "1": 0.27, "0": 0.18}
     assert written["rubric"]["coerced"] == ["F_absence_home: 答是但无来源 → 弃权"]
 

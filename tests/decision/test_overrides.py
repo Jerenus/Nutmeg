@@ -93,18 +93,19 @@ def _rubric_research(tmp_path):
 
 def test_item_level_override_derives_the_tilt_and_books_the_reason(tmp_path):
     path = _rubric_research(tmp_path)
-    row = record_override(path, items={"F_absence_away": {
-        "p": 0.9, "source": "https://club.example/official",
+    row = record_override(path, items={"F_suspension": {
+        "answer": "away", "p": 1.0, "source": "https://club.example/official",
         "captured_at": "2026-10-03T09:00:00+08:00"}}, reason="new_official_info",
         note="官宣后补上", at="2026-10-03T10:00:00+08:00", judge="claude", prior=PRIOR,
         kickoff="2026-10-03T22:00:00+08:00")
+    # 答案是 r1 问题表的版本；拨动按当前版本（r2）的上限聚合（2026-10-19）
     assert row["reason"] == "new_official_info" and row["rubric_version"] == "r1"
-    assert row["tilt"]["derived_from"] == "rubric:r1+override" and row["tilt"]["shift"]["0"] < 0
+    assert row["tilt"]["derived_from"] == "rubric:r2+override" and row["tilt"]["shift"]["0"] < 0
     assert row["final_belief"]["away"] < PRIOR["away"] and row["research_belief"] == PRIOR
     doc = effective_research(path)
-    assert doc["rubric"]["items"]["F_absence_away"]["answer"] == "yes"
+    assert doc["rubric"]["items"]["F_suspension"]["answer"] == "away"
     assert doc["research_original_rubric"]["items"]["F_absence_away"]["abstain"] is True
-    assert doc["stance"]["tilt"]["derived_from"] == "rubric:r1+override"
+    assert doc["stance"]["tilt"]["derived_from"] == "rubric:r2+override"
     assert doc["stance"]["why_not_market"] == "tilt_evidence"
     assert doc["override_reason"] == "new_official_info" and doc["rubric_overridden"] is True
     assert doc["main_loop_rulings"]["reason"] == "new_official_info"

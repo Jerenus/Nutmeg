@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from nutmeg.decision.rsi_prereg import load_registry_doc, render_instrument
+from nutmeg.decision.rsi_prereg import is_observation_only, load_registry_doc, render_instrument
 
 GOOD = {
     "exp_id": "F2", "claim": "c", "mechanism": "m", "tier": "observation", "layer": "judgment",
@@ -43,6 +43,21 @@ def test_load_rejects_malformed_docs(tmp_path, bad, msg):
     p.write_text(json.dumps({**GOOD, **bad}), encoding="utf-8")
     with pytest.raises(ValueError, match=msg):
         load_registry_doc(p)
+
+
+def test_exits_are_optional_but_closed_when_written(tmp_path):
+    """2026-10-19 Jun 裁 4：没写出口的照样登记（观察型、作为正样本）；写了就得是封闭动作。"""
+    p = tmp_path / "F2.json"
+    p.write_text(json.dumps(GOOD), encoding="utf-8")
+    assert is_observation_only(load_registry_doc(p))
+    with_exits = {**GOOD, "exits": {"on_survived": "packet_column:表态面",
+                                    "on_falsified": "retire_rule:C19", "on_expired": "none"}}
+    p.write_text(json.dumps(with_exits), encoding="utf-8")
+    assert not is_observation_only(load_registry_doc(p))
+    for bad in ({"on_survived": "加注"}, {"on_win": "none"}):
+        p.write_text(json.dumps({**GOOD, "exits": bad}), encoding="utf-8")
+        with pytest.raises(ValueError, match="exits"):
+            load_registry_doc(p)
 
 
 def test_render_instrument_fills_placeholders():
@@ -93,8 +108,13 @@ def test_all_registry_docs_load_and_keep_their_original_registration_dates():
     # 登记，CR2（高关注大热被人群多买，Jun 签字）入册
     # 2026-10-14：F18（单关许可证）登记
     # 2026-10-16：F19（「真实＝已定价」）登记（f2fdab8c 漏改本断言）
-    assert set(docs) == {"CR2", "F1c", "F10", "F11", "F13", "F14", "F15", "F16", "F17", "F18",
-                         "F19", "F2", "F3", "F4", "F5", "F8", "F9", "G1", "K1", "R0", "R1"}
+    # 2026-10-19：F14b（接替 v2 证伪的 F14）、K2（接替 K1）登记，带 date_to 与出口
+    assert set(docs) == {"CR2", "F1c", "F10", "F11", "F13", "F14", "F14b", "F15", "F16", "F17",
+                         "F18", "F19", "F2", "F3", "F4", "F5", "F8", "F9", "G1", "K1", "K2",
+                         "R0", "R1"}
+    assert (docs["F14b"]["registered_at"], docs["F14b"]["window"]) == (
+        "2026-10-19", {"date_from": "2026-10-20", "n_min": 120, "date_to": "2026-12-31"})
+    assert docs["K2"]["window"]["date_to"] == "2026-11-30" and docs["K2"]["exits"]
     assert (docs["F18"]["registered_at"], docs["F18"]["window"]) == (
         "2026-10-14", {"date_from": "2026-10-15", "n_min": 60})
     assert (docs["F17"]["registered_at"], docs["F17"]["window"]) == (

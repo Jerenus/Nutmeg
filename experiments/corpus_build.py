@@ -587,6 +587,9 @@ def jczq_rows() -> list[dict]:
             belief = read.get("belief") or fair
             if len(belief) != 3:
                 belief = fair
+            # 拨动＝Read 自己的 belief 相对它自己的 prior（2026-10-19）：拿「当前 fair」比，
+            # 17:15 刷新或终盘替换后没拨动的 Read 也会被记成拨动（F9 有 16 行是价格漂移）
+            prior = read.get("prior") if len(read.get("prior") or {}) == 3 else belief
             row = dict(
                 src="jczq",
                 key=f"{date}-{jno}",
@@ -600,7 +603,7 @@ def jczq_rows() -> list[dict]:
                 fair_kind=fair_kind,
                 actual=actual,
                 conf=research.get("confidence", read.get("confidence")),
-                belief_moved=any(abs(fair.get(k, 0) - belief.get(k, 0)) > 1e-6 for k in fair),
+                belief_moved=any(abs(prior.get(k, 0) - belief.get(k, 0)) > 1e-6 for k in prior),
                 note=str(read.get("note") or ""),
                 read_id=read.get("read_id"),
                 read_made_at=read.get("made_at"),

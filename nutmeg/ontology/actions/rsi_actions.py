@@ -29,6 +29,8 @@ from nutmeg.ontology.repository.rsi import (
 )
 from nutmeg.ontology.rsi.models import (
     FROZEN_FIELDS,
+    SECOND_LOOK_N,
+    VERDICT_PROTOCOL,
     DeploymentDecision,
     Falsifier,
     GradeMode,
@@ -163,6 +165,7 @@ class ApproveDeploymentRequest:
     actor_role: ActorRole
     idempotency_key: str
     requested_at: datetime
+    keep_duties: bool = False   # 退役但义务照跑：观察仪的产物另有读者（F5 price-band → 日报漂移列）
 
 
 class RsiActions:
@@ -410,18 +413,42 @@ class RsiActions:
             if exp is None:
                 raise ValueError(f"{request.exp_id} 未登记")
             f = Falsifier.from_dict(exp.falsifier)
-            primary = uow.rsi.latest_grade(request.exp_id, mode="prospective", stratum=f.stratum)
+            # 协议 v2：单次结账。已有 v2 判决 → 拒绝（冻结原文写了第二次结账的除外）
+            settled = [v for v in uow.rsi.verdicts(request.exp_id)
+                       if v.criterion_snapshot.get("protocol") == VERDICT_PROTOCOL]
+            look_n = f.n_min
+            if settled:
+                second = SECOND_LOOK_N.get(request.exp_id)
+                last = settled[-1]
+                if (second is None or len(settled) >= 2
+                        or last.verdict != Verdict.INCONCLUSIVE.value):
+                    raise ValueError(
+                        f"已结账（{VERDICT_PROTOCOL}）：{request.exp_id} → {last.verdict} "
+                        f"@ {last.decided_at[:10]}；判决只判一次")
+                look_n = second
+            primary = uow.rsi.settlement_grade(request.exp_id, mode="prospective",
+                                               stratum=f.stratum, n_min=look_n)
+            expired = False
             if primary is None:
-                raise ValueError("没有 prospective 档的 grade——重放结果进不了判决")
-            if primary.n_cum < f.n_min:
-                raise ValueError(
-                    f"未到期：n_cum={primary.n_cum}，距 n_min 还差 {f.n_min - primary.n_cum}")
-            verdict = f.evaluate(n_cum=primary.n_cum, ci_low=primary.ci_low_pp,
-                                 ci_high=primary.ci_high_pp)
+                latest = uow.rsi.latest_grade(request.exp_id, mode="prospective",
+                                              stratum=f.stratum)
+                if latest is None:
+                    raise ValueError("没有 prospective 档的 grade——重放结果进不了判决")
+                date_to = (exp.window or {}).get("date_to")
+                if not date_to or _iso(request.requested_at)[:10] <= str(date_to):
+                    raise ValueError(
+                        f"未到期：n_cum={latest.n_cum}，距 n_min 还差 {look_n - latest.n_cum}")
+                # 窗口截止仍未够数＝到期（2026-10-19）：按登记的 on_expired 出口处理，判一次
+                primary, expired = latest, True
+            verdict = (Verdict.INCONCLUSIVE if expired else
+                       f.evaluate(n_cum=primary.n_cum, ci_low=primary.ci_low_pp,
+                                  ci_high=primary.ci_high_pp))
             # 分层优先：population=both 时两层符号相反且 CI 不重叠 → 合并层 inconclusive
             if exp.population == Population.BOTH.value and verdict is Verdict.SURVIVED:
-                z = uow.rsi.latest_grade(request.exp_id, mode="prospective", stratum="zucai")
-                j = uow.rsi.latest_grade(request.exp_id, mode="prospective", stratum="jczq")
+                z = uow.rsi.latest_grade(request.exp_id, mode="prospective", stratum="zucai",
+                                         at_or_before=primary.graded_at)
+                j = uow.rsi.latest_grade(request.exp_id, mode="prospective", stratum="jczq",
+                                         at_or_before=primary.graded_at)
                 if z is not None and j is not None:
                     opposite = (z.metric_value_pp > 0) != (j.metric_value_pp > 0)
                     disjoint = z.ci_low_pp > j.ci_high_pp or j.ci_low_pp > z.ci_high_pp
@@ -430,7 +457,11 @@ class RsiActions:
             vid = _new_id("rsiv")
             uow.rsi.insert_verdict(VerdictRow(
                 verdict_id=vid, exp_id=request.exp_id, verdict=verdict.value,
-                grade_id=primary.grade_id, criterion_snapshot=dict(exp.falsifier),
+                grade_id=primary.grade_id,
+                criterion_snapshot={**exp.falsifier, "protocol": VERDICT_PROTOCOL,
+                                    "look_n": look_n, "settlement_n": primary.n_cum,
+                                    "settlement_graded_at": primary.graded_at,
+                                    **({"expired": True} if expired else {})},
                 decided_at=_iso(request.requested_at)))
             return (ObjectRef("rsi_verdict", vid),)
 
@@ -442,7 +473,8 @@ class RsiActions:
         command = ActionCommand.for_request(
             "rsi_approve_deployment", request,
             {"exp_id": request.exp_id, "decision": decision.value,
-             "rule_id": request.rule_id, "acted_by": request.acted_by})
+             "rule_id": request.rule_id, "acted_by": request.acted_by,
+             "keep_duties": request.keep_duties})
 
         def handler(uow, _cmd) -> tuple[ObjectRef, ...]:
             acted_by = _human_identifier(request.acted_by)
@@ -461,9 +493,10 @@ class RsiActions:
                     raise ValueError("deploy 必须指明目标 rule_id")
             if decision is DeploymentDecision.EXTEND and not request.extend_to_exp_id:
                 raise ValueError("extend 必须给新 exp_id（不许原地延窗）")
-            if decision is DeploymentDecision.RETIRE:
+            if decision is DeploymentDecision.RETIRE and not request.keep_duties:
                 # 退役＝不再观察：义务停用，排程/到期/巡检都只认 active（2026-10-02 F2/F1c 退役时
-                # 发现只追加部署记录不停义务，每小时巡检还会照跑观察仪）
+                # 发现只追加部署记录不停义务，每小时巡检还会照跑观察仪）。
+                # keep_duties（2026-10-19）：观察仪产物另有读者时义务照跑，理由里写明谁在读
                 uow.rsi.set_duty_status(request.exp_id, "retired")
             did = _new_id("rsid")
             uow.rsi.insert_deployment(DeploymentRow(

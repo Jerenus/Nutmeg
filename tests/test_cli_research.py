@@ -187,14 +187,14 @@ def test_override_on_rubric_research_lands_on_items_with_a_reason(tmp_path, monk
     assert bad.exit_code == 2 and "rubric" in bad.output
     good = CliRunner().invoke(app, [
         "research", "override", "--day", "2026-10-03", "--code", "周五001", "--items-json",
-        '{"F_absence_away": {"p": 0.9, "source": "https://club.example/x", '
+        '{"F_suspension": {"answer": "away", "p": 1.0, "source": "https://club.example/x", '
         '"captured_at": "2026-10-03T09:00:00+08:00"}}', "--reason", "new_official_info",
         "--note", "官宣", "--data-dir", str(tmp_path)])
     assert good.exit_code == 0, good.output
     assert "［new_official_info］" in good.output
     [row] = [json.loads(line) for line in
              (day_dir / "overrides.jsonl").read_text(encoding="utf-8").splitlines()]
-    assert row["items"]["F_absence_away"]["p"] == 0.9 and row["tilt"]["shift"]["0"] < 0
+    assert row["items"]["F_suspension"]["p"] == 1.0 and row["tilt"]["shift"]["0"] < 0
 
 
 def test_intake_and_build_reads_skip_an_empty_board_day(tmp_path, monkeypatch):

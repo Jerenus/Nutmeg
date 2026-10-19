@@ -375,9 +375,12 @@ def render_brief_md(brief: dict) -> str:
         lines += [f"- {a}" for a in brief["rsi"]["human_actions"] or []] or ["- 无待人决定"]
         if brief["rsi"]["failed_steps"]:
             lines.append(f"- ⚠️闭环失败步骤：{', '.join(brief['rsi']['failed_steps'])}")
+        from nutmeg.decision.rsi_loop import PRIMARY_EXPERIMENTS
+
         primary = [
             g["line"] for g in brief["rsi"].get("grades") or []
-            if any(f"--exp {exp} " in str(g.get("cmd") or "") + " " for exp in ("F14", "F10"))
+            if any(f"--exp {exp} " in str(g.get("cmd") or "") + " "
+                   for exp in PRIMARY_EXPERIMENTS)
         ]
         if primary:
             lines += ["- 主指标：" + " ｜ ".join(primary)]

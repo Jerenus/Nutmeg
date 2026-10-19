@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from nutmeg.decision.rubric_items import DIRECTIONAL_ITEMS, ITEMS, SUPPORTED_VERSIONS, UNKNOWN
+from nutmeg.decision.rubric_items import EFFECT_ITEMS, ITEMS, SUPPORTED_VERSIONS, UNKNOWN
 
 _FACE = {"home": "3", "draw": "1", "away": "0"}
 EFFECT_THRESHOLD = 0.5
@@ -106,7 +106,7 @@ def _rows_for(item_id: str, *, reader: str = "rubric") -> Callable[[list[dict]],
 
 
 _FACTORS: dict[str, tuple[Callable[[list[dict]], list[dict]], str]] = {}
-for _item_id in DIRECTIONAL_ITEMS:
+for _item_id in EFFECT_ITEMS:   # r2 退役上限的项照测（2026-10-19）
     _item = ITEMS[_item_id]
     _FACTORS[f"rubric_{_item_id}"] = (
         _rows_for(_item_id),
@@ -119,7 +119,7 @@ for _item_id in DIRECTIONAL_ITEMS:
 def factor_entries() -> list[dict]:
     """给 `experiments/factors.json` 的登记条目（layer=probability，权重 0，上限只许往下）。"""
     out = []
-    for item_id in DIRECTIONAL_ITEMS:
+    for item_id in EFFECT_ITEMS:
         item = ITEMS[item_id]
         out.append({
             "factor_id": f"rubric_{item_id}",

@@ -1,4 +1,5 @@
-"""判断 rubric r1：校验、强制弃权、派生 tilt（设计 2026-10-02-rubric-judgment-contract）。
+"""判断 rubric（r1 2026-10-02 / r2 2026-10-19 上限退役）：校验、强制弃权、派生 tilt
+（设计 2026-10-02-rubric-judgment-contract）。
 
 - 判断归 LLM：每项给"这件事成立的概率"与来源；
 - 权重归结账：pp = 项目上限 × 概率，上限只从 RSI 结账往下调；
@@ -16,7 +17,7 @@ from datetime import datetime
 from nutmeg.decision.bj_time import BJ, parse_bj
 from nutmeg.decision.faces import FACE_OF
 from nutmeg.decision.rubric_items import (
-    DIRECTIONAL_ITEMS,
+    EFFECT_ITEMS,
     FACT_ITEMS,
     ITEMS,
     MAX_ABS_SHIFT_PP,
@@ -24,6 +25,8 @@ from nutmeg.decision.rubric_items import (
     SOURCE_TIERS,
     SUPPORTED_VERSIONS,
     UNKNOWN,
+    cap_at,
+    directional_items,
 )
 
 FACE_OF_SIDE = {"home": "3", "away": "0"}
@@ -71,7 +74,7 @@ def validate_rubric(rubric, *, kickoff: str | None = None) -> tuple[dict, list[R
     for item_id, raw in raw_items.items():
         item = ITEMS.get(str(item_id))
         if item is None:
-            issues.append(RubricIssue("ERROR", f"rubric.items.{item_id}", "不在问题表 r1 里"))
+            issues.append(RubricIssue("ERROR", f"rubric.items.{item_id}", "不在问题表里"))
             continue
         if not isinstance(raw, dict):
             raw = {"p": raw} if item.type == "noul" else {"answer": raw}
@@ -249,11 +252,12 @@ def _effect_faces(effect: str, answer: str, anchor: str | None) -> list[tuple[st
 
 
 def rubric_to_tilt(norm: dict, prior: dict | None = None, *,
-                   captured_at: str | None = None) -> dict | None:
+                   captured_at: str | None = None,
+                   version: str = RUBRIC_VERSION) -> dict | None:
     """协议级聚合 → `stance.tilt`（多面 shift + 逐项 evidence）；无可用拨动 → None。
 
     `captured_at`：不要求来源的项（结构层）没有自己的采集时间，用研究落盘时间；
-    没给就用现在（运行器落盘时会统一盖章）。
+    没给就用现在（运行器落盘时会统一盖章）。`version`：按哪一版的上限聚合（r2 起 10 项上限退役）。
 
     事实层无成立项 → None（无锚归零，= 2026-09-30 ANCHOR_TIERS 规则）；
     `S_anchor_side=none` → None；`M_facts_priced` 成立 → 事实层 pp ×0.5；
@@ -270,12 +274,12 @@ def rubric_to_tilt(norm: dict, prior: dict | None = None, *,
         return None
     priced, _, _ = _active(items, "M_facts_priced")
     contributions: list[tuple[str, float, list[tuple[str, int]]]] = []
-    for item_id in DIRECTIONAL_ITEMS:
+    for item_id in directional_items(version):
         active, p, answer = _active(items, item_id)
         if not active:
             continue
         item = ITEMS[item_id]
-        pp = item.cap_pp * p
+        pp = cap_at(item, version) * p
         if item.phase == "fact" and priced:
             pp *= 0.5
         faces = _effect_faces(item.effect, answer, anchor)
@@ -322,7 +326,7 @@ def rubric_to_tilt(norm: dict, prior: dict | None = None, *,
     peak_int = max(abs(v) for v in rounded.values())
     if budget < peak_int:                      # 让 evidence 预算盖住峰值（整数舍入造成的缺口）
         evidence[0]["pp"] += peak_int - budget
-    return {"shift": rounded, "evidence": evidence, "derived_from": f"rubric:{RUBRIC_VERSION}",
+    return {"shift": rounded, "evidence": evidence, "derived_from": f"rubric:{version}",
             "expires_if": "任一成立的事实项被官方推翻（首发公布与之相反）",
             "priced_halved": bool(priced)}
 
@@ -348,7 +352,7 @@ def rubric_summary(norm: dict | None, *, kappa: float | None = None) -> str:
         return "—"
     items = norm.get("items") or {}
     fact = sum(1 for i in FACT_ITEMS if _active(items, i)[0])
-    struct_ids = [i for i, it in ITEMS.items() if it.phase == "structure" and it.cap_pp > 0]
+    struct_ids = [i for i in EFFECT_ITEMS if ITEMS[i].phase == "structure"]
     struct = sum(1 for i in struct_ids if _active(items, i)[0])
     abstain = sum(1 for r in items.values() if r.get("abstain"))
     tilt = rubric_to_tilt(norm)

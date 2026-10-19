@@ -1,9 +1,11 @@
 """结账算数与重放。只算数：判决在 RsiActions.record_verdict（代码按冻结判据），上线在人。
 
 - bootstrap_residual_pp：每行等权、bootstrap 95%CI；单场无权翻转判决（U6）。
+- 自助法一律先排序再抽（`_boot_mean_ci` / `_boot_diff_ci`，2026-10-19）：样本账重载会改行序，
+  此前同一批样本每天一个 CI（F14 10-14/10-15 同 n=120 两个下界），判决可以只由行序翻转。
+- 依赖判断的实验只收 `provably_prospective is True` 的行（`_proven`，2026-10-19）。
 - grade_f2_prospective：F2 的前瞻结账——读 F2 ledger 与当期 issue.json，任何一期的
   captured_at 晚于该期最早开球 → LeakError **拒收并点名期号**，不是静默丢弃（U8-④）。
-- dream：在冻结语料上重放一族变体，出排序表并记 variants_tried（U8-⑥）。
 """
 from __future__ import annotations
 
@@ -51,6 +53,41 @@ def inputs_hash(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def _boot_mean_ci(values: Sequence[float], *, seed: int = 7,
+                  boots: int = 4000) -> tuple[float, float, float]:
+    """(均值, 2.5 分位, 97.5 分位)，单位同 values。先排序：结果只取决于样本集合，不取决于行序。"""
+    xs = sorted(values)
+    rng = random.Random(seed)
+    means = sorted(statistics.fmean(rng.choice(xs) for _ in xs) for _ in range(boots))
+    return statistics.fmean(xs), means[int(0.025 * boots)], means[int(0.975 * boots) - 1]
+
+
+def _boot_diff_ci(a: Sequence[float], b: Sequence[float], *, seed: int = 7,
+                  boots: int = 4000) -> tuple[float, float, float]:
+    """两组均值差 (a − b) 的点估计与 bootstrap 95%CI（两组各自重抽；先排序）。"""
+    xa, xb = sorted(a), sorted(b)
+    rng = random.Random(seed)
+    diffs = sorted(statistics.fmean(rng.choice(xa) for _ in xa)
+                   - statistics.fmean(rng.choice(xb) for _ in xb) for _ in range(boots))
+    return (statistics.fmean(xa) - statistics.fmean(xb), diffs[int(0.025 * boots)],
+            diffs[int(0.975 * boots) - 1])
+
+
+def _cluster_boot_ci(groups: dict[str, Sequence[float]], *, seed: int = 7,
+                     boots: int = 4000) -> tuple[float, float, float]:
+    """按簇（日 / 期）整簇重抽的均值 CI（2026-10-19 起新登记实验的默认）：同一天的研究共享
+    写法与赛况，逐行 iid 会把 CI 估窄（F14 的 209 个成员只来自 14 天）。"""
+    clusters = [sorted(groups[k]) for k in sorted(groups)]
+    flat = [v for c in clusters for v in c]
+    rng = random.Random(seed)
+    means = []
+    for _ in range(boots):
+        picked = [v for c in (rng.choice(clusters) for _ in clusters) for v in c]
+        means.append(statistics.fmean(picked))
+    means.sort()
+    return statistics.fmean(flat), means[int(0.025 * boots)], means[int(0.975 * boots) - 1]
+
+
 def bootstrap_residual_pp(rows: Sequence[dict], *, face: str, seed: int = 7,
                           boots: int = 4000) -> ResidualCI:
     """(实开率 − 平均 fair) × 100，每行等权；CI 为 bootstrap 2.5/97.5 分位。"""
@@ -58,10 +95,8 @@ def bootstrap_residual_pp(rows: Sequence[dict], *, face: str, seed: int = 7,
     if n == 0:
         return ResidualCI(0, 0.0, 0.0, 0.0)
     resid = [(1.0 if r["actual"] == face else 0.0) - float(r["fair"][face]) for r in rows]
-    point = statistics.fmean(resid) * 100
-    rng = random.Random(seed)
-    means = sorted(statistics.fmean(rng.choice(resid) for _ in resid) * 100 for _ in range(boots))
-    return ResidualCI(n, point, means[int(0.025 * boots)], means[int(0.975 * boots) - 1])
+    point, lo, hi = _boot_mean_ci(resid, seed=seed, boots=boots)
+    return ResidualCI(n, point * 100, lo * 100, hi * 100)
 
 
 def _earliest_kickoff(zucai_dir: Path, issue: str) -> datetime | None:
@@ -109,10 +144,21 @@ def _modal(fair: dict) -> str:
 
 def _rows_hash(rows: Sequence[dict]) -> str:
     raw = json.dumps(
-        [(r.get("key"), r.get("actual"), r.get("fair"), r.get("belief")) for r in rows],
+        sorted([str(r.get("key")), r.get("actual"), r.get("fair"), r.get("belief")]
+               for r in rows),
         ensure_ascii=False, sort_keys=True, separators=(",", ":"),
     ).encode()
     return inputs_hash(raw)
+
+
+def _proven(row: dict) -> bool:
+    """判断早于开球的唯一证明（研究 captured_at / legs judged_at / 内核 made_at < 开球）。
+    依赖判断（belief、表态、研究标签）的实验只收它；纯市场残差实验（F10/F15/F16/F17）不需要。
+    这些适配器带 `proven_only`（默认 True）——只有 training_pool 读历史分层时关掉。"""
+    return row.get("provably_prospective") is True
+
+
+PROOF_GATED = frozenset({"F9", "F11", "F13", "F14", "F18"})
 
 
 def _keys(rows: Sequence[dict]) -> tuple[str, ...]:
@@ -121,7 +167,9 @@ def _keys(rows: Sequence[dict]) -> tuple[str, ...]:
 
 def _in_date_window(row: dict, window: dict) -> bool:
     day = str(row.get("date") or "")
-    return bool(day) and day >= str(window.get("date_from", ""))
+    if not day or day < str(window.get("date_from", "")):
+        return False
+    return not window.get("date_to") or day <= str(window["date_to"])
 
 
 def _residual_grade(rows: Sequence[dict], *, stratum: str, computed_by: str,
@@ -165,11 +213,12 @@ def grade_f5_prospective(rows: Sequence[dict], *, window: dict,
 
 
 def grade_f9_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
-                         boots: int = 4000) -> GradeResult:
+                         boots: int = 4000, proven_only: bool = True) -> GradeResult:
     """F9 判读增量：窗内 belief≠prior 的行，(市场 Brier − 判读 Brier)×100，正=判读更好。"""
     selected = [
         r for r in _priced(rows)
         if _in_date_window(r, window)
+        and (_proven(r) or not proven_only)
         and r.get("belief_moved")
         and len(r.get("belief") or {}) == 3
     ]
@@ -182,10 +231,7 @@ def grade_f9_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
                            inputs_hash=_rows_hash(selected),
                            computed_by="nutmeg.decision.rsi_grading.grade_f9_prospective",
                            selected_keys=())
-    rng = random.Random(seed)
-    point = statistics.fmean(deltas)
-    means = sorted(statistics.fmean(rng.choice(deltas) for _ in deltas) for _ in range(boots))
-    lo, hi = means[int(0.025 * boots)], means[int(0.975 * boots) - 1]
+    point, lo, hi = _boot_mean_ci(deltas, seed=seed, boots=boots)
     return GradeResult(stratum="pooled", n_cum=n, metric_value_pp=point,
                        ci_low_pp=lo, ci_high_pp=hi,
                        cost_axis_pp=None, as_of_policy="registry_window_date",
@@ -207,7 +253,7 @@ def grade_f10_prospective(rows: Sequence[dict], *, window: dict) -> GradeResult:
 
 
 def grade_f11_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
-                          boots: int = 4000) -> GradeResult:
+                          boots: int = 4000, proven_only: bool = True) -> GradeResult:
     """F11 研究的保险点名能否识别热门翻车（2026-09-27 登记）。
 
     窗内、模态面 ≥55% 且带研究表态的行；翻车残差 = 1{模态面没开} − (1 − 模态 fair)。
@@ -216,7 +262,7 @@ def grade_f11_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
     groups: dict[str, list[float]] = {"insure": [], "single": []}
     selected: list[dict] = []
     for r in _priced(rows):
-        if not _in_date_window(r, window):
+        if not _in_date_window(r, window) or (proven_only and not _proven(r)):
             continue
         modal = _modal(r["fair"])
         if r["fair"][modal] < 0.55:
@@ -234,15 +280,9 @@ def grade_f11_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
                   computed_by="nutmeg.decision.rsi_grading.grade_f11_prospective")
     if not groups["insure"] or not groups["single"]:
         return GradeResult(n_cum=n, metric_value_pp=0.0, ci_low_pp=0.0, ci_high_pp=0.0, **kwargs)
-    point = (statistics.fmean(groups["insure"]) - statistics.fmean(groups["single"])) * 100
-    rng = random.Random(seed)
-    diffs = sorted(
-        (statistics.fmean(rng.choice(groups["insure"]) for _ in groups["insure"])
-         - statistics.fmean(rng.choice(groups["single"]) for _ in groups["single"])) * 100
-        for _ in range(boots)
-    )
-    return GradeResult(n_cum=n, metric_value_pp=point, ci_low_pp=diffs[int(0.025 * boots)],
-                       ci_high_pp=diffs[int(0.975 * boots) - 1], **kwargs)
+    point, lo, hi = _boot_diff_ci(groups["insure"], groups["single"], seed=seed, boots=boots)
+    return GradeResult(n_cum=n, metric_value_pp=point * 100, ci_low_pp=lo * 100,
+                       ci_high_pp=hi * 100, **kwargs)
 
 
 COLLAPSE_FLAGS = frozenset({"dressing_room_turmoil", "coach_debut"})
@@ -261,7 +301,8 @@ def _anchor_residual_grade(rows: Sequence[dict], *, computed_by: str) -> GradeRe
                        computed_by=computed_by, selected_keys=_keys(rows))
 
 
-def grade_f13_prospective(rows: Sequence[dict], *, window: dict) -> GradeResult:
+def grade_f13_prospective(rows: Sequence[dict], *, window: dict,
+                          proven_only: bool = True) -> GradeResult:
     """F13 崩塌叙事完整的锚方（2026-09-30 登记）。
 
     窗内、锚方完整度 FAIL、带崩塌叙事（更衣室/换帅无方向旗或 crash_markers）、且 belief 把锚方
@@ -269,7 +310,7 @@ def grade_f13_prospective(rows: Sequence[dict], *, window: dict) -> GradeResult:
     """
     selected: list[dict] = []
     for r in _priced(rows):
-        if not _in_date_window(r, window):
+        if not _in_date_window(r, window) or (proven_only and not _proven(r)):
             continue
         labels = r.get("labels") or {}
         anchor = labels.get("anchor_side")
@@ -300,14 +341,14 @@ def _stance_faces(labels: dict) -> set[str]:
 
 
 def grade_f14_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
-                          boots: int = 4000) -> GradeResult:
+                          boots: int = 4000, proven_only: bool = True) -> GradeResult:
     """F14 结构命中率（2026-09-30 登记）：深研表态面集合（single/double）
     命中 − 该集合的市场覆盖率 Σfair（pp）。09-28/29 表态面 16/16 对而拨动净负——
     结构判断是不是真的比价格准，要前瞻数。"""
     resid: list[float] = []
     selected: list[dict] = []
     for r in _priced(rows):
-        if not _in_date_window(r, window):
+        if not _in_date_window(r, window) or (proven_only and not _proven(r)):
             continue
         faces = _stance_faces(r.get("labels") or {})
         if not faces:
@@ -320,14 +361,57 @@ def grade_f14_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
                   computed_by="nutmeg.decision.rsi_grading.grade_f14_prospective")
     if not resid:
         return GradeResult(n_cum=0, metric_value_pp=0.0, ci_low_pp=0.0, ci_high_pp=0.0, **kwargs)
-    rng = random.Random(seed)
-    means = sorted(statistics.fmean(rng.choice(resid) for _ in resid) * 100 for _ in range(boots))
-    return GradeResult(n_cum=len(resid), metric_value_pp=statistics.fmean(resid) * 100,
-                       ci_low_pp=means[int(0.025 * boots)],
-                       ci_high_pp=means[int(0.975 * boots) - 1], **kwargs)
+    point, lo, hi = _boot_mean_ci(resid, seed=seed, boots=boots)
+    return GradeResult(n_cum=len(resid), metric_value_pp=point * 100, ci_low_pp=lo * 100,
+                       ci_high_pp=hi * 100, **kwargs)
 
 
 PROSPECTIVE_ADAPTERS.update({"F13": grade_f13_prospective, "F14": grade_f14_prospective})
+
+
+def _top_k_faces(fair: dict, k: int) -> set[str]:
+    """市场同尺寸 top-k（并列按面名定序，结果只取决于价格）。"""
+    order = sorted(fair, key=lambda face: (-float(fair[face]), face))
+    return {CODE_OF[face] for face in order[:k]}
+
+
+def grade_f14b_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
+                           boots: int = 4000, proven_only: bool = True) -> GradeResult:
+    """F14b 表态 vs 市场同尺寸 top-k（2026-10-19 登记，接替 v2 证伪的 F14）。
+
+    F14 的 survived 量到的是市场头部被低估（F10）：209 个成员里 151 个表态集合就是市场 top-k，
+    机械 top-k 自己就有 +5.2pp。这里只看表态偏离市场排序的场，逐场配对
+    （表态命中 − 表态覆盖）−（top-k 命中 − top-k 覆盖），按日聚类 bootstrap（pp）。"""
+    by_day: dict[str, list[float]] = {}
+    selected: list[dict] = []
+    for r in _priced(rows):
+        if not _in_date_window(r, window) or (proven_only and not _proven(r)):
+            continue
+        faces = _stance_faces(r.get("labels") or {})
+        if not faces:
+            continue
+        top = _top_k_faces(r["fair"], len(faces))
+        if faces == top:
+            continue                     # 与市场同序：配对差恒为 0，不带判断信息
+
+        def residual(face_set: set[str], row: dict = r) -> float:
+            cover = sum(float(row["fair"][k]) for k, code in CODE_OF.items() if code in face_set)
+            return (1.0 if row["actual"] in face_set else 0.0) - cover
+
+        by_day.setdefault(str(r.get("date")), []).append(residual(faces) - residual(top))
+        selected.append(r)
+    kwargs = dict(stratum="pooled", cost_axis_pp=None, as_of_policy="registry_window_date",
+                  inputs_hash=_rows_hash(selected), selected_keys=_keys(selected),
+                  computed_by="nutmeg.decision.rsi_grading.grade_f14b_prospective")
+    if not selected:
+        return GradeResult(n_cum=0, metric_value_pp=0.0, ci_low_pp=0.0, ci_high_pp=0.0, **kwargs)
+    point, lo, hi = _cluster_boot_ci(by_day, seed=seed, boots=boots)
+    return GradeResult(n_cum=len(selected), metric_value_pp=point * 100, ci_low_pp=lo * 100,
+                       ci_high_pp=hi * 100, **kwargs)
+
+
+PROSPECTIVE_ADAPTERS["F14b"] = grade_f14b_prospective     # 2026-10-19 登记
+PROOF_GATED = PROOF_GATED | {"F14b"}
 
 def grade_f16_prospective(rows: Sequence[dict], *, window: dict) -> GradeResult:
     """F16 赛程负荷（2026-10-09 登记稿 experiments/registry/_draft_F16.json）。
@@ -402,7 +486,7 @@ def licence_of(labels: dict, anchor: str) -> bool | None:
 
 
 def grade_f18_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
-                          boots: int = 4000) -> GradeResult:
+                          boots: int = 4000, proven_only: bool = True) -> GradeResult:
     """F18 单关许可证（2026-10-14 登记 experiments/registry/F18.json）。
 
     窗内、模态面 ≥57% 的非平热门、研究标签齐（anchor_side 与模态同侧或缺省）→ 按许可证分两组，
@@ -412,7 +496,7 @@ def grade_f18_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
     licensed: list[dict] = []
     unlicensed: list[dict] = []
     for r in _priced(rows):
-        if not _in_date_window(r, window):
+        if not _in_date_window(r, window) or (proven_only and not _proven(r)):
             continue
         labels = r.get("labels") or {}
         if not labels:
@@ -440,13 +524,9 @@ def grade_f18_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
                            inputs_hash=_rows_hash(both),
                            computed_by="nutmeg.decision.rsi_grading.grade_f18_prospective",
                            selected_keys=_keys(both))
-    point = (statistics.fmean(a) - statistics.fmean(b)) * 100
-    rng = random.Random(seed)
-    diffs = sorted((statistics.fmean(rng.choice(a) for _ in a)
-                    - statistics.fmean(rng.choice(b) for _ in b)) * 100 for _ in range(boots))
-    return GradeResult(stratum="pooled", n_cum=len(a), metric_value_pp=point,
-                       ci_low_pp=diffs[int(0.025 * boots)],
-                       ci_high_pp=diffs[int(0.975 * boots) - 1],
+    point, lo, hi = _boot_diff_ci(a, b, seed=seed, boots=boots)
+    return GradeResult(stratum="pooled", n_cum=len(a), metric_value_pp=point * 100,
+                       ci_low_pp=lo * 100, ci_high_pp=hi * 100,
                        cost_axis_pp=statistics.fmean(b) * 100,     # 无证组残差，读数时作对照
                        as_of_policy="registry_window_date", inputs_hash=_rows_hash(both),
                        computed_by="nutmeg.decision.rsi_grading.grade_f18_prospective",
@@ -486,11 +566,9 @@ def grade_f15_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
                   computed_by="nutmeg.decision.rsi_grading.grade_f15_prospective")
     if not resid:
         return GradeResult(n_cum=0, metric_value_pp=0.0, ci_low_pp=0.0, ci_high_pp=0.0, **kwargs)
-    rng = random.Random(seed)
-    means = sorted(statistics.fmean(rng.choice(resid) for _ in resid) * 100 for _ in range(boots))
-    return GradeResult(n_cum=len(resid), metric_value_pp=statistics.fmean(resid) * 100,
-                       ci_low_pp=means[int(0.025 * boots)],
-                       ci_high_pp=means[int(0.975 * boots) - 1], **kwargs)
+    point, lo, hi = _boot_mean_ci(resid, seed=seed, boots=boots)
+    return GradeResult(n_cum=len(resid), metric_value_pp=point * 100, ci_low_pp=lo * 100,
+                       ci_high_pp=hi * 100, **kwargs)
 
 
 def grade_g1_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
@@ -540,23 +618,27 @@ def grade_g1_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
 PROSPECTIVE_ADAPTERS.update({"F15": grade_f15_prospective, "G1": grade_g1_prospective})
 
 
-def _rubric_pairs(labels: dict) -> list[tuple[str, str]]:
-    """两读都作答（未弃权）的项 → [(A 答案, B 答案)]；只认在用版本（治理）。"""
+def _rubric_triples(labels: dict) -> list[tuple[str, str, str]]:
+    """两读都作答（未弃权）的项 → [(项, A 答案, B 答案)]；只认在用版本（治理）。"""
     from nutmeg.decision.rubric_items import SUPPORTED_VERSIONS
 
     if labels.get("rubric_version") not in SUPPORTED_VERSIONS:
         return []
     a = labels.get("rubric") or {}
     b = ((labels.get("rubric_b") or {}).get("items")) or {}
-    pairs = []
-    for item_id, ra in a.items():
+    out = []
+    for item_id, ra in sorted(a.items()):
         rb = b.get(item_id)
         if not isinstance(ra, dict) or not isinstance(rb, dict):
             continue
         if ra.get("answer") is None or rb.get("answer") is None:
             continue
-        pairs.append((str(ra["answer"]), str(rb["answer"])))
-    return pairs
+        out.append((str(item_id), str(ra["answer"]), str(rb["answer"])))
+    return out
+
+
+def _rubric_pairs(labels: dict) -> list[tuple[str, str]]:
+    return [(a, b) for _item, a, b in _rubric_triples(labels)]
 
 
 def _kappa_pp(pairs: Sequence[tuple[str, str]]) -> float:
@@ -575,7 +657,7 @@ def grade_k1_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
     rubric 项上的合并 Cohen's kappa × 100；按场 bootstrap。n = 项次。"""
     per_row: list[list[tuple[str, str]]] = []
     selected: list[dict] = []
-    for r in rows:
+    for r in sorted(rows, key=lambda row: str(row.get("key"))):
         if not _in_date_window(r, window):
             continue
         pairs = _rubric_pairs(r.get("labels") or {})
@@ -602,3 +684,58 @@ def grade_k1_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
 
 
 PROSPECTIVE_ADAPTERS.update({"K1": grade_k1_prospective})
+
+
+K2_MIN_PAIRS_PER_ITEM = 20
+
+
+def _weighted_item_kappa(per_row: Sequence[Sequence[tuple[str, str, str]]]) -> tuple[float, int]:
+    """逐项 κ 按项次加权的均值（×100）与计入的项次；不足 K2_MIN_PAIRS_PER_ITEM 的项不计。"""
+    by_item: dict[str, list[tuple[str, str]]] = {}
+    for triples in per_row:
+        for item, a, b in triples:
+            by_item.setdefault(item, []).append((a, b))
+    kept = {item: pairs for item, pairs in by_item.items() if len(pairs) >= K2_MIN_PAIRS_PER_ITEM}
+    total = sum(len(pairs) for pairs in kept.values())
+    if not total:
+        return 0.0, 0
+    return sum(_kappa_pp(pairs) * len(pairs) for pairs in kept.values()) / total, total
+
+
+def grade_k2_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
+                         boots: int = 1000, proven_only: bool = True) -> GradeResult:
+    """K2 逐项可读性（2026-10-19 登记，接替 K1）：K1 的合并 κ 跨词表异质的 15 项一起算，
+    期望一致率被压低、κ 被抬高（合并 0.78 vs 逐项加权约 0.43）。这里逐项算 κ、按项次加权；
+    只收开球前的研究与开球前读的侧车。按场 bootstrap。n = 计入的项次。"""
+    per_row: list[list[tuple[str, str, str]]] = []
+    selected: list[dict] = []
+    for r in sorted(rows, key=lambda row: str(row.get("key"))):
+        if not _in_date_window(r, window):
+            continue
+        labels = r.get("labels") or {}
+        sidecar_ok = (labels.get("rubric_b") or {}).get("prospective") is True
+        if proven_only and not (_proven(r) and sidecar_ok):
+            continue
+        triples = _rubric_triples(labels)
+        if not triples:
+            continue
+        per_row.append(triples)
+        selected.append(r)
+    raw = json.dumps([(r.get("key"), (r.get("labels") or {}).get("rubric"),
+                       (r.get("labels") or {}).get("rubric_b")) for r in selected],
+                     ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    kwargs = dict(stratum="pooled", cost_axis_pp=None, as_of_policy="registry_window_date",
+                  inputs_hash=inputs_hash(raw), selected_keys=_keys(selected),
+                  computed_by="nutmeg.decision.rsi_grading.grade_k2_prospective")
+    value, n_pairs = _weighted_item_kappa(per_row)
+    if not n_pairs:
+        return GradeResult(n_cum=0, metric_value_pp=0.0, ci_low_pp=0.0, ci_high_pp=0.0, **kwargs)
+    rng = random.Random(seed)
+    boot = sorted(_weighted_item_kappa([rng.choice(per_row) for _ in per_row])[0]
+                  for _ in range(boots))
+    return GradeResult(n_cum=n_pairs, metric_value_pp=value,
+                       ci_low_pp=boot[int(0.025 * boots)], ci_high_pp=boot[int(0.975 * boots) - 1],
+                       **kwargs)
+
+
+PROSPECTIVE_ADAPTERS["K2"] = grade_k2_prospective         # 2026-10-19 登记

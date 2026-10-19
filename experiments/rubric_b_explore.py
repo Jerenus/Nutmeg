@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT))
 
 def main() -> None:
     from experiments.rubric_rows import _rows_for
-    from nutmeg.decision.rubric_items import DIRECTIONAL_ITEMS, ITEMS
+    from nutmeg.decision.rubric_items import EFFECT_ITEMS, ITEMS
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--corpus", default=str(ROOT / "experiments" / "corpus-v2.json"))
@@ -29,7 +29,7 @@ def main() -> None:
     print(f"语料 {len(rows)} 行，带读者 B 侧车 {len(with_b)} 行（非前瞻，只看可读性与方向）")
     print("| 项 | 效应 | n(答) | 成立 | 成立时命中−市场 pp | 不成立时 pp |")
     print("|---|---|---|---|---|---|")
-    for item_id in DIRECTIONAL_ITEMS:
+    for item_id in EFFECT_ITEMS:
         built = _rows_for(item_id, reader="rubric_b")(with_b)
         on = [r["face_hit"] - r["fair"] for r in built if r["factor"] == 1]
         off = [r["face_hit"] - r["fair"] for r in built if r["factor"] == 0]

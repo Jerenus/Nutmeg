@@ -54,7 +54,7 @@ def test_no_fact_or_no_anchor_means_no_tilt():
         "why_not_market"] == "none"
     norm, _ = validate_rubric(_rubric(F_absence_away={"p": 0.9, **SRC},
                                       S_anchor_side={"answer": "unknown"}))
-    tilt = rubric_to_tilt(norm, PRIOR)                               # 锚方未知 ≠ 均势：事实项照拨
+    tilt = rubric_to_tilt(norm, PRIOR, version="r1")              # 锚方未知 ≠ 均势：事实项照拨
     assert tilt and tilt["shift"]["0"] < 0
 
 
@@ -65,7 +65,7 @@ def test_tilt_is_a_zero_sum_shift_with_per_item_evidence_that_passes_stance_rule
         S_anchor_side={"answer": "home"},
         S_underdog_path={"p": 0.8},                                     # 2×0.8 → 弱方(客)加
         S_draw_mode={"p": 0.6}), kickoff=KICK)                           # 2×0.6 → 平加
-    tilt = rubric_to_tilt(norm, PRIOR)
+    tilt = rubric_to_tilt(norm, PRIOR, version="r1")         # 聚合机制按 r1 上限测
     assert sum(tilt["shift"].values()) == 0 and tilt["shift"]["0"] < 0 < tilt["shift"]["3"]
     assert {e["item"] for e in tilt["evidence"]} == {"F_absence_away", "F_suspension",
                                                       "S_underdog_path", "S_draw_mode"}
@@ -74,14 +74,42 @@ def test_tilt_is_a_zero_sum_shift_with_per_item_evidence_that_passes_stance_rule
                             "falsifier": "客队首发公布主力中卫在列则作废", "why_not_market": "none",
                             "tilt": {"face": "3", "evidence": []}}, norm, PRIOR)
     assert stance["tilt_declared"] == {"face": "3", "evidence": []}
-    assert stance["why_not_market"] == "tilt_evidence"
+    assert stance["why_not_market"] == "tilt_evidence"            # r2 下仍有 F_suspension 拨动
     _, issues = validate_stance(stance, confidence=3, death_three_proofs={})
     assert not issues, [i.message for i in issues]
-    result = apply_tilt(PRIOR, stance["tilt"], kickoff=KICK)
+    result = apply_tilt(PRIOR, tilt, kickoff=KICK)
     assert not result.zeroed and result.belief["home"] > PRIOR["home"]
     assert result.belief["away"] < PRIOR["away"] and abs(sum(result.belief.values()) - 1) < 1e-9
     peak = max(abs(v) for v in tilt["shift"].values())
     assert result.applied_pp == peak                                  # 证据预算盖住峰值，不二次截断
+
+
+def test_r2_retires_ten_caps_and_only_suspension_still_moves_belief():
+    """2026-10-19 Jun 裁「可以」：9 项 T13 propose_zero + F_rotation（反号）上限退役。
+    问题照问、照记账、T13 照测；拨动只剩 F_suspension。"""
+    from nutmeg.decision.rubric_items import (
+        EFFECT_ITEMS,
+        RUBRIC_CHANGELOG,
+        SUPPORTED_VERSIONS,
+        directional_items,
+        items_markdown,
+    )
+
+    assert RUBRIC_VERSION == "r2" and SUPPORTED_VERSIONS == ("r1", "r2")
+    assert directional_items() == ("F_suspension",)
+    assert len(directional_items("r1")) == 11 and set(directional_items("r1")) == set(EFFECT_ITEMS)
+    assert RUBRIC_CHANGELOG[-1]["version"] == "r2"
+    assert "#rubric-r2" in RUBRIC_CHANGELOG[-1]["evidence"]
+    answers = dict(F_absence_away={"p": 0.9, **SRC}, S_anchor_side={"answer": "home"},
+                   S_underdog_path={"p": 0.8}, F_rotation={"answer": "away", "p": 1.0, **SRC})
+    norm, _ = validate_rubric(_rubric(**answers), kickoff=KICK)
+    assert rubric_to_tilt(norm, PRIOR) is None                        # 成立的项全是退役上限
+    norm, _ = validate_rubric(_rubric(**answers, F_suspension={"answer": "away", "p": 1.0, **SRC}),
+                              kickoff=KICK)
+    tilt = rubric_to_tilt(norm, PRIOR)
+    assert [e["item"] for e in tilt["evidence"]] == ["F_suspension"]
+    assert tilt["derived_from"] == "rubric:r2" and tilt["shift"]["0"] == -4
+    assert "0（r2 退役，原 6）" in items_markdown()
 
 
 def test_priced_in_halves_fact_pp_and_peak_is_capped_at_15():
@@ -89,9 +117,10 @@ def test_priced_in_halves_fact_pp_and_peak_is_capped_at_15():
                 F_rotation={"answer": "home", "p": 1.0, **SRC},
                 F_goalkeeper={"answer": "home", "p": 1.0, **SRC},
                 S_anchor_side={"answer": "home"})
-    full = rubric_to_tilt(validate_rubric(_rubric(**base))[0], PRIOR)
+    full = rubric_to_tilt(validate_rubric(_rubric(**base))[0], PRIOR, version="r1")
     assert full["shift"]["3"] == -15                                  # 6+4+3+3=16 → 封顶 15
-    halved = rubric_to_tilt(validate_rubric(_rubric(**base, M_facts_priced={"p": 0.9}))[0], PRIOR)
+    halved = rubric_to_tilt(validate_rubric(_rubric(**base, M_facts_priced={"p": 0.9}))[0], PRIOR,
+                            version="r1")
     assert halved["shift"]["3"] == -8 and halved["priced_halved"] is True
 
 
@@ -99,7 +128,7 @@ def test_spine_intact_no_hits_the_anchor_and_summary_counts():
     norm, _ = validate_rubric(_rubric(
         F_absence_home={"p": 0.8, **SRC}, S_anchor_side={"answer": "home"},
         S_spine_intact={"p": 0.1, **SRC}))
-    tilt = rubric_to_tilt(norm, PRIOR)
+    tilt = rubric_to_tilt(norm, PRIOR, version="r1")
     items = {e["item"]: e for e in tilt["evidence"]}
     assert "S_spine_intact" in items and items["S_spine_intact"]["tier"] == "confirmed_structural"
     assert rubric_summary(norm, kappa=0.6).startswith("事实1/7 结构1/4 弃权")

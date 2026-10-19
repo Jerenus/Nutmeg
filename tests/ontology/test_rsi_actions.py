@@ -298,6 +298,113 @@ def test_verdict_is_system_only_and_reads_the_ci_bound(tmp_path):
         assert v.verdict == "falsified" and v.criterion_snapshot["threshold_pp"] == 2.0
 
 
+def _grade_at(exp_id, key, *, n, lo, hi, at, stratum="zucai"):
+    return GradeExperimentRequest(
+        exp_id=exp_id, mode="prospective", stratum=stratum, n_cum=n,
+        metric_value_pp=(lo + hi) / 2, ci_low_pp=lo, ci_high_pp=hi, cost_axis_pp=None,
+        as_of_policy="registry_window_date", computed_by="tests@v2", inputs_hash=key * 8,
+        idempotency_key=key, requested_at=at, **SYSTEM)
+
+
+def test_verdict_v2_judges_once_on_the_first_grade_that_reached_n_min(tmp_path):
+    # 2026-10-19 Jun「冻结原文为准」：F14「累计 60 场结账；CI 下界 ≤0 即证伪」——首次够数
+    # n=77 CI[−3.61,+14.05] 就是结账那一份；之后 n=132 下界 +0.49 不再改判（可选停止）
+    actions, engine = _rig(tmp_path)
+    doc = {**F2_DOC, "exp_id": "F14", "population": "both", "window": {"date_from": "2026-10-01"},
+           "falsifier": {"metric": "stance_faces_resid_pp", "stratum": "pooled", "n_min": 60,
+                         "bound": "ci_lower", "threshold_pp": 0.0,
+                         "direction": "lt_means_falsified"}}
+    actions.register_experiment(RegisterExperimentRequest(
+        doc=doc, idempotency_key="reg:F14", requested_at=T0, **HUMAN))
+    day = lambda d: datetime(2026, 10, d, 2, 45, tzinfo=UTC)  # noqa: E731
+    actions.grade_experiment(_grade_at("F14", "g1", n=40, lo=-9.0, hi=20.0, at=day(10),
+                                       stratum="pooled"))
+    actions.grade_experiment(_grade_at("F14", "g2", n=77, lo=-3.61, hi=14.05, at=day(12),
+                                       stratum="pooled"))
+    actions.grade_experiment(_grade_at("F14", "g3", n=132, lo=0.49, hi=13.75, at=day(16),
+                                       stratum="pooled"))
+    actions.record_verdict(RecordVerdictRequest(
+        exp_id="F14", idempotency_key="v:once", requested_at=day(19), **SYSTEM))
+    with OntologyUnitOfWork(engine) as uow:
+        v = uow.rsi.latest_verdict("F14")
+        settled = uow.rsi.grade(v.grade_id)
+    assert v.verdict == "falsified" and settled.n_cum == 77
+    assert v.criterion_snapshot["protocol"] == "v2-frozen-text"
+    assert v.criterion_snapshot["settlement_n"] == 77
+    with pytest.raises(ValueError, match="已结账"):
+        actions.record_verdict(RecordVerdictRequest(
+            exp_id="F14", idempotency_key="v:twice", requested_at=day(20), **SYSTEM))
+
+
+def test_verdict_v2_supersedes_legacy_daily_verdict_rows(tmp_path):
+    actions, engine = _registered(tmp_path)
+    at = datetime(2026, 10, 1, tzinfo=UTC)
+    actions.grade_experiment(_grade_at("F2", "g:a", n=140, lo=2.5, hi=9.0, at=at))
+    with OntologyUnitOfWork(engine) as uow:          # 旧协议留下的一行（快照不带 protocol）
+        from nutmeg.ontology.repository.rsi import VerdictRow
+
+        g = uow.rsi.latest_grade("F2", mode="prospective", stratum="zucai")
+        uow.rsi.insert_verdict(VerdictRow(
+            verdict_id="rsiv-legacy", exp_id="F2", verdict="inconclusive", grade_id=g.grade_id,
+            criterion_snapshot=dict(F2_DOC["falsifier"]), decided_at="2026-10-02T10:45:00+08:00"))
+    actions.record_verdict(RecordVerdictRequest(
+        exp_id="F2", idempotency_key="v:v2", requested_at=datetime(2026, 10, 19, tzinfo=UTC),
+        **SYSTEM))
+    with OntologyUnitOfWork(engine) as uow:
+        assert uow.rsi.latest_verdict("F2").verdict == "survived"
+        assert len(uow.rsi.verdicts("F2")) == 2
+
+
+def test_window_end_without_n_min_settles_once_as_expired(tmp_path):
+    """2026-10-19：新登记带 date_to——截止仍未够数＝到期，判一次 inconclusive 并标 expired。"""
+    actions, engine = _rig(tmp_path)
+    doc = {**F2_DOC, "exp_id": "F14b", "window": {"date_from": "2026-10-20", "n_min": 120,
+                                                  "date_to": "2026-12-31"},
+           "falsifier": {"metric": "m", "stratum": "pooled", "n_min": 120, "bound": "ci_lower",
+                         "threshold_pp": 0.0, "direction": "lt_means_falsified"}}
+    actions.register_experiment(RegisterExperimentRequest(
+        doc=doc, idempotency_key="reg:F14b", requested_at=T0, **HUMAN))
+    actions.grade_experiment(_grade_at("F14b", "gx", n=90, lo=-2.0, hi=9.0,
+                                       at=datetime(2026, 12, 30, tzinfo=UTC), stratum="pooled"))
+    with pytest.raises(ValueError, match="未到期"):
+        actions.record_verdict(RecordVerdictRequest(
+            exp_id="F14b", idempotency_key="v:dec", requested_at=datetime(2026, 12, 31, 4,
+                                                                          tzinfo=UTC), **SYSTEM))
+    actions.record_verdict(RecordVerdictRequest(
+        exp_id="F14b", idempotency_key="v:jan", requested_at=datetime(2027, 1, 1, 4, tzinfo=UTC),
+        **SYSTEM))
+    with OntologyUnitOfWork(engine) as uow:
+        v = uow.rsi.latest_verdict("F14b")
+    assert v.verdict == "inconclusive" and v.criterion_snapshot["expired"] is True
+    assert v.criterion_snapshot["settlement_n"] == 90
+
+
+def test_frozen_second_look_lets_cr2_be_judged_again_only_after_an_inconclusive_first(tmp_path):
+    # 用 bound=ci_upper 的登记才有「跨线」可测（真 CR2 是 ci_lower，下界 <0 首判即证伪）
+    actions2, engine2 = _rig(tmp_path)
+    doc2 = {**F2_DOC, "exp_id": "CR2", "layer": "structural", "tier": "deploy_eligible",
+            "falsifier": {"metric": "gamma_pct", "stratum": "zucai", "n_min": 30,
+                          "bound": "ci_upper", "threshold_pp": 0.0,
+                          "direction": "lt_means_falsified"}}
+    actions2.register_experiment(RegisterExperimentRequest(
+        doc=doc2, idempotency_key="reg:CR2b", requested_at=T0, **HUMAN))
+    at2 = lambda d: datetime(2026, 11, d, tzinfo=UTC)  # noqa: E731
+    actions2.grade_experiment(_grade_at("CR2", "c30", n=31, lo=-60.0, hi=20.0, at=at2(1)))
+    actions2.record_verdict(RecordVerdictRequest(
+        exp_id="CR2", idempotency_key="v:30", requested_at=at2(2), **SYSTEM))
+    with pytest.raises(ValueError, match="差 29"):
+        actions2.record_verdict(RecordVerdictRequest(
+            exp_id="CR2", idempotency_key="v:31", requested_at=at2(3), **SYSTEM))
+    actions2.grade_experiment(_grade_at("CR2", "c60", n=61, lo=-50.0, hi=-5.0, at=at2(20)))
+    actions2.record_verdict(RecordVerdictRequest(
+        exp_id="CR2", idempotency_key="v:60", requested_at=at2(21), **SYSTEM))
+    with OntologyUnitOfWork(engine2) as uow:
+        assert [v.verdict for v in uow.rsi.verdicts("CR2")] == ["inconclusive", "falsified"]
+    with pytest.raises(ValueError, match="已结账"):
+        actions2.record_verdict(RecordVerdictRequest(
+            exp_id="CR2", idempotency_key="v:90", requested_at=at2(25), **SYSTEM))
+
+
 def test_both_population_disagreeing_strata_make_pooled_inconclusive(tmp_path):
     actions, engine = _rig(tmp_path)
     doc = {**F2_DOC, "exp_id": "F6", "population": "both",
@@ -349,6 +456,17 @@ def test_judgment_layer_survived_still_cannot_deploy(tmp_path):
         actions.approve_deployment(ApproveDeploymentRequest(
             exp_id="F2", decision="deploy", reason="想上", rule_id="C11", adjudication_ref=None,
             extend_to_exp_id=None, idempotency_key="d:f2", requested_at=T0, **HUMAN))
+
+
+def test_retire_can_keep_duties_running_when_their_artifacts_have_other_readers(tmp_path):
+    actions, engine = _registered(tmp_path)
+    actions.approve_deployment(ApproveDeploymentRequest(
+        exp_id="F2", decision="retire", reason="窗口到期；观察单仍被日报读", rule_id=None,
+        adjudication_ref=None, extend_to_exp_id=None, idempotency_key="d:keep", requested_at=T0,
+        keep_duties=True, **HUMAN))
+    with OntologyUnitOfWork(engine) as uow:
+        assert [d.status for d in uow.rsi.duties("F2")] == ["active"]
+        assert uow.rsi.latest_deployment("F2").decision == "retire"
 
 
 # ── 同日重做：观测版本链 ───────────────────────────────────────────

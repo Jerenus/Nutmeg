@@ -68,7 +68,8 @@ def test_prediction_proxy_joins_kernel_stances_to_corpus_rows_and_keeps_the_proo
     assert proxy[1]["provably_prospective"] is None
     assert [r["key"] for r in training_pool.prediction_proxy_rows(rows, stances, forced=False)] == [
         "26124-2"]
-    graded = training_pool.PROSPECTIVE_ADAPTERS["F14"](proxy, window={"date_from": ""})
+    graded = training_pool.PROSPECTIVE_ADAPTERS["F14"](proxy, window={"date_from": ""},
+                                                       proven_only=False)   # 训练读历史分层
     # double {draw, away} hit at coverage 0.5; single {away} missed at coverage 0.2
     assert graded.n_cum == 2
     assert abs(graded.metric_value_pp - ((1 - 0.5) + (0 - 0.2)) / 2 * 100) < 1e-9

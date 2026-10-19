@@ -113,33 +113,49 @@ def test_loop_grades_registered_crowd_experiments(tmp_path):
     (reg / "CR1.json").write_text("{}", encoding="utf-8")
     (reg / "_draft_H1.json").write_text("{}", encoding="utf-8")
     exps = graded_experiments(tmp_path)
-    assert exps[-1] == "CR1" and "F14" in exps and "_draft_H1" not in exps
+    assert exps[-1] == "CR1" and "F18" in exps and "_draft_H1" not in exps
 
 
-def test_unchanged_verdicts_are_carried_not_relisted(tmp_path: Path):
-    """2026-10-12 降噪：同一判决日日重现「待人决定」；沿用的合并成一行并注明起始日。"""
-    from nutmeg.decision.rsi_loop import StepResult, _collect, _verdict_streaks
+def test_concluded_verdicts_are_classified_and_new_ones_listed_once(tmp_path: Path):
+    """协议 v2（2026-10-19）：已结账的实验 `rsi verdict` 拒绝 → 记 concluded，不进待人清单；
+    未到期的行带实验号；新判决只出现结账那一天。"""
+    from nutmeg.decision.rsi_loop import _collect, _run_step
 
-    out = tmp_path / "rsi-loop"
-    out.mkdir()
-    line = "F9 → inconclusive（判据快照 {'bound': 'ci_upper'}）"
-    for day in ("2026-09-19", "2026-09-20", "2026-09-21"):
-        (out / f"{day}.json").write_text(
-            json.dumps({"verdicts": [{"cmd": "x", "status": "ok", "line": line}]}),
-            encoding="utf-8")
-    (out / "2026-09-18.json").write_text(json.dumps({"verdicts": []}), encoding="utf-8")
+    def runner(cmd):
+        exp = cmd[cmd.index("--exp") + 1]
+        if exp == "F14":
+            return subprocess.CompletedProcess(
+                cmd, 1, "", "rsi error: 已结账（v2-frozen-text）：F14 → falsified @ 2026-10-19")
+        if exp == "F10":
+            return subprocess.CompletedProcess(
+                cmd, 1, "", "rsi error: 未到期：n_cum=76，距 n_min 还差 74")
+        return subprocess.CompletedProcess(cmd, 0, "F17 → survived（结算 n=120）\n", "")
 
-    streaks = _verdict_streaks(out, "2026-09-22")
-    assert streaks == {line: "2026-09-19"}
-
-    step = StepResult("verdict_due", "ok", 1.0, "", {"commands": [
-        {"cmd": "rsi verdict --exp F9", "status": "ok", "tail": line},
-        {"cmd": "rsi verdict --exp K1", "status": "ok", "tail": "K1 → survived（判据快照 {}）"},
-        {"cmd": "rsi verdict --exp F5", "status": "not_due", "tail": "未到期"},
-    ]})
-    _, _, verdicts, actions, _ = _collect([step], streaks=streaks)
+    ctx = LoopContext(root=tmp_path, data_dir=tmp_path, date="2026-10-20", runner=runner)
+    step = _run_step(ctx, "verdict_due", [
+        ["uv", "run", "nutmeg", "rsi", "verdict", "--exp", e] for e in ("F14", "F10", "F17")])
+    statuses = {c["cmd"].split()[-1]: c["status"] for c in step.detail["commands"]}
+    assert statuses == {"F14": "concluded", "F10": "not_due", "F17": "ok"}
+    tails = [c["tail"] for c in step.detail["commands"]]
+    assert tails[1].startswith("F10: ")
+    _, _, verdicts, actions, _ = _collect([step])
     assert len(verdicts) == 3
     assert [a for a in actions if a.startswith("判决已出")] == [
-        "判决已出：K1 → survived（判据快照 {}） → 若 survived 且 deploy_eligible，人决定 rsi deploy"
-    ]
-    assert any("判决沿用" in a and "F9 → inconclusive（自 2026-09-19）" in a for a in actions)
+        "判决已出（单次结账）：F17 → survived（结算 n=120） → 按登记的出口执行"]
+
+
+def test_every_registered_experiment_is_graded_or_explained():
+    """2026-10-19：F18 有适配器却不在清单（10-15 开窗后 n=0）、F10/F11 漏结账三天——
+    每个登记原件必须落在 结账 / 不结账（有原因）/ 已关闭 三处之一，结账的必须有适配器。"""
+    from nutmeg.decision.rsi_grading import PROSPECTIVE_ADAPTERS
+    from nutmeg.decision.rsi_loop import CLOSED, GRADED_EXPERIMENTS, MONITORS, UNGRADED
+
+    root = Path(__file__).resolve().parents[2]
+    registered = {p.stem for p in (root / "experiments" / "registry").glob("*.json")
+                  if not p.stem.startswith("_")}
+    crowd = {e for e in registered if e.startswith("CR")}
+    placed = set(GRADED_EXPERIMENTS) | set(UNGRADED) | set(CLOSED) | crowd
+    assert registered - placed == set(), f"未落位的登记实验：{sorted(registered - placed)}"
+    assert not set(GRADED_EXPERIMENTS) & (set(UNGRADED) | set(CLOSED))
+    assert set(GRADED_EXPERIMENTS) <= set(PROSPECTIVE_ADAPTERS)
+    assert set(MONITORS) <= set(GRADED_EXPERIMENTS)

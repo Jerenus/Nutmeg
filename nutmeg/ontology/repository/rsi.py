@@ -446,13 +446,33 @@ class RsiRepository:
         r = self._c.execute(select(t).where(t.c.grade_id == grade_id)).mappings().first()
         return None if r is None else self._grade_row(r)
 
-    def latest_grade(self, exp_id: str, *, mode: str, stratum: str) -> GradeRow | None:
+    def latest_grade(self, exp_id: str, *, mode: str, stratum: str,
+                     at_or_before: str | None = None) -> GradeRow | None:
+        t = sr.rsi_grades
+        conditions = [t.c.exp_id == exp_id, t.c.mode == mode, t.c.stratum == stratum]
+        if at_or_before is not None:
+            conditions.append(t.c.graded_at <= at_or_before)
+        r = (
+            self._c.execute(
+                select(t)
+                .where(*conditions)
+                .order_by(t.c.graded_at.desc(), t.c.grade_id.desc())
+            )
+            .mappings()
+            .first()
+        )
+        return None if r is None else self._grade_row(r)
+
+    def settlement_grade(self, exp_id: str, *, mode: str, stratum: str,
+                         n_min: int) -> GradeRow | None:
+        """结算 grade：首次 n_cum ≥ n_min 的那一份（「累计 n 场结账」＝在这一份上判一次）。"""
         t = sr.rsi_grades
         r = (
             self._c.execute(
                 select(t)
-                .where(t.c.exp_id == exp_id, t.c.mode == mode, t.c.stratum == stratum)
-                .order_by(t.c.graded_at.desc(), t.c.grade_id.desc())
+                .where(t.c.exp_id == exp_id, t.c.mode == mode, t.c.stratum == stratum,
+                       t.c.n_cum >= n_min)
+                .order_by(t.c.graded_at.asc(), t.c.grade_id.asc())
             )
             .mappings()
             .first()
@@ -486,6 +506,15 @@ class RsiRepository:
         if r is None:
             return None
         return from_row(VerdictRow, r, ("criterion_snapshot",))
+
+    def verdicts(self, exp_id: str) -> list[VerdictRow]:
+        """全部判决（旧协议每日重判的行也在），按时间正序。"""
+        t = sr.rsi_verdicts
+        rows = self._c.execute(
+            select(t).where(t.c.exp_id == exp_id)
+            .order_by(t.c.decided_at.asc(), t.c.verdict_id.asc())
+        ).mappings().all()
+        return [from_row(VerdictRow, r, ("criterion_snapshot",)) for r in rows]
 
     def insert_deployment(self, row: DeploymentRow) -> None:
         self._c.execute(insert(sr.rsi_deployments).values(**asdict(row)))

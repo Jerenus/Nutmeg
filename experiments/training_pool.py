@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import functools
 import json
 import math
 import os
@@ -29,7 +30,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from nutmeg.decision import rsi_samples  # noqa: E402
-from nutmeg.decision.rsi_grading import PROSPECTIVE_ADAPTERS  # noqa: E402
+from nutmeg.decision.rsi_grading import PROOF_GATED, PROSPECTIVE_ADAPTERS  # noqa: E402
 
 EXPERIMENTS = ("F5", "F9", "F10", "F11", "F13", "F14", "F15", "K1")
 TIERS = {"proven": True, "unproven": None, "leaked": False}
@@ -114,7 +115,10 @@ def inventory(rows: list[dict], ledger: dict, today: str,
         doc = _registry(exp)
         window, falsifier = doc["window"], doc["falsifier"]
         start = window["date_from"]
-        adapter = PROSPECTIVE_ADAPTERS[exp]
+        gated = PROSPECTIVE_ADAPTERS[exp]
+        # 历史只做训练、按证明分层读：分层读数要看到未证明的行
+        # （2026-10-19 起结账适配器默认只收已证明的）
+        adapter = (functools.partial(gated, proven_only=False) if exp in PROOF_GATED else gated)
         history = [r for r in rows if r.get("date") and str(r["date"]) < start]
         entry: dict = {"window_from": start, "n_min": falsifier["n_min"],
                        "threshold_pp": falsifier["threshold_pp"], "bound": falsifier["bound"],
@@ -139,7 +143,7 @@ def inventory(rows: list[dict], ledger: dict, today: str,
                              if r["provably_prospective"] is True]
                     entry["history"][name] = _reading(adapter(proxy, window={"date_from": ""}))
         scratch = copy.deepcopy(ledger)
-        current, _ = rsi_samples.grade(scratch, exp, rows, adapter, window=window, at=today)
+        current, _ = rsi_samples.grade(scratch, exp, rows, gated, window=window, at=today)
         days = max(1, (date.fromisoformat(today) - date.fromisoformat(start)).days)
         rate = current.n_cum / days
         remaining = falsifier["n_min"] - current.n_cum

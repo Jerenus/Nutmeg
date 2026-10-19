@@ -80,9 +80,9 @@ def test_prompt_moves_belief_only_through_the_rubric():
 
 def test_system_prompt_carries_the_rubric_question_table_from_the_registry():
     from nutmeg.decision.research_prompt import rubric_contract, system_prompt
-    from nutmeg.decision.rubric_items import ITEMS
+    from nutmeg.decision.rubric_items import ITEMS, RUBRIC_VERSION
 
     text = rubric_contract()
-    assert all(item_id in text for item_id in ITEMS) and '"version": "r1"' in text
+    assert all(item_id in text for item_id in ITEMS) and f'"version": "{RUBRIC_VERSION}"' in text
     assert "强制改为弃权" in text and text in system_prompt()
     assert "stance.tilt 不用写" in system_prompt()

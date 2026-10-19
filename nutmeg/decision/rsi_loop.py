@@ -58,23 +58,43 @@ LOOP_OUTPUT_PATHS = (
     "experiments/rsi-samples.json",
     "experiments/scoreboard-tallies.json",
 )
-# 有前瞻适配器的登记实验都进闭环（F10/F11 2026-09-27 登记后一直没被结账，2026-09-30 补入）
-# F2 2026-10-02 退役（窗口 26126–26137 内主档样本到不了 n_min 140），不再每日结账
-# F3（F10 的前身）与 F4（观测仪 plan commit 已删）2026-10-04 退役
-GRADED_EXPERIMENTS = ("F5", "F9", "F10", "F11", "F13", "F14", "F15", "F16", "F17", "G1",
-                      "K1")
+# 每个登记实验必须落在下面四处之一（tests/decision/test_rsi_loop.py 守卫；2026-10-19 起——
+# F10/F11 09-27 登记后漏结账三天、F18 10-15 开窗后 n=0，都是「有适配器没进清单」）。
+# 结账：有前瞻适配器、未退役、未结账（或是监测）的实验
+GRADED_EXPERIMENTS = ("F9", "F10", "F14b", "F17", "F18", "K2")
+# 监测：v2 结账之后仍每天 grade（只看不判）——F9 只能测出「拨动有害」，留作有害监测
+MONITORS = ("F9",)
+# 不结账的登记实验与原因
+UNGRADED = {
+    "R0": "运维覆盖率指标（义务驱动每日深研，不判决；2026-10-19 Jun 裁）",
+    "R1": "运维覆盖率指标（义务驱动每日深研，不判决；2026-10-19 Jun 裁）",
+    "F19": "价内/未价判据只在分析包 §1 手写，未对象化——入库后再接适配器",
+}
+# 已关闭：v2 单次结账已判，或已退役（内核 rsi_verdicts / rsi_deployments 是事实源，这里是索引）
+CLOSED = {
+    "F1c": "退役 2026-10-02", "F2": "退役 2026-10-02", "F3": "退役 2026-10-04",
+    "F4": "退役 2026-10-04",
+    "F11": "v2 结账 2026-10-17 n=80 → falsified（C19 永久退休）",
+    "F14": "v2 结账 2026-10-12 n=77 → falsified（由 F14b 接替）",
+    "K1": "v2 结账 2026-10-08 → survived（合并 κ；由 K2 逐项接替）",
+    "F5": "退役 2026-10-19（冻结窗口 26129–26140 已过、未达 n_min）",
+    "F8": "退役 2026-10-19（无结账仪，被测规则 09-26 已退休）",
+    "F13": "退役 2026-10-19（10-06 已定）", "F15": "退役 2026-10-19（并入 F10 分层）",
+    "F16": "退役 2026-10-19（到期约 2 年）", "G1": "退役 2026-10-19（判据与主张不一致、约 430 天）",
+}
 
 
 def graded_experiments(root: Path) -> tuple[str, ...]:
     """固定清单 + 已签字的人群假说（experiments/registry/CR*.json，2026-10-07）。"""
     crowd = sorted(p.stem for p in (Path(root) / "experiments" / "registry").glob("CR*.json"))
-    return GRADED_EXPERIMENTS + tuple(crowd)
+    return GRADED_EXPERIMENTS + tuple(c for c in crowd if c not in CLOSED)
 
 
-# 主指标（2026-10-01 评估换轴）：结构与决策——F14 表态面集合 vs 市场覆盖、F10 热门带；
+# 主指标（2026-10-01 评估换轴；2026-10-19 F14 v2 证伪后由 F14b 接替）：结构与决策——F10 热门带；
 # F9（程度判断）等降为次指标：每天 8–15 场的 Brier 差在赛季内分不开噪声。
-PRIMARY_EXPERIMENTS = ("F14", "F10")
+PRIMARY_EXPERIMENTS = ("F14b", "F10")
 NOT_DUE_MARKERS = ("未到期", "没有 prospective 档", "重放结果进不了判决")
+CONCLUDED_MARKERS = ("已结账",)
 
 
 @dataclass
@@ -233,8 +253,17 @@ def _run_step(ctx: LoopContext, name: str, commands: list[list[str]]) -> StepRes
     for cmd in commands:
         proc = ctx.runner(cmd)
         text = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
-        item = {"cmd": " ".join(cmd[2:]), "exit": proc.returncode, "tail": _tail(text)}
+        tail = _tail(text)
+        exp = cmd[cmd.index("--exp") + 1] if "--exp" in cmd else ""
+        if exp and not tail.startswith(exp):
+            tail = f"{exp}: {tail}"           # 「rsi error: 未到期…」看不出是哪个实验（2026-10-19）
+        item = {"cmd": " ".join(cmd[2:]), "exit": proc.returncode, "tail": tail}
         if name == "verdict_due" and proc.returncode != 0 and any(
+            marker in text for marker in CONCLUDED_MARKERS
+        ):
+            item["status"] = "concluded"
+            not_due += 1
+        elif name == "verdict_due" and proc.returncode != 0 and any(
             marker in text for marker in NOT_DUE_MARKERS
         ):
             item["status"] = "not_due"
@@ -258,43 +287,13 @@ def _run_step(ctx: LoopContext, name: str, commands: list[list[str]]) -> StepRes
     )
 
 
-def _verdict_streaks(out_dir: Path, date: str) -> dict[str, str]:
-    """{判决行: 它首次出现的日期}，只数到 `date` 前一天为止连续出现的判决。
-
-    2026-10-12 降噪：verdict 到期后每天重判、结果不变，`_collect` 每天都把它塞进
-    「待人决定」——F9 inconclusive 自 10-10、K1 survived 自 10-08 日日重现，
-    当天六条待决有三条是旧的。沿用的判决合并成一行、注明起始日，新判决照旧单列。"""
-    prior = sorted((p for p in out_dir.glob("*.json") if p.stem < date), reverse=True)
-    streak: dict[str, str] = {}
-    alive: set[str] | None = None
-    for path in prior:
-        try:
-            lines = {
-                str(v.get("line") or "")
-                for v in (json.loads(path.read_text(encoding="utf-8")).get("verdicts") or [])
-                if v.get("status") == "ok"
-            }
-        except (OSError, ValueError):
-            break
-        alive = lines if alive is None else alive & lines
-        if not alive:
-            break
-        for line in alive:
-            streak[line] = path.stem
-    return streak
-
-
 def _collect(
     steps: list[StepResult],
-    *,
-    streaks: dict[str, str] | None = None,
 ) -> tuple[list[dict], list[dict], list[dict], list[str], list[str]]:
     proposals: list[dict] = []
     grades: list[dict] = []
     verdicts: list[dict] = []
     actions: list[str] = []
-    carried: list[str] = []
-    streaks = streaks or {}
     for step in steps:
         for item in step.detail.get("commands", []):
             if step.name == "factor_propose":
@@ -313,19 +312,9 @@ def _collect(
                 verdicts.append(
                     {"cmd": item["cmd"], "status": item["status"], "line": item["tail"]}
                 )
-                if item["status"] == "ok" and item["tail"] in streaks:
-                    head = item["tail"].split("（判据", 1)[0].strip()
-                    carried.append(f"{head}（自 {streaks[item['tail']]}）")
-                elif item["status"] == "ok":
-                    actions.append(
-                        f"判决已出：{item['tail']} → "
-                        "若 survived 且 deploy_eligible，人决定 rsi deploy"
-                    )
-    if carried:
-        actions.append(
-            "判决沿用、结果未变：" + "、".join(carried)
-            + " → 仍待人决定 rsi deploy（判据快照见「判决」节）"
-        )
+                if item["status"] == "ok":
+                    # 协议 v2：每个实验只判一次，判决行只会出现这一天
+                    actions.append(f"判决已出（单次结账）：{item['tail']} → 按登记的出口执行")
     quiet: list[str] = []
     for p in proposals:
         if p["decision"] == "propose_zero" and not p["current_weight_pp"]:
@@ -353,9 +342,7 @@ def run_loop(ctx: LoopContext, *, force: bool = False) -> LoopReport | None:
             steps.append(StepResult(name, "skipped", 0.0, "skipped by --skip"))
             continue
         steps.append(_run_step(ctx, name, plan[name]))
-    proposals, grades, verdicts, actions, quiet = _collect(
-        steps, streaks=_verdict_streaks(ctx.out_dir, ctx.date)
-    )
+    proposals, grades, verdicts, actions, quiet = _collect(steps)
     failed = [s.name for s in steps if s.status == "failed"]
     if failed:
         actions.append(f"步骤失败需人看：{', '.join(failed)}")
@@ -392,7 +379,7 @@ def render_markdown(report: LoopReport) -> str:
         primary = [g for g in report.grades if _grade_exp(g) in PRIMARY_EXPERIMENTS]
         secondary = [g for g in report.grades if _grade_exp(g) not in PRIMARY_EXPERIMENTS]
         lines += ["", "## 前瞻结账", "", "### 主指标（结构与决策）", ""]
-        lines += [f"- {g['line']}" for g in primary] or ["- （F14/F10 尚无结账）"]
+        lines += [f"- {g['line']}" for g in primary] or ["- （F14b/F10 尚无结账）"]
         lines += ["", "### 次指标（程度判断）", ""] + [f"- {g['line']}" for g in secondary]
     if report.verdicts:
         lines += ["", "## 判决", ""] + [f"- [{v['status']}] {v['line']}" for v in report.verdicts]

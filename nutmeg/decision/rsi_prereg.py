@@ -19,6 +19,8 @@ _SCOPES = ("day", "match")
 _DUTY_STATUSES = ("active", "pending_instrument", "manual")
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _CR_REQUIRED = ("label_cn", "trigger", "crowd_bias", "replay_window")
+EXIT_KEYS = ("on_survived", "on_falsified", "on_expired")
+_EXIT_ACTION = re.compile(r"^((rubric_cap|rule|retire_rule|packet_column):\S+|display_only|none)$")
 
 
 def load_registry_doc(path: Path) -> dict:
@@ -55,7 +57,27 @@ def load_registry_doc(path: Path) -> dict:
             raise ValueError("instrument 必须含 {issue} 或 {day} 占位，否则每天跑的是同一条命令")
     if str(doc["exp_id"]).startswith("CR"):
         _validate_crowd(doc)
+    validate_exits(doc.get("exits"))
     return doc
+
+
+def validate_exits(exits) -> None:
+    """登记出口（2026-10-19 Jun 裁 4）：判决之后改哪个开关。可缺——缺出口的实验照样登记，
+    记作「观察型」正样本；写了就必须是封闭动作：`rubric_cap:<项>` / `rule:<码>` /
+    `retire_rule:<码>` / `packet_column:<列>` / `display_only` / `none`。"""
+    if exits is None:
+        return
+    if not isinstance(exits, dict) or set(exits) - set(EXIT_KEYS):
+        raise ValueError(f"exits 只许 {EXIT_KEYS}")
+    for key, action in exits.items():
+        if not isinstance(action, str) or not _EXIT_ACTION.match(action):
+            raise ValueError(f"exits.{key} `{action}` 不是封闭动作")
+
+
+def is_observation_only(doc: dict) -> bool:
+    """没写出口、或三个出口全是 none ＝ 观察型（只积累样本，判决不改任何开关）。"""
+    exits = doc.get("exits") or {}
+    return all(exits.get(k, "none") == "none" for k in EXIT_KEYS)
 
 
 def _validate_crowd(doc: dict) -> None:

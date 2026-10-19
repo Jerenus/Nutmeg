@@ -254,6 +254,32 @@ def _write(path, payload):
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
 
+def test_jczq_belief_moved_compares_the_read_against_its_own_prior(tmp_path, monkeypatch):
+    """2026-10-19：竞彩泳道曾拿 belief 比「当前 fair」——17:15 刷新或终盘替换后，没拨动的
+    Read（prior==belief）也被记成拨动，F9 有 16 行测到的是价格漂移不是判断。"""
+    root = tmp_path / "jczq"
+    _write(root / "jc-results.json",
+           {"2026-09-20": {"周日001": {"match_id": "1", "ft_home": 1, "ft_away": 0},
+                           "周日002": {"match_id": "2", "ft_home": 0, "ft_away": 0}}})
+    read_time = {"home": 0.5, "draw": 0.3, "away": 0.2}
+    refreshed = {"home": 0.47, "draw": 0.31, "away": 0.22}          # 17:15 刷新后的 fair
+    _write(root / "daily" / "2026-09-20" / "bold_odds.json",
+           {code: {"match_winner": {"fair_probability": refreshed}}
+            for code in ("周日001", "周日002")})
+    _write(root / "daily" / "2026-09-20" / "reads.json", [
+        {"read_id": "R-ai-jczq-2026-09-20-周日001-had-0900", "made_at": "2026-09-20T09:00:00+08:00",
+         "prior": read_time, "belief": read_time},                    # 没拨动
+        {"read_id": "R-ai-jczq-2026-09-20-周日002-had-0900", "made_at": "2026-09-20T09:00:00+08:00",
+         "prior": read_time, "belief": {"home": 0.45, "draw": 0.35, "away": 0.2}},
+    ])
+    monkeypatch.setattr(corpus_build, "J", str(root))
+
+    rows = {r["jczq_no"]: r for r in corpus_build.jczq_rows()}
+
+    assert rows["周日001"]["belief_moved"] is False
+    assert rows["周日002"]["belief_moved"] is True
+
+
 def test_jczq_rows_use_closing_odds_only_when_no_read_time_price(tmp_path, monkeypatch):
     root = tmp_path / "jczq"
     _write(

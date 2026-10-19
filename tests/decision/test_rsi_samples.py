@@ -18,7 +18,7 @@ AT = "2026-10-06T10:45:00+08:00"
 def _row(key, actual="3", fair=BAND, *, src="jczq", titan=None, date="2026-09-24", **extra):
     return {"key": key, "src": src, "date": date, "actual": actual, "fair": fair,
             "belief": extra.pop("belief", fair), "belief_moved": extra.pop("moved", False),
-            "titan007_id": titan, **extra}
+            "titan007_id": titan, "provably_prospective": extra.pop("proven", True), **extra}
 
 
 def _grade(ledger, rows, adapter=grade_f5_prospective, exp="F5", window=WINDOW):

@@ -1,0 +1,36 @@
+{
+ "exp_id": "F14b",
+ "claim": "深研表态面集合（single/double）偏离市场排序时（集合 ≠ 市场同尺寸 top-k），表态集合的「命中 − 覆盖」高于同尺寸 top-k 的「命中 − 覆盖」——研究的结构判断在市场头部低估（F10）之外仍有增量。",
+ "mechanism": "F14 按冻结原文于 2026-10-12（n=77，CI[−3.61,+14.05]）证伪；复算 209 个成员：151 个表态集合就是市场 top-k，机械 top-k 残差 +5.18 [−0.22,+10.24]，表态 − top-k 逐场配对只有 +1.77 [−2.85,+6.56]——F14 量到的是热门低估。真正带判断信息的只有表态偏离市场排序的场（58 场配对 +6.38 [−11.26,+23.12]）。若这里也分不开，表态面只是复述价格，分析包「表态面」列只作展示。",
+ "tier": "observation",
+ "layer": "judgment",
+ "population": "both",
+ "min_tier": "deep_research",
+ "window": {
+  "date_from": "2026-10-20",
+  "n_min": 120,
+  "date_to": "2026-12-31"
+ },
+ "falsifier": {
+  "metric": "stance_vs_topk_paired_pp",
+  "stratum": "pooled",
+  "n_min": 120,
+  "bound": "ci_lower",
+  "threshold_pp": 0.0,
+  "direction": "lt_means_falsified"
+ },
+ "stop_rule": "表态集合 ≠ 市场同尺寸 top-k 的场累计 120 场结账（单次）；逐场配对（表态命中 − 表态覆盖）−（top-k 命中 − top-k 覆盖），按日聚类 bootstrap，CI 下界 ≤ 0 即证伪（研究偏离市场排序时不比市场准）。只收 provably_prospective 的行；2026-12-31 截止仍不足 120 场＝到期（on_expired）。期间不改 top-k 定义（并列按面名定序）与表态面口径，不接入 rubric 与票面。",
+ "quota_slot": false,
+ "buckets": [],
+ "rule_ids": [
+  "stance"
+ ],
+ "source_doc": "docs/superpowers/evidence/2026-10-19-rsi-protocol-v2.md",
+ "registered_at": "2026-10-19",
+ "exits": {
+  "on_survived": "packet_column:表态面",
+  "on_falsified": "packet_column:表态面",
+  "on_expired": "packet_column:表态面"
+ },
+ "approval_note": "Jun 2026-10-19 聊天：「1，冻结原文为准。2，可以。3，可以。4，也需要登记，作为正样本。 开始工作」（对 RSI 审核报告 WP3「F14 → 另立 F14b」「K1 → K2」的批复）——登记动作由主循环代执行，决定人 Jun"
+}

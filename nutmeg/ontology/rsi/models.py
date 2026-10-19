@@ -56,6 +56,15 @@ class DeploymentDecision(StrEnum):
     EXTEND = "extend"
 
 
+VERDICT_PROTOCOL = "v2-frozen-text"
+"""判决协议 v2（2026-10-19 Jun 裁「冻结原文为准」）：按登记的 bound 判；「累计 n 场结账」＝
+在首次 n ≥ n_min 的那一份 grade 上判一次，之后不再判（旧协议每天重判 = 可选停止，F14 第 5 次
+才翻成 survived）。旧协议的判决行保留作历史，v2 判决的快照带 `protocol`。"""
+
+SECOND_LOOK_N: dict[str, int] = {"CR2": 60}
+"""冻结原文明写了第二次结账的实验：首判跨线时在这个 n 再判一次（CR2「60 期仍跨线则提 retire」）。"""
+
+
 FROZEN_FIELDS: tuple[str, ...] = (
     "claim",
     "mechanism",
@@ -126,29 +135,39 @@ class Falsifier:
             direction=str(d["direction"]),
         )
 
+    def _edge(self, *, ci_low: float, ci_high: float) -> float:
+        return ci_low if self.bound == "ci_lower" else ci_high
+
     def evaluate(self, *, n_cum: int, ci_low: float, ci_high: float) -> Verdict | None:
-        """n<n_min → None（不判）。判据只读 CI 边界，从不读点估计。"""
+        """n<n_min → None（不判）。判据只读 CI 边界，从不读点估计。
+
+        证伪按登记的 `bound` 读（2026-10-19 Jun 裁「冻结原文为准」：原文写「CI 下界 < 0
+        即证伪」的实验，bound=ci_lower；此前代码不读 bound，一律要上界越线才证伪）：
+        - lt：CI[bound] < t → 证伪；下界 ≥ t → 成立；其余跨线
+        - gt：CI[bound] > t → 证伪；上界 ≤ t → 成立；其余跨线
+        bound 落在「成立」那一侧时（lt+ci_lower、gt+ci_upper）判决自然只剩两档。"""
         if n_cum < self.n_min:
             return None
         t = self.threshold_pp
+        edge = self._edge(ci_low=ci_low, ci_high=ci_high)
         if self.direction == "lt_means_falsified":
-            # 「上界 < t」证伪；「下界 ≥ t」成立；否则跨线
-            if ci_high < t:
+            if edge < t:
                 return Verdict.FALSIFIED
             if ci_low >= t:
                 return Verdict.SURVIVED
             return Verdict.INCONCLUSIVE
-        if ci_low > t:
+        if edge > t:
             return Verdict.FALSIFIED
         if ci_high <= t:
             return Verdict.SURVIVED
         return Verdict.INCONCLUSIVE
 
     def distance_pp(self, *, ci_low: float, ci_high: float) -> float:
-        """距触发 falsifier 还差多少 pp（正数=还没到）。"""
+        """登记的那条边距触发 falsifier 还差多少 pp（正数=还没到）。"""
+        edge = self._edge(ci_low=ci_low, ci_high=ci_high)
         if self.direction == "lt_means_falsified":
-            return ci_high - self.threshold_pp
-        return self.threshold_pp - ci_low
+            return edge - self.threshold_pp
+        return self.threshold_pp - edge
 
 
 def project_status(
