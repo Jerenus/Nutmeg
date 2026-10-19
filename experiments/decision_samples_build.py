@@ -17,7 +17,7 @@ import glob
 import json
 import os
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import datetime
 
 D = ".nutmeg-data"
@@ -571,7 +571,36 @@ def main():
                 }
 
     # ---- corpus-v2 兜底（内核 forecast lane 的 belief / 赛果，05-18 起）----
+    # 对不上任何已有行的 corpus 行（26091–26120 早期足彩、内核 lane）补成新行，
+    # 结构标签取 corpus 的 labels（同一批 legs-base / 研究原件转录，非新取证）
     cv = load("experiments/corpus-v2.json") or {}
+    zindex = {
+        f"{r['zucai']['issue']}-{r['zucai']['no']}": k for k, r in rows.items() if r.get("zucai")
+    }
+
+    def _mkt(r):
+        return (
+            (r.get("belief") or {}).get("market")
+            or (r.get("price_read_time") or {}).get("fair")
+            or (r.get("price_closing") or {}).get("fair")
+            or (r.get("price_sporttery") or {}).get("fair")
+        )
+
+    by_day = defaultdict(list)  # corpus 的去重规则：同日 + 去水三元组 ≤1.5pp（再加同赛果）
+    for k, r in rows.items():
+        if _mkt(r):
+            by_day[r["date"]].append(k)
+
+    def _twin(cr):
+        m = tri(cr.get("fair"))
+        if not m:
+            return None
+        for k in by_day.get(cr.get("date"), []):
+            mo = _mkt(rows[k])
+            rf = (rows[k].get("result") or {}).get("face")
+            if max(abs(m[f] - mo[f]) for f in FACES) <= 0.015 and rf in (None, cr.get("actual")):
+                return k
+        return None
     for cr in cv.get("rows") or []:
         keys = [
             f"{cr.get('date')}|{tk.split('-', 3)[-1]}" for tk in (cr.get("twin_keys") or []) if tk
@@ -581,6 +610,43 @@ def main():
         mid = (cr.get("kernel") or {}).get("match_id")
         if mid:
             keys.append(mid)
+        if cr.get("src") == "zucai" and cr.get("key") in zindex:
+            keys.append(zindex[cr["key"]])
+        if not any(k in rows for k in keys) and (tw := _twin(cr)):
+            keys.append(tw)
+        if not any(k in rows for k in keys):
+            nk = mid or f"cv|{cr.get('key')}"
+            zc = None
+            if cr.get("src") == "zucai" and cr.get("issue"):
+                zc = {"issue": cr["issue"], "no": cr.get("match_no"), "deadline": None}
+            rows[nk] = {
+                "key": nk, "match_id": mid, "date": cr.get("date"), "jczq_code": None,
+                "zucai": zc, "home": None, "away": None, "competition": None,
+                "kickoff": None, "src": ["corpus-v2:" + str(cr.get("src"))],
+                "name": cr.get("name"),
+            }
+            lb_ = {k: v for k, v in (cr.get("labels") or {}).items() if k != "judgment"}
+            if lb_:
+                m_ = tri(cr.get("fair"))
+                rows[nk]["research"] = research_block({
+                    "anchor_side": lb_.get("anchor_side"),
+                    "anchor_integrity": lb_.get("anchor_integrity"),
+                    "hole_location": {
+                        "unit": lb_.get("hole_location_unit"),
+                        "side": lb_.get("hole_location_side"),
+                        "priced_in": lb_.get("hole_location_priced_in"),
+                    } if lb_.get("hole_location_side") else None,
+                    "license_questions": lb_.get("license_questions"),
+                    "directional_flags": lb_.get("directional_flags"),
+                    "nondirectional_flags": lb_.get("nondirectional_flags"),
+                    "crash_markers": lb_.get("crash_markers"),
+                    "stance": {k[7:]: lb_[k] for k in ("stance_face", "stance_structure",
+                                                        "stance_cover") if k in lb_},
+                    "team_tags": lb_.get("team_tags"),
+                }, fav_of(m_), None)
+                rows[nk]["research"]["prospective"] = cr.get("provably_prospective")
+                rows[nk]["research"]["src"] = "experiments/corpus-v2.json:labels"
+            keys = [nk]
         for k in keys:
             row = rows.get(k)
             if not row:

@@ -67,3 +67,7 @@ Jun 要求「尽可能还原当时各方面的信息和数据，作为后续决�
 - 本文与扫描文档早先写「翻车面标签从未编码」是**读错位置**：契约字段是 `strength_balance.underdog_path.{side,strength,routes}`（09-26 起），构建器已改读嵌套位置，原字段 285 行、旧研究代理 123 行。
 - **Jun 定必填**：`research_intake._check_underdog_path`——09-26 后的研究缺 `underdog_path` 或 `side∉{home,away}`/`strength∉{none,weak,real,strong}` 报 WARN（不拒收，理由同 rubric：拒收烧预算、留 R0/R1 缺口）；`.claude/agents/jczq-match-analyst.md` 写明必答与三档含义；测试 `tests/decision/test_research_intake.py` 四条。
 - 标签进残差检验：`label_real`（real/strong=1）Δ +0.0026、`label_side_is_dog` Δ +0.0049，**与其他 22 个特征一样不改善市场**。分档看：real·b57–64 n=26 热门实开 88.5 vs 市场 59.8（+28.7 ±6.3）是单格最大，但 real·C n=51 +4.9、real·D n=94 0.0，且 26 场的格在 ~60 格里出现一个 4.5σ 的期望不是零——记一笔，不登记。
+
+## 补全 corpus-v2 行（2026-10-19 下午）
+
+对账发现 v1 首版漏了 corpus-v2 里的 586 行（26091–26120 早期足彩 + 内核 lane）。构建器改为：corpus 行先按 match_id / 竞彩编号 / 足彩期·场 / 「同日 + 去水三元组 ≤1.5pp + 同赛果」四把钥匙并入已有行，都对不上才新开一行（结构标签取 corpus `labels`，同一批原件转录）。重建后：**2,478 场，有赛果 2,026 场**（corpus-v2 原有约 1,530 场 + 本次新拼出 496 场），系统偏离 246、研究结构+赛果 488（前瞻 403）、标签原字段 277，残余疑似重复 1。基线在 403 行上重跑：树 CV AUC 0.633 < 市场 0.693；重校准 0.6258，单特征全部不降对数损失（label_real +0.0030）——结论不变。
