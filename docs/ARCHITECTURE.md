@@ -517,7 +517,7 @@ flowchart TB
   class L9 store
 ```
 
-*图 9　RSI 每日闭环 9 步（2026-10-04 删去 hyp、factor_search、dream_compare）。报告在 `.nutmeg-data/analytics/rsi-loop/<日>.json|md` 与 `latest.md`，「待人决定」进当日报告。*
+*图 9　RSI 每日闭环 9 步（2026-10-04 删去 hyp、factor_search、dream_compare）。报告在 `.nutmeg-data/analytics/rsi-loop/<日>.json|md` 与 `latest.md`。2026-10-19 起：语料重建失败则结账/判决/提案记 skipped（`DEPENDS_ON`），当天有失败步骤再触发会重跑；判决按登记出口分流——展示类自动生效记「自动生效 / 只记账」，改规则/码表/rubric 上限的进**待决收件箱**（`inbox.json`：固定 id、起始日、积压天数、默认动作），当日报告与决策页读它。*
 
 ### 5.4 因子注册表（T13）与 rubric 逐项结账
 
@@ -529,7 +529,7 @@ flowchart TB
 
 ### 5.5 语料
 
-`experiments/corpus-v2.json`（2026-10-02：1,665 行，竞彩 1,052、足彩 518、内核 95）由 `experiments/corpus_build.py` 每天重建：判读文件、内核 forecast、titan007 终盘三条泳道合并，`provably_prospective` 由 `nutmeg/decision/prospective.py` 判定。研究标签带 rubric 答案（读者 A）与读者 B 侧车（`rubric_b`，赛后读的标为非前瞻）。
+`experiments/corpus-v2.json`（2026-10-02：1,665 行，竞彩 1,052、足彩 518、内核 95；2026-10-19 约 2,030 行）由 `experiments/corpus_build.py` 每天重建（**2026-10-19 起不进 git**：派生物，判决的冻结证据是样本账）：判读文件、内核 forecast、titan007 终盘三条泳道合并，`provably_prospective` 由 `nutmeg/decision/prospective.py` 判定。研究标签带 rubric 答案（读者 A）与读者 B 侧车（`rubric_b`，赛后读的标为非前瞻）。
 
 **样本账**（2026-10-05）：语料每天重建，同一场比赛的行会换泳道、换价格或消失，已结账的前瞻样本因此倒退过（F9 09-27 8→2、F5 10-01 39→37）。现在 `rsi grade` 经 `nutmeg/decision/rsi_samples.py` 结账：一场比赛第一次被某实验选中就整行冻结进 `experiments/rsi-samples.json`，之后只加新样本；换值、换泳道、消失、不再入选只记事件，赛果更正照改并记事件，剔除只能由人 `rsi samples --retract … --reason … --by …`。查看：`nutmeg rsi samples [--exp X]`。
 
