@@ -100,10 +100,20 @@ def _cross_ids(issue: str) -> dict[int, dict]:
         m["match_no"]: {
             "titan007_id": m.get("titan007_match_id"),
             "jczq_no": m.get("jczq_match_no"),
+            # F19 价内判据②（2026-10-20 接入）：国际盘开盘→停售位移；没有初赔就不出键，不补 0
+            **({"intl_drift_pp": drift} if (drift := _intl_drift(m.get("micro"))) else {}),
         }
         for m in doc.get("matches", [])
         if m.get("match_no")
     }
+
+
+def _intl_drift(micro: object) -> dict[str, float] | None:
+    if not isinstance(micro, dict):
+        return None
+    drift = {f: micro[f"drift_{f}_pp"] for f in ("home", "draw", "away")
+             if isinstance(micro.get(f"drift_{f}_pp"), int | float)}
+    return drift if len(drift) == 3 else None
 
 
 _JUDGMENT_CALL_KEYS = (
@@ -440,6 +450,9 @@ def _research_labels(doc: dict | None) -> dict | None:
         hole_location_side=hole.get("side") if controlled_hole else None,
         hole_location_priced_in=hole.get("priced_in") if controlled_hole else None,
         anchor_side=doc.get("anchor_side"),
+        # 翻车路径（strength_balance.underdog_path，2026-10-20 接入，F19）：弱方是谁、研究标弱/真实
+        underdog_side=_underdog(doc).get("side"),
+        underdog_strength=_underdog(doc).get("strength"),
         # 情境/战意层（2026-09-22 接入，只转录不判断）：封闭词典的球队标签、追踪标签、
         # 轮换风险与休息天数。战意本身不是结构化字段，只以这些可观察代理进入。
         team_tags=_team_tags(doc.get("team_tags")),
@@ -460,6 +473,14 @@ def _research_labels(doc: dict | None) -> dict | None:
         override_reason=doc.get("override_reason"),
         label_source="research",
     )
+
+
+def _underdog(doc: dict) -> dict:
+    balance = doc.get("strength_balance")
+    path = balance.get("underdog_path") if isinstance(balance, dict) else None
+    if not isinstance(path, dict) or path.get("exists") is False:
+        return {}
+    return path
 
 
 def _team_tags(tags: object) -> dict:
@@ -1004,6 +1025,21 @@ def attach_kernel(rows: list[dict], kernel: list[dict]) -> tuple[list[dict], int
     return rows + extra, attached
 
 
+def _adopt_twin_research(zucai: dict, jczq: dict) -> None:
+    """足彩场的深研多数走板面通路（channel-map 映射到竞彩编号，研究落在竞彩日目录）。
+    足彩行自己没有研究标签、竞彩孪生有且可证前瞻时，把研究标签并到足彩行，legs-base 的旗/
+    完整度优先（与足彩自己的 research 合并同规则）。2026-10-20 前去重直接丢掉竞彩行，
+    10-10 起 65 场板面研究的标签没进语料（F14b/F18/F19/K2 的样本少算）。"""
+    mine, theirs = zucai.get("labels") or {}, jczq.get("labels") or {}
+    if "research" in str(mine.get("label_source")) or "research" not in str(
+            theirs.get("label_source")) or jczq.get("provably_prospective") is not True:
+        return
+    kept = {k: v for k, v in mine.items() if v not in (None, [], {})}
+    zucai["labels"] = {**theirs, **kept,
+                       "label_source": "legs+twin-research" if mine else "twin-research",
+                       "research_from": jczq["key"]}
+
+
 def dedupe(zc: list[dict], jc: list[dict]) -> tuple[list[dict], int]:
     """同一场比赛两条泳道各有一行时保留足彩行（它带标签），竞彩行丢弃，
     被吸收的竞彩键记在足彩行的 `twin_keys` 上（样本账据此认出孪生行，不重复入账）。
@@ -1036,6 +1072,7 @@ def dedupe(zc: list[dict], jc: list[dict]) -> tuple[list[dict], int]:
                     break
         if twin is not None:
             twin.setdefault("twin_keys", []).append(r["key"])
+            _adopt_twin_research(twin, r)
             dropped += 1
             continue
         kept.append(r)

@@ -54,8 +54,9 @@ def test_adapter_registry_names_match_experiments():
     # 2026-10-09：F16（赛程负荷，损耗台账）、F17（名气热卖，Polymarket 关注度）登记并接入
     # 2026-10-14：F18（单关许可证，26140 §10b）登记并接入
     # 2026-10-19：F14b（表态 vs 市场 top-k 逐场配对）、K2（逐项 κ）登记并接入
+    # 2026-10-20：F19（真实＝已定价，10-16 登记）判据对象化后接入
     assert set(PROSPECTIVE_ADAPTERS) == {"F5", "F9", "F10", "F11", "F13", "F14", "F14b", "F15",
-                                         "F16", "F17", "F18", "G1", "K1", "K2"}
+                                         "F16", "F17", "F18", "F19", "G1", "K1", "K2"}
 
 
 def test_k1_pools_item_pairs_and_scores_full_agreement_as_100():
@@ -127,3 +128,42 @@ def test_adapters_drop_rows_after_the_window_end():
     rows = [_row("a", "3", fav, date="2026-12-31"), _row("b", "3", fav, date="2027-01-01")]
     g = grade_f10_prospective(rows, window={"date_from": "2026-10-20", "date_to": "2026-12-31"})
     assert g.n_cum == 1 and g.selected_keys == ("a",)
+
+
+def _f19_row(key, actual, *, weak="away", strength="real", face="3", cover="1",
+             drift=None, priced_in=True, hole="home", date="2026-10-18"):
+    row = _row(key, actual, STRONG, date=date)
+    row["labels"] = {"underdog_side": weak, "underdog_strength": strength,
+                     "stance_face": face, "stance_cover": cover,
+                     "hole_location_priced_in": priced_in, "hole_location_side": hole}
+    if drift is not None:
+        row["intl_drift_pp"] = drift
+    return row
+
+
+def test_f19_class_follows_the_frozen_priced_and_unpriced_rules():
+    from nutmeg.decision.rsi_grading import f19_class
+    flat = {"home": 0.5, "draw": -0.2, "away": -0.3}            # 弱方+平 −0.5 ≤ 0
+    moved = {"home": -1.5, "draw": 0.6, "away": 0.9}            # 弱方+平 +1.5 ≥ +1
+    assert f19_class(_f19_row("a", "1", drift=flat)) == ("价内", "1")   # 研究答已价内
+    assert f19_class(_f19_row("b", "1", drift=flat, priced_in=False)) == ("未价", "1")
+    assert f19_class(_f19_row("c", "1", drift=moved, priced_in=False)) == ("价内", "1")
+    assert f19_class(_f19_row("d", "1", drift=flat, priced_in=False, hole="away")) == ("价内", "1")
+    assert f19_class(_f19_row("e", "0", drift=flat, face="0", cover=None)) == ("价内", "0")
+    assert f19_class(_f19_row("f", "1", drift=flat, cover=None)) is None      # 无剧本「—」
+    assert f19_class(_f19_row("g", "1")) is None                               # 无国际盘「?」
+    assert f19_class(_f19_row("h", "1", drift=flat, strength="weak")) is None  # 标弱另计
+
+
+def test_f19_grades_priced_group_and_reports_unpriced_as_contrast():
+    from nutmeg.decision.rsi_grading import grade_f19_prospective
+    flat = {"home": 0.5, "draw": -0.2, "away": -0.3}
+    rows = [_f19_row("p1", "1", drift=flat), _f19_row("p2", "3", drift=flat),
+            _f19_row("u1", "1", drift=flat, priced_in=False),
+            _f19_row("early", "1", drift=flat, date="2026-10-16")]
+    g = grade_f19_prospective(rows, window={"date_from": "2026-10-17"}, boots=200)
+    assert g.n_cum == 2 and g.selected_keys == ("p1", "p2")
+    assert round(g.metric_value_pp, 6) == round(((1 - 0.2) + (0 - 0.2)) / 2 * 100, 6)
+    assert round(g.cost_axis_pp, 6) == 80.0
+    rows[0]["provably_prospective"] = False
+    assert grade_f19_prospective(rows, window={"date_from": "2026-10-17"}, boots=200).n_cum == 1

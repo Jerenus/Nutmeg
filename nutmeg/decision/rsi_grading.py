@@ -699,3 +699,68 @@ def grade_k2_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
 
 
 PROSPECTIVE_ADAPTERS["K2"] = grade_k2_prospective         # 2026-10-19 登记
+
+
+F19_DRIFT_PRICED_PP = 1.0
+_FACE_OF = {code: face for face, code in CODE_OF.items()}
+
+
+def f19_class(row: dict) -> tuple[str, str] | None:
+    """F19 机械判据（2026-10-16 登记原文，2026-10-20 对象化）→ (价内/未价, 翻车面)。
+
+    只收研究标「真实」且写了弱方的场；弱方＝`underdog_side`，热门＝对面。
+    翻车面＝研究表态里不是热门胜的那一面（face 先、cover 次）；没有＝「—」，不计。
+    位移＝国际盘弱方面＋平 开盘→停售（`intl_drift_pp`）；没有国际盘＝「?」，不计。
+    未价＝研究答 priced_in=false ∧ 洞在热门 ∧ 位移 ≤ 0；其余（含位移 ≥ +1pp）价内。
+    判据①「路径依据全部早于开盘」不是数据字段、无法机械判；它只会把场判成价内，
+    与「未价」三条同时成立的场按未价记（研究自己答了未价）。"""
+    labels = row.get("labels") or {}
+    weak = labels.get("underdog_side")
+    drift = row.get("intl_drift_pp")
+    if labels.get("underdog_strength") != "real" or weak not in _OPPOSITE or not drift:
+        return None
+    fav = _OPPOSITE[weak]
+    upset = [c for c in (labels.get("stance_face"), labels.get("stance_cover"))
+             if c in _FACE_OF and c != CODE_OF[fav]]
+    if not upset:
+        return None
+    moved = float(drift[weak]) + float(drift["draw"])
+    unpriced = (labels.get("hole_location_priced_in") is False
+                and labels.get("hole_location_side") == fav and moved <= 0)
+    return ("未价" if unpriced else "价内"), upset[0]
+
+
+def grade_f19_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
+                          boots: int = 4000, proven_only: bool = True) -> GradeResult:
+    """F19「真实＝已定价」（2026-10-16 登记 experiments/registry/F19.json）。
+
+    指标＝「真实·价内」组翻车面『命中 − 市场 P』残差均值（pp），市场 P＝停售前最后一版
+    zgzcw 去水（legs-base 18:30 重建的 fair）；CI 下界 > 0 即证伪。n_cum 与样本账只记价内组；
+    「真实·未价」组残差放 cost_axis_pp 作对照（原文：另计）。"""
+    groups: dict[str, list[float]] = {"价内": [], "未价": []}
+    selected: list[dict] = []
+    for r in _priced(rows):
+        if not _in_date_window(r, window) or (proven_only and not _proven(r)):
+            continue
+        cls = f19_class(r)
+        if cls is None:
+            continue
+        group, code = cls
+        face = _FACE_OF[code]
+        groups[group].append((1.0 if r["actual"] == code else 0.0) - float(r["fair"][face]))
+        if group == "价内":
+            selected.append(r)
+    resid, other = groups["价内"], groups["未价"]
+    kwargs = dict(stratum="pooled", as_of_policy="registry_window_date",
+                  cost_axis_pp=statistics.fmean(other) * 100 if other else None,
+                  inputs_hash=_rows_hash(selected), selected_keys=_keys(selected),
+                  computed_by="nutmeg.decision.rsi_grading.grade_f19_prospective")
+    if not resid:
+        return GradeResult(n_cum=0, metric_value_pp=0.0, ci_low_pp=0.0, ci_high_pp=0.0, **kwargs)
+    point, lo, hi = _boot_mean_ci(resid, seed=seed, boots=boots)
+    return GradeResult(n_cum=len(resid), metric_value_pp=point * 100, ci_low_pp=lo * 100,
+                       ci_high_pp=hi * 100, **kwargs)
+
+
+PROSPECTIVE_ADAPTERS["F19"] = grade_f19_prospective      # 2026-10-16 登记，10-20 对象化
+PROOF_GATED = PROOF_GATED | {"F19"}

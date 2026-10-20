@@ -702,3 +702,39 @@ def test_attach_kernel_fuzzy_needs_same_result_and_a_free_row_else_keeps_the_ker
     assert attached == 1 and taken["kernel"]["match_id"] == "m1"
     assert "kernel" not in other  # different result is a different match
     assert [r["key"] for r in rows if r["src"] == "kernel"] == ["kernel-m2"]
+
+
+def test_dedupe_adopts_proven_twin_research_labels_with_legs_flags_first():
+    fair = {"home": 0.5, "draw": 0.3, "away": 0.2}
+    zucai = _lane_row("26144-8", "zucai", "0", fair, titan="7")
+    zucai["labels"] = {"anchor_integrity": "pass", "directional_flags": []}
+    twin = _lane_row("2026-10-17-周六013", "jczq", "0", fair, titan="7")
+    twin["provably_prospective"] = True
+    twin["labels"] = {"anchor_integrity": "fail", "underdog_side": "away",
+                      "underdog_strength": "real", "label_source": "research"}
+    unproven = _lane_row("26144-9", "zucai", "3", fair, titan="8")
+    stale = _lane_row("2026-10-17-周六025", "jczq", "3", fair, titan="8")
+    stale["labels"] = {"underdog_side": "home", "label_source": "research"}
+
+    rows, dropped = corpus_build.dedupe([zucai, unproven], [twin, stale])
+
+    assert dropped == 2
+    labels = {r["key"]: r.get("labels") for r in rows}
+    assert labels["26144-8"]["anchor_integrity"] == "pass"           # legs-base 优先
+    assert labels["26144-8"]["underdog_side"] == "away"
+    assert labels["26144-8"]["label_source"] == "legs+twin-research"
+    assert labels["26144-8"]["research_from"] == "2026-10-17-周六013"
+    assert labels["26144-9"] is None                                  # 孪生不可证前瞻：不并
+
+
+def test_research_labels_carry_underdog_path_and_intl_drift_needs_all_three_faces():
+    labels = corpus_build._research_labels({"strength_balance": {"underdog_path": {
+        "side": "home", "exists": True, "strength": "real", "routes": ["定位球"]}}})
+    assert (labels["underdog_side"], labels["underdog_strength"]) == ("home", "real")
+    none = corpus_build._research_labels({"strength_balance": {"underdog_path": {
+        "side": "home", "exists": False}}, "anchor_side": "away"})
+    assert none["underdog_side"] is None
+    assert corpus_build._intl_drift({"drift_home_pp": 1.2, "drift_draw_pp": -0.5,
+                                     "drift_away_pp": -0.7}) == {
+        "home": 1.2, "draw": -0.5, "away": -0.7}
+    assert corpus_build._intl_drift({"drift_home_pp": 1.2}) is None
