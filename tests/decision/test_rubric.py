@@ -74,7 +74,7 @@ def test_tilt_is_a_zero_sum_shift_with_per_item_evidence_that_passes_stance_rule
                             "falsifier": "客队首发公布主力中卫在列则作废", "why_not_market": "none",
                             "tilt": {"face": "3", "evidence": []}}, norm, PRIOR)
     assert stance["tilt_declared"] == {"face": "3", "evidence": []}
-    assert stance["why_not_market"] == "tilt_evidence"            # r2 下仍有 F_suspension 拨动
+    assert stance["why_not_market"] == "none"                     # r3 起没有拨动项（2026-10-20）
     _, issues = validate_stance(stance, confidence=3, death_three_proofs={})
     assert not issues, [i.message for i in issues]
     result = apply_tilt(PRIOR, tilt, kickoff=KICK)
@@ -86,30 +86,42 @@ def test_tilt_is_a_zero_sum_shift_with_per_item_evidence_that_passes_stance_rule
 
 def test_r2_retires_ten_caps_and_only_suspension_still_moves_belief():
     """2026-10-19 Jun 裁「可以」：9 项 T13 propose_zero + F_rotation（反号）上限退役。
-    问题照问、照记账、T13 照测；拨动只剩 F_suspension。"""
+    问题照问、照记账、T13 照测；r2 下拨动只剩 F_suspension。"""
+    from nutmeg.decision.rubric_items import EFFECT_ITEMS, directional_items, items_markdown
+
+    assert directional_items("r2") == ("F_suspension",)
+    assert len(directional_items("r1")) == 11 and set(directional_items("r1")) == set(EFFECT_ITEMS)
+    answers = dict(F_absence_away={"p": 0.9, **SRC}, S_anchor_side={"answer": "home"},
+                   S_underdog_path={"p": 0.8}, F_rotation={"answer": "away", "p": 1.0, **SRC})
+    norm, _ = validate_rubric(_rubric(**answers), kickoff=KICK)
+    assert rubric_to_tilt(norm, PRIOR, version="r2") is None          # 成立的项全是退役上限
+    norm, _ = validate_rubric(_rubric(**answers, F_suspension={"answer": "away", "p": 1.0, **SRC}),
+                              kickoff=KICK)
+    tilt = rubric_to_tilt(norm, PRIOR, version="r2")
+    assert [e["item"] for e in tilt["evidence"]] == ["F_suspension"]
+    assert tilt["derived_from"] == "rubric:r2" and tilt["shift"]["0"] == -4
+    assert "0（r2 退役，原 6）" in items_markdown("r2")
+
+
+def test_r3_retires_suspension_so_no_item_moves_belief():
+    """2026-10-20 Jun 裁「批」：F_suspension 补回孪生研究标签后 propose_zero（收件箱 RSI-f94e4c）。
+    r3 起没有拨动项，belief＝市场；问题表不变、四版答案一起结账。"""
     from nutmeg.decision.rubric_items import (
-        EFFECT_ITEMS,
         RUBRIC_CHANGELOG,
         SUPPORTED_VERSIONS,
         directional_items,
         items_markdown,
     )
 
-    assert RUBRIC_VERSION == "r2" and SUPPORTED_VERSIONS == ("r1", "r2")
-    assert directional_items() == ("F_suspension",)
-    assert len(directional_items("r1")) == 11 and set(directional_items("r1")) == set(EFFECT_ITEMS)
-    assert RUBRIC_CHANGELOG[-1]["version"] == "r2"
-    assert "#rubric-r2" in RUBRIC_CHANGELOG[-1]["evidence"]
-    answers = dict(F_absence_away={"p": 0.9, **SRC}, S_anchor_side={"answer": "home"},
-                   S_underdog_path={"p": 0.8}, F_rotation={"answer": "away", "p": 1.0, **SRC})
-    norm, _ = validate_rubric(_rubric(**answers), kickoff=KICK)
-    assert rubric_to_tilt(norm, PRIOR) is None                        # 成立的项全是退役上限
-    norm, _ = validate_rubric(_rubric(**answers, F_suspension={"answer": "away", "p": 1.0, **SRC}),
+    assert RUBRIC_VERSION == "r3" and SUPPORTED_VERSIONS == ("r1", "r2", "r3")
+    assert directional_items() == ()
+    assert RUBRIC_CHANGELOG[-1]["version"] == "r3"
+    assert "#rubric-r3" in RUBRIC_CHANGELOG[-1]["evidence"]
+    norm, _ = validate_rubric(_rubric(S_anchor_side={"answer": "home"},
+                                      F_suspension={"answer": "away", "p": 1.0, **SRC}),
                               kickoff=KICK)
-    tilt = rubric_to_tilt(norm, PRIOR)
-    assert [e["item"] for e in tilt["evidence"]] == ["F_suspension"]
-    assert tilt["derived_from"] == "rubric:r2" and tilt["shift"]["0"] == -4
-    assert "0（r2 退役，原 6）" in items_markdown()
+    assert rubric_to_tilt(norm, PRIOR) is None
+    assert "0（r3 退役，原 4）" in items_markdown()
 
 
 def test_priced_in_halves_fact_pp_and_peak_is_capped_at_15():

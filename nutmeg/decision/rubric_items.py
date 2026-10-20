@@ -8,10 +8,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-RUBRIC_VERSION = "r2"
-SUPPORTED_VERSIONS = ("r1", "r2")
+RUBRIC_VERSION = "r3"
+SUPPORTED_VERSIONS = ("r1", "r2", "r3")
 """评分器只认这些版本的答案（语料行带 `rubric_version`）；改表＝新版本，旧版本的 n 不混进来。
-r2 只退役上限、问题表一字未改，所以 r1/r2 的答案可比，两版一起结账。"""
+r2/r3 只退役上限、问题表一字未改，所以 r1/r2/r3 的答案可比，三版一起结账。"""
 PHASES = ("fact", "structure", "price", "conclusion")
 SIDES = ("home", "away")
 UNKNOWN = "unknown"
@@ -27,6 +27,11 @@ RUBRIC_CHANGELOG = (
                "+ F_rotation（propose_change −14.1pp，与效应方向相反）；只留 F_suspension"
                "（above_floor/hold）。Jun 2026-10-19 裁「可以」",
      "evidence": "docs/superpowers/evidence/2026-10-19-rsi-protocol-v2.md#rubric-r2"},
+    {"version": "r3", "date": "2026-10-20",
+     "change": "F_suspension 拨动上限退役（T13 严格 n 136→191 后 observed +9.5→+0.6pp、"
+               "p 0.04→0.90，propose_zero；收件箱 RSI-f94e4c）。起所有项不拨动，belief＝市场；"
+               "问题表一字未改、照答照结账。Jun 2026-10-20 裁「批」",
+     "evidence": "docs/superpowers/evidence/2026-10-19-rsi-protocol-v2.md#rubric-r3"},
 )
 """增删项的治理：①证据文档说明为什么（结账数据或两读 kappa）→ ②这里加一条 changelog →
 ③`RUBRIC_VERSION` 升号、`SUPPORTED_VERSIONS` 决定评分器混不混旧版 →
@@ -68,7 +73,8 @@ _add(Item("F_absence_away", "fact", "noul", effect="down:away", cap_pp=6, source
           text="客队关键球员缺阵已被官方或主帅确认", cap_until="r2"))
 _add(Item("F_suspension", "fact", "choice", options=("home", "away", "both", "none", UNKNOWN),
           effect="down:side", cap_pp=4, source_required=True, tier="official", kind="suspension",
-          text="哪一侧有核实的停赛（累积黄牌/红牌）", effect_options=("home", "away", "both")))
+          text="哪一侧有核实的停赛（累积黄牌/红牌）", effect_options=("home", "away", "both"),
+          cap_until="r3"))
 _add(Item("F_rotation", "fact", "choice", options=("home", "away", "both", "none", UNKNOWN),
           effect="down:side", cap_pp=3, source_required=True, tier="official",
           kind="rotation_confirmed",

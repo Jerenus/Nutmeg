@@ -194,7 +194,10 @@ def test_new_verdicts_route_to_their_registered_exit():
     assert any("F99" in n and "观察型" in n for n in collected.notes)
 
 
-def test_rubric_proposals_map_to_the_live_caps_and_upward_moves_are_not_executable():
+def test_rubric_proposals_map_to_the_live_caps_and_upward_moves_are_not_executable(monkeypatch):
+    import functools
+
+    from nutmeg.decision import rubric_items
     from nutmeg.decision.rsi_loop import StepResult, _collect
 
     rows = [
@@ -210,6 +213,12 @@ def test_rubric_proposals_map_to_the_live_caps_and_upward_moves_are_not_executab
     step = StepResult("factor_propose", "ok", 1.0, "", {"commands": [
         {"cmd": "rsi weights propose --all", "status": "ok", "tail": "",
          "json": rows}]})
+    # r3（2026-10-20）起 F_suspension 上限已是 0：同一提案不再进收件箱
+    live = _collect([step])
+    assert live.inbox == [] and "rubric_F_suspension" in live.quiet
+    # 按 r2 的上限读（F_suspension 4pp）：映射到真上限、进收件箱
+    monkeypatch.setattr(rubric_items, "cap_at",
+                        functools.partial(rubric_items.cap_at, version="r2"))
     collected = _collect([step])
     assert [i["key"] for i in collected.inbox] == ["rubric_cap:F_suspension"]
     assert "4pp → 0" in collected.inbox[0]["text"]

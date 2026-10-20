@@ -91,7 +91,28 @@ def _rubric_research(tmp_path):
     return path
 
 
-def test_item_level_override_derives_the_tilt_and_books_the_reason(tmp_path):
+def _suspension_override(path):
+    return record_override(path, items={"F_suspension": {
+        "answer": "away", "p": 1.0, "source": "https://club.example/official",
+        "captured_at": "2026-10-03T09:00:00+08:00"}}, reason="new_official_info",
+        note="官宣后补上", at="2026-10-03T10:00:00+08:00", judge="claude", prior=PRIOR,
+        kickoff="2026-10-03T22:00:00+08:00")
+
+
+def test_item_level_override_under_r3_books_the_reason_but_never_moves_belief(tmp_path):
+    # r3（2026-10-20）：最后一项 F_suspension 上限退役，改判照记账，belief＝市场
+    row = _suspension_override(_rubric_research(tmp_path))
+    assert row["reason"] == "new_official_info" and row["tilt"] is None
+    assert row["final_belief"] == PRIOR
+
+
+def test_item_level_override_derives_the_tilt_and_books_the_reason(tmp_path, monkeypatch):
+    import functools
+
+    from nutmeg.decision import rubric
+    # 聚合机制按 r2 上限测（r3 起没有拨动项）
+    monkeypatch.setattr(rubric, "rubric_to_tilt",
+                        functools.partial(rubric.rubric_to_tilt, version="r2"))
     path = _rubric_research(tmp_path)
     row = record_override(path, items={"F_suspension": {
         "answer": "away", "p": 1.0, "source": "https://club.example/official",

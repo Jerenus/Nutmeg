@@ -1,7 +1,7 @@
 {% extends "layout.html" %}{% block title %}方法{% endblock %}
 {% block body %}<h1>方法</h1>
 <h2>判断的字典序</h2><ol><li>强弱天平：两队本场的最终强度对比，事件分级 → belief；没有命名事件的场次跟市场。</li><li>P 定结构：帽内按判断概率最大化全对概率；期望值不进决策层。</li><li>奖池只破平局。</li></ol>
-<h2>belief 怎么动</h2><p>研究对固定问题表逐项作答（概率 + 来源），拨动由代码按每项上限派生；上限只许按逐项结账往下调或退役。rubric r2（2026-10-19）起只有「停赛」一项还在拨动，其余项照答、照记账、照结账。</p>
+<h2>belief 怎么动</h2><p>研究对固定问题表逐项作答（概率 + 来源），拨动由代码按每项上限派生；上限只许按逐项结账往下调或退役。rubric r3（2026-10-20）起没有任何一项拨动——逐项结账全部测不出效应，belief 就是市场价；问题照答、照记账、照结账，测出效应的项才会以新版本恢复上限。</p>
 <h2>判断如何自我修正（RSI）</h2>
 <figure><svg viewBox="0 0 720 140" role="img" aria-label="每日闭环：终盘补采到提交九步，判决只判一次，改规则由人">
 <defs><marker id="a" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="currentColor"/></marker></defs>

@@ -672,8 +672,14 @@ def test_missing_channel_map_is_built_from_the_live_board_before_reuse(tmp_path)
     assert calls == []
 
 
-def test_evidence_timestamps_are_stamped_by_the_system(tmp_path):
+def test_evidence_timestamps_are_stamped_by_the_system(tmp_path, monkeypatch):
     """派生 tilt 的 evidence 与 rubric 项都由系统盖章；分析员自填的时刻只留 *_declared。"""
+    import functools
+
+    from nutmeg.decision import rubric
+    # 聚合按 r2 上限测（r3 起没有拨动项，2026-10-20）
+    monkeypatch.setattr(rubric, "rubric_to_tilt",
+                        functools.partial(rubric.rubric_to_tilt, version="r2"))
     root = _board(tmp_path, n=1)
     doc = json.loads(GOOD)
     doc["rubric"] = {"version": "r2", "items": {                  # r2 起只有 F_suspension 拨动
@@ -711,14 +717,20 @@ def test_missing_or_bad_rubric_never_rejects_a_deep_research(tmp_path):
                                                 "S_anchor_side": {"answer": "home"}},
                      "belief": {"3": 3}}
     out = _validate(json.dumps(doc), leg)
-    assert out["rubric_missing"] is False and out["rubric"]["version"] == "r2"
+    assert out["rubric_missing"] is False and out["rubric"]["version"] == "r3"
     assert out["rubric"]["items"]["F_absence_home"]["abstain"]
     assert out["rubric"]["items"]["F_goalkeeper"]["answer"] == "unknown"
     assert out["rubric"]["items"]["S_anchor_side"]["answer"] == "home"
     assert out["rubric"]["belief"] is None and len(out["rubric_notes"]) >= 3
 
 
-def test_rubric_items_are_stamped_and_tilt_is_derived_from_them(tmp_path):
+def test_rubric_items_are_stamped_and_tilt_is_derived_from_them(tmp_path, monkeypatch):
+    import functools
+
+    from nutmeg.decision import rubric
+    # 聚合按 r2 上限测（r3 起没有拨动项，2026-10-20）
+    monkeypatch.setattr(rubric, "rubric_to_tilt",
+                        functools.partial(rubric.rubric_to_tilt, version="r2"))
     root = _board(tmp_path, n=1)
     doc = json.loads(GOOD)
     doc["stance"] = {**doc["stance"], "tilt": {"face": "3", "expires_if": "x", "evidence": [

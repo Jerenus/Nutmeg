@@ -167,6 +167,12 @@ def test_override_records_the_ruling_and_refreshes_immediately(tmp_path, monkeyp
 
 
 def test_override_on_rubric_research_lands_on_items_with_a_reason(tmp_path, monkeypatch):
+    import functools
+
+    from nutmeg.decision import rubric
+    # 聚合按 r2 上限测（r3 起没有拨动项，2026-10-20）
+    monkeypatch.setattr(rubric, "rubric_to_tilt",
+                        functools.partial(rubric.rubric_to_tilt, version="r2"))
     import nutmeg.interfaces.cli.research as mod
 
     day_dir = tmp_path / "jczq" / "daily" / "2026-10-03"

@@ -64,7 +64,7 @@
 
 否决＝改票后再审；人坚持原票可登记（登记是事实），审票行随票入账。新增否决项必须先有回放或复盘实证（≥2 次独立样本），与「〇、规则实证表」同纪律。
 
-## 九、判断 rubric（r1 2026-10-02 / **r2 2026-10-19 上限退役**，`nutmeg/decision/rubric_items.py` / `rubric.py`）
+## 九、判断 rubric（r1 2026-10-02 / r2 2026-10-19 上限退役 / **r3 2026-10-20 全部上限退役**，`nutmeg/decision/rubric_items.py` / `rubric.py`）
 
 研究层对固定问题表逐项作答（每项：答案、成立概率、来源、采集时间、可弃权）；`stance.tilt` **由答案派生**，不再手写。参考 Jev（类型化问题→概率，不生成解释）、HealthBench（逐例二值标准 + 负分项 + 评分器被评测）、协议级 rubric（分阶段合取、一票作废）。
 
@@ -72,7 +72,7 @@
 |---|---|---|---|---|---|---|---|---|
 | `F_absence_home` | fact | noul | p∈[0,1]/null | down:home | 0（r2 退役，原 6） | 必填 | — | r1 |
 | `F_absence_away` | fact | noul | p∈[0,1]/null | down:away | 0（r2 退役，原 6） | 必填 | — | r1 |
-| `F_suspension` | fact | choice | home/away/both/none/unknown | down:side | 4 | 必填 | official | r1 |
+| `F_suspension` | fact | choice | home/away/both/none/unknown | down:side | 0（r3 退役，原 4） | 必填 | official | r1 |
 | `F_rotation` | fact | choice | home/away/both/none/unknown | down:side | 0（r2 退役，原 3） | 必填 | — | r1 |
 | `F_goalkeeper` | fact | choice | home/away/none/unknown | down:side | 0（r2 退役，原 3） | 必填 | — | r1 |
 | `F_venue` | fact | choice | home/away/none/unknown | down:side | 0（r2 退役，原 2） | 必填 | — | r1 |
@@ -89,13 +89,15 @@
 **聚合（协议级，`rubric_to_tilt`）**：pp_i = 上限_i × p_i（p<0.5 不成立）；效应把 pp 从一侧挪到另两面按市场比例分配；**事实层（7 项）无一成立 → 预算 0（无锚归零）**；`S_anchor_side=none` → 全部归零；`M_facts_priced` 成立 → 事实层 pp ×0.5；shift 峰值 ≤15pp；派生 tilt 的 evidence 逐项带 `item/tier/kind/pp/source/captured_at`，走原 `validate_stance/apply_tilt`。
 **强制弃权（反"把没说的当成说了"）**：标"必填"的项答是/有效选项而无 source、或 captured_at 非法/晚于开球 → 改为弃权并记 `coerced`，不拒收整份研究。**rubric 永不导致拒收（2026-10-02 晚，保护池子）**：分析员漏写 rubric＝全部弃权跟市场（记 `rubric_missing`），表外选项/越界概率/不合法整体分布改为弃权或丢弃（记 `rubric_notes`）——拒收会烧 40 场/日预算并在 R0/R1 覆盖上留缺口；漏答率在两读报表里数。
 **r2（2026-10-19，Jun 裁「可以」）**：按本节「结账与退役」的规则执行——9 项 T13 propose_zero（F_absence_home/F_absence_away/F_goalkeeper/F_venue/O_other_event/S_spine_intact/S_underdog_path/S_draw_mode/S_crash_candidate）+ F_rotation（propose_change −14.1pp，与效应方向相反）**上限退役**；问题照问、照记账、T13 逐项照测（`EFFECT_ITEMS`），拨动只剩 `F_suspension`。问题表一字未改，r1/r2 答案一起结账（`SUPPORTED_VERSIONS`）；`derived_from` 记聚合用的版本。逐项数字见 `docs/superpowers/evidence/2026-10-19-rsi-protocol-v2.md#rubric-r2`。
+
+**r3（2026-10-20，Jun 裁「批」）**：语料补回板面通路孪生的研究标签后，`F_suspension` 严格 n 136→191、observed +9.5→+0.6pp（p 0.04→0.90），T13 propose_zero（收件箱 RSI-f94e4c）→ 上限退役。**起没有任何一项拨动，belief＝市场；研究的作用只剩表态面（F14b 量）与逐项记账。**问题表一字未改，r1/r2/r3 答案一起结账；某项将来逐项结账出线（above_floor 且两窗同号），按本节治理以新版本恢复上限。证据 `docs/superpowers/evidence/2026-10-19-rsi-protocol-v2.md#rubric-r3`。
 **负分项**：`X_narrative_only`（有拨动而事实层全弃权＝归零）、`X_post_kickoff`（T12）由代码派生；~~`X_risk_named_naked`（C19）~~ 2026-10-19 随 C19 退休。
 **两读**：读者 B（`NUTMEG_MODEL_READER`，默认 haiku）只读分析员写下的证据层（不含 stance/rubric），对同一张表作答 → 侧车 `rubric-<code>.json` / `<期>-rubric-m<N>.json`；逐项一致率在 `analytics/rubric/<日>.md`；K1（合并 kappa）2026-10-08 v2 结账 survived，但合并 κ 被词表异质抬高——**K2**（2026-10-19 登记）逐项 κ 按项次加权，n_min 1,500 项次、CI 下界 <40 证伪；只收开球前的研究与开球前读的侧车。两读不独立（B 读的是 A 写下的证据），κ 只量「能否从证据复原答案」。
 **结账与退役**：每个带效应的项是 T13 因子 `rubric_<id>`（`experiments/rubric_rows.py`）；`propose_zero` → 该项上限退役；`propose_change` 只许把上限往下截；kappa<0.4 的项列入重写/删除清单。改判 `research override --tilt-json` 仍直接替换 tilt，研究标 `rubric_overridden`。
 **读者 B 的 `belief`**（整体概率）只记账，不进 belief——F9 已证 LLM 整体概率≈市场。
-**改判（2026-10-02 起）**：有 rubric 的研究，`research override` 必须落到项（`--items-json` + `--reason`）或 `--market`，不得直接写 tilt；tilt 从合并后的 rubric 按**当前版本**上限重新派生（`derived_from: rubric:r2+override`）。理由封闭枚举：`new_official_info / evidence_tier_too_low / priced_in / research_contradiction / market_only`（无 rubric 的旧研究自动记 `legacy_tilt`）。改判账在判决页按理由分层（Brier 得失），净负的理由类停用。
+**改判（2026-10-02 起）**：有 rubric 的研究，`research override` 必须落到项（`--items-json` + `--reason`）或 `--market`，不得直接写 tilt；tilt 从合并后的 rubric 按**当前版本**上限重新派生（`derived_from: rubric:<版本>+override`；r3 起无拨动项，改判只记账不动 belief）。理由封闭枚举：`new_official_info / evidence_tier_too_low / priced_in / research_contradiction / market_only`（无 rubric 的旧研究自动记 `legacy_tilt`）。改判账在判决页按理由分层（Brier 得失），净负的理由类停用。
 **人的偏离（2026-10-02 起）**：`betslip register/preview` 对照机器初稿（`<期>-draft.json` 的「初稿」）报加场/丢场/放宽/收窄/换面；有差异时带 `--deviation`（`fact_self_judged / price_instinct / stake_allocation / structure_preference / other`）+ `--prediction`（一句赛后可核验）。不带只警告不阻断（登记是事实），但不进「人的偏离」账；账房 `account month` 按理由列净值与预测。**理由先于结果（2026-10-06）**：登记簿记 `deviation_at`（理由写下的时刻；同 slip_id 补登记沿用，换理由才记新时刻）与 `first_kickoff`（票内最早开球）；`deviation_at ≥ first_kickoff` 的理由单列「开球后才写理由」，不进按理由的净值——看过结果再写的理由是回看，拿它给理由类记功过会把运气记成判断。
-**来源层级（只采集）**：事实项可带 `source_tier`（`club_official / league_official / press / aggregator / social / unknown`），r1/r2 不按层级加权；K2 结账后按层级看逐项有效性，再决定下一版是否按层级定上限。
+**来源层级（只采集）**：事实项可带 `source_tier`（`club_official / league_official / press / aggregator / social / unknown`），r1–r3 不按层级加权；K2 结账后按层级看逐项有效性，再决定下一版是否按层级定上限。
 **治理**：增删项 ①先写证据文档（结账数据或两读 kappa）→ ②`RUBRIC_CHANGELOG` 加一条 → ③`RUBRIC_VERSION` 升号，`SUPPORTED_VERSIONS` 决定评分器混不混旧版 → ④退役项写 `until`、新项写 `since`、只退上限写 `cap_until` → ⑤K2 与逐项因子按 `rubric_version` 过滤。`nutmeg rubric items [--version]` 打印当前表与变更记录。没有证据文档不许改表。
 
 ## 十、人群偏离假说（CR，2026-10-07，`nutmeg/decision/crowd_*.py`）
