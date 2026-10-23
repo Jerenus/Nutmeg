@@ -12746,6 +12746,508 @@
    "identity": "t:3073139",
    "key": "2026-10-20-周二010",
    "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:26+08:00",
+   "detail": {
+    "current_key": "26146-2"
+   },
+   "exp": "F9",
+   "identity": "t:3073089",
+   "key": "2026-10-20-周二008",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-10-23T10:45:26+08:00",
+   "detail": {
+    "current_key": "26146-1"
+   },
+   "exp": "F9",
+   "identity": "t:3073118",
+   "key": "2026-10-20-周二007",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-10-23T10:45:26+08:00",
+   "detail": {
+    "current_key": "26146-6"
+   },
+   "exp": "F9",
+   "identity": "t:3073165",
+   "key": "2026-10-20-周二005",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-10-23T10:45:26+08:00",
+   "detail": {
+    "current_key": "26146-3"
+   },
+   "exp": "F9",
+   "identity": "t:3073185",
+   "key": "2026-10-20-周二004",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-10-23T10:45:26+08:00",
+   "detail": null,
+   "exp": "F9",
+   "identity": "t:3073139",
+   "key": "26146-4",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:26+08:00",
+   "detail": null,
+   "exp": "F9",
+   "identity": "t:3073171",
+   "key": "26146-8",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:26+08:00",
+   "detail": null,
+   "exp": "F9",
+   "identity": "t:3073188",
+   "key": "26146-9",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:26+08:00",
+   "detail": null,
+   "exp": "F9",
+   "identity": "t:3073157",
+   "key": "26146-10",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:26+08:00",
+   "detail": null,
+   "exp": "F9",
+   "identity": "t:3073080",
+   "key": "26146-11",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:26+08:00",
+   "detail": null,
+   "exp": "F9",
+   "identity": "t:3073145",
+   "key": "26146-12",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:26+08:00",
+   "detail": {
+    "current_key": "26146-1"
+   },
+   "exp": "F10",
+   "identity": "t:3073118",
+   "key": "2026-10-20-周二007",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-10-23T10:45:26+08:00",
+   "detail": {
+    "current_key": "26146-4"
+   },
+   "exp": "F10",
+   "identity": "t:3073139",
+   "key": "2026-10-20-周二010",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-10-23T10:45:26+08:00",
+   "detail": null,
+   "exp": "F10",
+   "identity": "t:3073165",
+   "key": "26146-6",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:26+08:00",
+   "detail": null,
+   "exp": "F10",
+   "identity": "t:3073157",
+   "key": "26146-10",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:26+08:00",
+   "detail": null,
+   "exp": "F10",
+   "identity": "t:3073160",
+   "key": "26146-13",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:26+08:00",
+   "detail": null,
+   "exp": "F10",
+   "identity": "t:3073082",
+   "key": "26146-14",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:26+08:00",
+   "detail": null,
+   "exp": "F10",
+   "identity": "t:3073173",
+   "key": "2026-10-21-周三011",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:26+08:00",
+   "detail": {
+    "current_key": "26146-1"
+   },
+   "exp": "F14b",
+   "identity": "t:3073118",
+   "key": "2026-10-20-周二007",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-10-23T10:45:26+08:00",
+   "detail": null,
+   "exp": "F14b",
+   "identity": "t:3073110",
+   "key": "26146-7",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:26+08:00",
+   "detail": null,
+   "exp": "F14b",
+   "identity": "t:3073188",
+   "key": "26146-9",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:26+08:00",
+   "detail": null,
+   "exp": "F14b",
+   "identity": "t:3073080",
+   "key": "26146-11",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:26+08:00",
+   "detail": null,
+   "exp": "F14b",
+   "identity": "t:3000494",
+   "key": "2026-10-21-周三001",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:27+08:00",
+   "detail": {
+    "current_key": "26146-1"
+   },
+   "exp": "F17",
+   "identity": "t:3073118",
+   "key": "2026-10-20-周二007",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-10-23T10:45:27+08:00",
+   "detail": {
+    "current_key": "26146-2"
+   },
+   "exp": "F18",
+   "identity": "t:3073089",
+   "key": "2026-10-20-周二008",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-10-23T10:45:27+08:00",
+   "detail": {
+    "current_key": "26146-1"
+   },
+   "exp": "F18",
+   "identity": "t:3073118",
+   "key": "2026-10-20-周二007",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-10-23T10:45:27+08:00",
+   "detail": {
+    "current_key": "26146-4"
+   },
+   "exp": "F18",
+   "identity": "t:3073139",
+   "key": "2026-10-20-周二010",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-10-23T10:45:27+08:00",
+   "detail": {
+    "current_key": "26146-6"
+   },
+   "exp": "F18",
+   "identity": "t:3073165",
+   "key": "2026-10-20-周二005",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-10-23T10:45:27+08:00",
+   "detail": null,
+   "exp": "F18",
+   "identity": "t:3073157",
+   "key": "26146-10",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:27+08:00",
+   "detail": null,
+   "exp": "F18",
+   "identity": "t:3073160",
+   "key": "26146-13",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:27+08:00",
+   "detail": null,
+   "exp": "F18",
+   "identity": "t:3073082",
+   "key": "26146-14",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:27+08:00",
+   "detail": null,
+   "exp": "F18",
+   "identity": "t:3073173",
+   "key": "2026-10-21-周三011",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": null,
+   "exp": "F19",
+   "identity": "t:3073118",
+   "key": "26146-1",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": null,
+   "exp": "F19",
+   "identity": "t:3073185",
+   "key": "26146-3",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": null,
+   "exp": "F19",
+   "identity": "t:3073077",
+   "key": "26146-5",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": null,
+   "exp": "F19",
+   "identity": "t:3073110",
+   "key": "26146-7",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": null,
+   "exp": "F19",
+   "identity": "t:3073171",
+   "key": "26146-8",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": null,
+   "exp": "F19",
+   "identity": "t:3073188",
+   "key": "26146-9",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": null,
+   "exp": "F19",
+   "identity": "t:3073080",
+   "key": "26146-11",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": null,
+   "exp": "F19",
+   "identity": "t:3073145",
+   "key": "26146-12",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": {
+    "current_key": "26146-5"
+   },
+   "exp": "K2",
+   "identity": "t:3073077",
+   "key": "2026-10-20-周二006",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": {
+    "current_key": "26146-2"
+   },
+   "exp": "K2",
+   "identity": "t:3073089",
+   "key": "2026-10-20-周二008",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": {
+    "current_key": "26146-7"
+   },
+   "exp": "K2",
+   "identity": "t:3073110",
+   "key": "2026-10-20-周二009",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": {
+    "current_key": "26146-1"
+   },
+   "exp": "K2",
+   "identity": "t:3073118",
+   "key": "2026-10-20-周二007",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": {
+    "current_key": "26146-4"
+   },
+   "exp": "K2",
+   "identity": "t:3073139",
+   "key": "2026-10-20-周二010",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": {
+    "current_key": "26146-6"
+   },
+   "exp": "K2",
+   "identity": "t:3073165",
+   "key": "2026-10-20-周二005",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": {
+    "current_key": "26146-3"
+   },
+   "exp": "K2",
+   "identity": "t:3073185",
+   "key": "2026-10-20-周二004",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": null,
+   "exp": "K2",
+   "identity": "t:3073171",
+   "key": "26146-8",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": null,
+   "exp": "K2",
+   "identity": "t:3073188",
+   "key": "26146-9",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": null,
+   "exp": "K2",
+   "identity": "t:3073157",
+   "key": "26146-10",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": null,
+   "exp": "K2",
+   "identity": "t:3073080",
+   "key": "26146-11",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": null,
+   "exp": "K2",
+   "identity": "t:3073145",
+   "key": "26146-12",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": null,
+   "exp": "K2",
+   "identity": "t:3073160",
+   "key": "26146-13",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": null,
+   "exp": "K2",
+   "identity": "t:3073082",
+   "key": "26146-14",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": null,
+   "exp": "K2",
+   "identity": "t:3000494",
+   "key": "2026-10-21-周三001",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": null,
+   "exp": "K2",
+   "identity": "t:3000495",
+   "key": "2026-10-21-周三002",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": null,
+   "exp": "K2",
+   "identity": "t:3000127",
+   "key": "2026-10-21-周三003",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": null,
+   "exp": "K2",
+   "identity": "t:3073173",
+   "key": "2026-10-21-周三011",
+   "kind": "admitted"
+  },
+  {
+   "at": "2026-10-23T10:45:28+08:00",
+   "detail": null,
+   "exp": "K2",
+   "identity": "t:3092418",
+   "key": "2026-10-21-周三013",
+   "kind": "admitted"
   }
  ],
  "experiments": {
@@ -13335,6 +13837,18 @@
      "row": "05593081b7420ea8",
      "source": "grade"
     },
+    "t:3073082": {
+     "admitted_at": "2026-10-23T10:45:26+08:00",
+     "aliases": [
+      "k:2026-10-21-周三007",
+      "k:26146-14",
+      "m:match-b7754844ed20417fb396645daeb4cbe1",
+      "t:3073082"
+     ],
+     "key": "26146-14",
+     "row": "fcec27b1696b165a",
+     "source": "grade"
+    },
     "t:3073093": {
      "admitted_at": "2026-10-14T10:45:19+08:00",
      "aliases": [
@@ -13406,6 +13920,52 @@
      ],
      "key": "2026-10-20-周二002",
      "row": "683fd2787775fc03",
+     "source": "grade"
+    },
+    "t:3073157": {
+     "admitted_at": "2026-10-23T10:45:26+08:00",
+     "aliases": [
+      "k:2026-10-21-周三008",
+      "k:26146-10",
+      "m:match-390c34d0321d4c12981b3703e27c1bfb",
+      "t:3073157"
+     ],
+     "key": "26146-10",
+     "row": "0127d479c036c5a7",
+     "source": "grade"
+    },
+    "t:3073160": {
+     "admitted_at": "2026-10-23T10:45:26+08:00",
+     "aliases": [
+      "k:2026-10-21-周三009",
+      "k:26146-13",
+      "m:match-e395dc252f284bd69047d6d57505c62e",
+      "t:3073160"
+     ],
+     "key": "26146-13",
+     "row": "bb79af4fcf377453",
+     "source": "grade"
+    },
+    "t:3073165": {
+     "admitted_at": "2026-10-23T10:45:26+08:00",
+     "aliases": [
+      "k:2026-10-20-周二005",
+      "k:26146-6",
+      "m:match-52f339d4631342ccaae8aa7aa0704582",
+      "t:3073165"
+     ],
+     "key": "26146-6",
+     "row": "9567fed0481da9ab",
+     "source": "grade"
+    },
+    "t:3073173": {
+     "admitted_at": "2026-10-23T10:45:26+08:00",
+     "aliases": [
+      "k:2026-10-21-周三011",
+      "t:3073173"
+     ],
+     "key": "2026-10-21-周三011",
+     "row": "6af835e6b4b4ed55",
      "source": "grade"
     },
     "t:3073178": {
@@ -16969,6 +17529,40 @@
   },
   "F14b": {
    "members": {
+    "t:3000494": {
+     "admitted_at": "2026-10-23T10:45:26+08:00",
+     "aliases": [
+      "k:2026-10-21-周三001",
+      "t:3000494"
+     ],
+     "key": "2026-10-21-周三001",
+     "row": "55904e5720038ca8",
+     "source": "grade"
+    },
+    "t:3073080": {
+     "admitted_at": "2026-10-23T10:45:26+08:00",
+     "aliases": [
+      "k:2026-10-21-周三010",
+      "k:26146-11",
+      "m:match-f839c89b1c0f45ee9ef0de82293e9c05",
+      "t:3073080"
+     ],
+     "key": "26146-11",
+     "row": "0f72252c9da60c7a",
+     "source": "grade"
+    },
+    "t:3073110": {
+     "admitted_at": "2026-10-23T10:45:26+08:00",
+     "aliases": [
+      "k:2026-10-20-周二009",
+      "k:26146-7",
+      "m:match-919de3142dad454f9be6c3fa9ea6eda7",
+      "t:3073110"
+     ],
+     "key": "26146-7",
+     "row": "4a6e3623aab332bf",
+     "source": "grade"
+    },
     "t:3073118": {
      "admitted_at": "2026-10-21T10:45:55+08:00",
      "aliases": [
@@ -16977,6 +17571,18 @@
      ],
      "key": "2026-10-20-周二007",
      "row": "f9bb070b5b7d6f43",
+     "source": "grade"
+    },
+    "t:3073188": {
+     "admitted_at": "2026-10-23T10:45:26+08:00",
+     "aliases": [
+      "k:2026-10-21-周三005",
+      "k:26146-9",
+      "m:match-efbe64534a88466bad589a2dfba5d4e6",
+      "t:3073188"
+     ],
+     "key": "26146-9",
+     "row": "3885c9e0a5db7e26",
      "source": "grade"
     }
    },
@@ -17598,6 +18204,18 @@
      "row": "1f0c19e09361cc73",
      "source": "grade"
     },
+    "t:3073082": {
+     "admitted_at": "2026-10-23T10:45:27+08:00",
+     "aliases": [
+      "k:2026-10-21-周三007",
+      "k:26146-14",
+      "m:match-b7754844ed20417fb396645daeb4cbe1",
+      "t:3073082"
+     ],
+     "key": "26146-14",
+     "row": "fcec27b1696b165a",
+     "source": "grade"
+    },
     "t:3073089": {
      "admitted_at": "2026-10-21T10:45:56+08:00",
      "aliases": [
@@ -17650,6 +18268,30 @@
      "row": "683fd2787775fc03",
      "source": "grade"
     },
+    "t:3073157": {
+     "admitted_at": "2026-10-23T10:45:27+08:00",
+     "aliases": [
+      "k:2026-10-21-周三008",
+      "k:26146-10",
+      "m:match-390c34d0321d4c12981b3703e27c1bfb",
+      "t:3073157"
+     ],
+     "key": "26146-10",
+     "row": "0127d479c036c5a7",
+     "source": "grade"
+    },
+    "t:3073160": {
+     "admitted_at": "2026-10-23T10:45:27+08:00",
+     "aliases": [
+      "k:2026-10-21-周三009",
+      "k:26146-13",
+      "m:match-e395dc252f284bd69047d6d57505c62e",
+      "t:3073160"
+     ],
+     "key": "26146-13",
+     "row": "bb79af4fcf377453",
+     "source": "grade"
+    },
     "t:3073165": {
      "admitted_at": "2026-10-21T10:45:56+08:00",
      "aliases": [
@@ -17658,6 +18300,16 @@
      ],
      "key": "2026-10-20-周二005",
      "row": "78c1ea7aa774a65f",
+     "source": "grade"
+    },
+    "t:3073173": {
+     "admitted_at": "2026-10-23T10:45:27+08:00",
+     "aliases": [
+      "k:2026-10-21-周三011",
+      "t:3073173"
+     ],
+     "key": "2026-10-21-周三011",
+     "row": "6af835e6b4b4ed55",
      "source": "grade"
     },
     "t:3073197": {
@@ -17944,6 +18596,102 @@
      ],
      "key": "26144-8",
      "row": "edb2b5246b87f83b",
+     "source": "grade"
+    },
+    "t:3073077": {
+     "admitted_at": "2026-10-23T10:45:28+08:00",
+     "aliases": [
+      "k:2026-10-20-周二006",
+      "k:26146-5",
+      "m:match-3529da48f00849f3b8f3e7c310fe41e5",
+      "t:3073077"
+     ],
+     "key": "26146-5",
+     "row": "c1249cc1c685cc68",
+     "source": "grade"
+    },
+    "t:3073080": {
+     "admitted_at": "2026-10-23T10:45:28+08:00",
+     "aliases": [
+      "k:2026-10-21-周三010",
+      "k:26146-11",
+      "m:match-f839c89b1c0f45ee9ef0de82293e9c05",
+      "t:3073080"
+     ],
+     "key": "26146-11",
+     "row": "0f72252c9da60c7a",
+     "source": "grade"
+    },
+    "t:3073110": {
+     "admitted_at": "2026-10-23T10:45:28+08:00",
+     "aliases": [
+      "k:2026-10-20-周二009",
+      "k:26146-7",
+      "m:match-919de3142dad454f9be6c3fa9ea6eda7",
+      "t:3073110"
+     ],
+     "key": "26146-7",
+     "row": "4a6e3623aab332bf",
+     "source": "grade"
+    },
+    "t:3073118": {
+     "admitted_at": "2026-10-23T10:45:28+08:00",
+     "aliases": [
+      "k:2026-10-20-周二007",
+      "k:26146-1",
+      "m:match-c0fd93f332aa44f1b5fe831783f6592e",
+      "t:3073118"
+     ],
+     "key": "26146-1",
+     "row": "d9d1feea40d93bae",
+     "source": "grade"
+    },
+    "t:3073145": {
+     "admitted_at": "2026-10-23T10:45:28+08:00",
+     "aliases": [
+      "k:2026-10-21-周三012",
+      "k:26146-12",
+      "m:match-b201572947da4709b42da6ae4284d043",
+      "t:3073145"
+     ],
+     "key": "26146-12",
+     "row": "41dcc40d326be4ee",
+     "source": "grade"
+    },
+    "t:3073171": {
+     "admitted_at": "2026-10-23T10:45:28+08:00",
+     "aliases": [
+      "k:2026-10-21-周三004",
+      "k:26146-8",
+      "m:match-82e7cadf96ef4ad78eeedc529d8c806e",
+      "t:3073171"
+     ],
+     "key": "26146-8",
+     "row": "7479c36942d419a7",
+     "source": "grade"
+    },
+    "t:3073185": {
+     "admitted_at": "2026-10-23T10:45:28+08:00",
+     "aliases": [
+      "k:2026-10-20-周二004",
+      "k:26146-3",
+      "m:match-dafb694e691a48768f4331abc6b325d3",
+      "t:3073185"
+     ],
+     "key": "26146-3",
+     "row": "3daa2e58fbf72abe",
+     "source": "grade"
+    },
+    "t:3073188": {
+     "admitted_at": "2026-10-23T10:45:28+08:00",
+     "aliases": [
+      "k:2026-10-21-周三005",
+      "k:26146-9",
+      "m:match-efbe64534a88466bad589a2dfba5d4e6",
+      "t:3073188"
+     ],
+     "key": "26146-9",
+     "row": "3885c9e0a5db7e26",
      "source": "grade"
     }
    },
@@ -20735,6 +21483,18 @@
      "row": "8f2d7969c083d334",
      "source": "grade"
     },
+    "t:3073080": {
+     "admitted_at": "2026-10-23T10:45:26+08:00",
+     "aliases": [
+      "k:2026-10-21-周三010",
+      "k:26146-11",
+      "m:match-f839c89b1c0f45ee9ef0de82293e9c05",
+      "t:3073080"
+     ],
+     "key": "26146-11",
+     "row": "0f72252c9da60c7a",
+     "source": "grade"
+    },
     "t:3073084": {
      "admitted_at": "2026-10-16T10:45:58+08:00",
      "aliases": [
@@ -20831,6 +21591,18 @@
      "row": "834779a2668669ca",
      "source": "grade"
     },
+    "t:3073139": {
+     "admitted_at": "2026-10-23T10:45:26+08:00",
+     "aliases": [
+      "k:2026-10-20-周二010",
+      "k:26146-4",
+      "m:match-7168982ebbb744ed9f60b23410b82588",
+      "t:3073139"
+     ],
+     "key": "26146-4",
+     "row": "eae12b64ce0f012b",
+     "source": "grade"
+    },
     "t:3073140": {
      "admitted_at": "2026-10-16T10:45:58+08:00",
      "aliases": [
@@ -20841,6 +21613,18 @@
      ],
      "key": "26141-6",
      "row": "31928c841a6554ee",
+     "source": "grade"
+    },
+    "t:3073145": {
+     "admitted_at": "2026-10-23T10:45:26+08:00",
+     "aliases": [
+      "k:2026-10-21-周三012",
+      "k:26146-12",
+      "m:match-b201572947da4709b42da6ae4284d043",
+      "t:3073145"
+     ],
+     "key": "26146-12",
+     "row": "41dcc40d326be4ee",
      "source": "grade"
     },
     "t:3073150": {
@@ -20867,6 +21651,18 @@
      "row": "8755df76375cf4bd",
      "source": "grade"
     },
+    "t:3073157": {
+     "admitted_at": "2026-10-23T10:45:26+08:00",
+     "aliases": [
+      "k:2026-10-21-周三008",
+      "k:26146-10",
+      "m:match-390c34d0321d4c12981b3703e27c1bfb",
+      "t:3073157"
+     ],
+     "key": "26146-10",
+     "row": "0127d479c036c5a7",
+     "source": "grade"
+    },
     "t:3073165": {
      "admitted_at": "2026-10-21T10:45:54+08:00",
      "aliases": [
@@ -20875,6 +21671,18 @@
      ],
      "key": "2026-10-20-周二005",
      "row": "78c1ea7aa774a65f",
+     "source": "grade"
+    },
+    "t:3073171": {
+     "admitted_at": "2026-10-23T10:45:26+08:00",
+     "aliases": [
+      "k:2026-10-21-周三004",
+      "k:26146-8",
+      "m:match-82e7cadf96ef4ad78eeedc529d8c806e",
+      "t:3073171"
+     ],
+     "key": "26146-8",
+     "row": "7479c36942d419a7",
      "source": "grade"
     },
     "t:3073178": {
@@ -20905,6 +21713,18 @@
      ],
      "key": "2026-10-20-周二004",
      "row": "3c932ee28a876996",
+     "source": "grade"
+    },
+    "t:3073188": {
+     "admitted_at": "2026-10-23T10:45:26+08:00",
+     "aliases": [
+      "k:2026-10-21-周三005",
+      "k:26146-9",
+      "m:match-efbe64534a88466bad589a2dfba5d4e6",
+      "t:3073188"
+     ],
+     "key": "26146-9",
+     "row": "3885c9e0a5db7e26",
      "source": "grade"
     },
     "t:3073199": {
@@ -23609,6 +24429,36 @@
   },
   "K2": {
    "members": {
+    "t:3000127": {
+     "admitted_at": "2026-10-23T10:45:28+08:00",
+     "aliases": [
+      "k:2026-10-21-周三003",
+      "t:3000127"
+     ],
+     "key": "2026-10-21-周三003",
+     "row": "2807379eda8c8744",
+     "source": "grade"
+    },
+    "t:3000494": {
+     "admitted_at": "2026-10-23T10:45:28+08:00",
+     "aliases": [
+      "k:2026-10-21-周三001",
+      "t:3000494"
+     ],
+     "key": "2026-10-21-周三001",
+     "row": "55904e5720038ca8",
+     "source": "grade"
+    },
+    "t:3000495": {
+     "admitted_at": "2026-10-23T10:45:28+08:00",
+     "aliases": [
+      "k:2026-10-21-周三002",
+      "t:3000495"
+     ],
+     "key": "2026-10-21-周三002",
+     "row": "cc6de149607dcafc",
+     "source": "grade"
+    },
     "t:3008217": {
      "admitted_at": "2026-10-21T10:45:56+08:00",
      "aliases": [
@@ -23627,6 +24477,30 @@
      ],
      "key": "2026-10-20-周二006",
      "row": "d99cf109c0c2f2c3",
+     "source": "grade"
+    },
+    "t:3073080": {
+     "admitted_at": "2026-10-23T10:45:28+08:00",
+     "aliases": [
+      "k:2026-10-21-周三010",
+      "k:26146-11",
+      "m:match-f839c89b1c0f45ee9ef0de82293e9c05",
+      "t:3073080"
+     ],
+     "key": "26146-11",
+     "row": "0f72252c9da60c7a",
+     "source": "grade"
+    },
+    "t:3073082": {
+     "admitted_at": "2026-10-23T10:45:28+08:00",
+     "aliases": [
+      "k:2026-10-21-周三007",
+      "k:26146-14",
+      "m:match-b7754844ed20417fb396645daeb4cbe1",
+      "t:3073082"
+     ],
+     "key": "26146-14",
+     "row": "fcec27b1696b165a",
      "source": "grade"
     },
     "t:3073089": {
@@ -23669,6 +24543,18 @@
      "row": "d775a5860c095fde",
      "source": "grade"
     },
+    "t:3073145": {
+     "admitted_at": "2026-10-23T10:45:28+08:00",
+     "aliases": [
+      "k:2026-10-21-周三012",
+      "k:26146-12",
+      "m:match-b201572947da4709b42da6ae4284d043",
+      "t:3073145"
+     ],
+     "key": "26146-12",
+     "row": "41dcc40d326be4ee",
+     "source": "grade"
+    },
     "t:3073151": {
      "admitted_at": "2026-10-21T10:45:56+08:00",
      "aliases": [
@@ -23677,6 +24563,30 @@
      ],
      "key": "2026-10-20-周二002",
      "row": "683fd2787775fc03",
+     "source": "grade"
+    },
+    "t:3073157": {
+     "admitted_at": "2026-10-23T10:45:28+08:00",
+     "aliases": [
+      "k:2026-10-21-周三008",
+      "k:26146-10",
+      "m:match-390c34d0321d4c12981b3703e27c1bfb",
+      "t:3073157"
+     ],
+     "key": "26146-10",
+     "row": "0127d479c036c5a7",
+     "source": "grade"
+    },
+    "t:3073160": {
+     "admitted_at": "2026-10-23T10:45:28+08:00",
+     "aliases": [
+      "k:2026-10-21-周三009",
+      "k:26146-13",
+      "m:match-e395dc252f284bd69047d6d57505c62e",
+      "t:3073160"
+     ],
+     "key": "26146-13",
+     "row": "bb79af4fcf377453",
      "source": "grade"
     },
     "t:3073165": {
@@ -23689,6 +24599,28 @@
      "row": "78c1ea7aa774a65f",
      "source": "grade"
     },
+    "t:3073171": {
+     "admitted_at": "2026-10-23T10:45:28+08:00",
+     "aliases": [
+      "k:2026-10-21-周三004",
+      "k:26146-8",
+      "m:match-82e7cadf96ef4ad78eeedc529d8c806e",
+      "t:3073171"
+     ],
+     "key": "26146-8",
+     "row": "7479c36942d419a7",
+     "source": "grade"
+    },
+    "t:3073173": {
+     "admitted_at": "2026-10-23T10:45:28+08:00",
+     "aliases": [
+      "k:2026-10-21-周三011",
+      "t:3073173"
+     ],
+     "key": "2026-10-21-周三011",
+     "row": "6af835e6b4b4ed55",
+     "source": "grade"
+    },
     "t:3073185": {
      "admitted_at": "2026-10-21T10:45:56+08:00",
      "aliases": [
@@ -23699,6 +24631,18 @@
      "row": "3c932ee28a876996",
      "source": "grade"
     },
+    "t:3073188": {
+     "admitted_at": "2026-10-23T10:45:28+08:00",
+     "aliases": [
+      "k:2026-10-21-周三005",
+      "k:26146-9",
+      "m:match-efbe64534a88466bad589a2dfba5d4e6",
+      "t:3073188"
+     ],
+     "key": "26146-9",
+     "row": "3885c9e0a5db7e26",
+     "source": "grade"
+    },
     "t:3073197": {
      "admitted_at": "2026-10-21T10:45:56+08:00",
      "aliases": [
@@ -23707,6 +24651,16 @@
      ],
      "key": "2026-10-20-周二001",
      "row": "9b7a3e6c638091d1",
+     "source": "grade"
+    },
+    "t:3092418": {
+     "admitted_at": "2026-10-23T10:45:28+08:00",
+     "aliases": [
+      "k:2026-10-21-周三013",
+      "t:3092418"
+     ],
+     "key": "2026-10-21-周三013",
+     "row": "bf3f64861561096f",
      "source": "grade"
     }
    },
@@ -24417,6 +25371,427 @@
     "rest_diff": -7
    },
    "titan007_id": "3008253"
+  },
+  "0127d479c036c5a7": {
+   "actual": "3",
+   "belief": {
+    "away": 0.0978,
+    "draw": 0.15030000000000002,
+    "home": 0.7519
+   },
+   "belief_moved": true,
+   "call": null,
+   "closing": {
+    "all_books": 327,
+    "all_fair": {
+     "away": 0.088409,
+     "draw": 0.149763,
+     "home": 0.761828
+    },
+    "book_count": 328,
+    "fetched_at": "2026-10-19T02:45:27+00:00",
+    "sharp_books": 15,
+    "sharp_fair": {
+     "away": 0.091903,
+     "draw": 0.146069,
+     "home": 0.762028
+    },
+    "sharp_odds": {
+     "away": 10.188,
+     "draw": 6.41,
+     "home": 1.2287
+    },
+    "sharp_opening_odds": {
+     "away": 9.5347,
+     "draw": 6.1547,
+     "home": 1.2467
+    },
+    "source": "titan007_history",
+    "updated_at_max": "2026-10-19T02:45:00",
+    "updated_at_min": "2026-10-14T22:37:00"
+   },
+   "conf": 3,
+   "date": "2026-10-22",
+   "fair": {
+    "away": 0.0978,
+    "draw": 0.15030000000000002,
+    "home": 0.7519
+   },
+   "fair_kind": "read_time",
+   "fair_source": "legs-base",
+   "intl_drift_pp": {
+    "away": -0.96,
+    "draw": -1.38,
+    "home": 2.34
+   },
+   "issue": "26146",
+   "jczq_no": "周三008",
+   "judged_at_source": "legs-base.legs[n].judged_at",
+   "kernel": {
+    "actor_id": "judge:owner",
+    "commitment_tier": "commit",
+    "evidence_coverage": null,
+    "evidence_quality": null,
+    "falsifier": "维拉 90 分钟未取胜（平或负）即判断作废；若 Emery 首发轮换≥5 名主力且仍未赢，作废归因于轮换而非实力误判",
+    "forecast_revision_id": "fr-f1ab48a9ff5c4520bebe9cbb23cde516",
+    "information_cutoff_at": null,
+    "made_at": "2026-10-20T10:30:13+00:00",
+    "match_id": "match-390c34d0321d4c12981b3703e27c1bfb",
+    "model_name": null,
+    "outcome_source": "official-results",
+    "providers": [
+     "zucai-canonical"
+    ],
+    "revision_no": 5,
+    "scheduled_at": "2026-10-22"
+   },
+   "kernel_belief": {
+    "away": 0.0978,
+    "draw": 0.15030000000000002,
+    "home": 0.7519
+   },
+   "kernel_provably_prospective": true,
+   "key": "26146-10",
+   "labels": {
+    "anchor_integrity": "pass",
+    "anchor_side": "home",
+    "crash_markers": [],
+    "death_three_proofs": {
+     "away": {
+      "a": false,
+      "b": false,
+      "c": true,
+      "proof_count": "1/3",
+      "verdict": "alive"
+     },
+     "draw": {
+      "a": false,
+      "b": false,
+      "c": true,
+      "proof_count": "1/3",
+      "verdict": "alive"
+     }
+    },
+    "directional_flags": [],
+    "hole_location_priced_in": true,
+    "hole_location_side": "home",
+    "hole_location_unit": "defense",
+    "label_source": "legs+research",
+    "license_questions": {
+     "q1_spine": true,
+     "q2_route": true,
+     "q3a_opponent_scores": true,
+     "q3b_opponent_takes_points": false,
+     "q4_no_context_flag": true
+    },
+    "nondirectional_flags": [],
+    "override_reason": null,
+    "precedents": [
+     [
+      "3",
+      "alive"
+     ],
+     [
+      "0",
+      "alive"
+     ]
+    ],
+    "researched_at": null,
+    "rest_days": null,
+    "rotation_risk": null,
+    "rubric": {
+     "F_absence_home": {
+      "answer": "yes",
+      "p": 0.6,
+      "source_tier": "press"
+     },
+     "F_goalkeeper": {
+      "answer": "none",
+      "p": 0.85,
+      "source_tier": "press"
+     },
+     "F_suspension": {
+      "answer": "none",
+      "p": 0.9,
+      "source_tier": "press"
+     },
+     "F_venue": {
+      "answer": "none",
+      "p": 0.95,
+      "source_tier": "press"
+     },
+     "M_facts_priced": {
+      "answer": "yes",
+      "p": 0.8,
+      "source_tier": "unknown"
+     },
+     "M_market_read": {
+      "answer": "agree",
+      "p": 0.7,
+      "source_tier": "unknown"
+     },
+     "O_other_event": {
+      "answer": "none",
+      "p": 1.0,
+      "source_tier": "unknown"
+     },
+     "S_anchor_side": {
+      "answer": "home",
+      "p": 0.95,
+      "source_tier": "unknown"
+     },
+     "S_crash_candidate": {
+      "answer": "no",
+      "p": 0.3,
+      "source_tier": "unknown"
+     },
+     "S_dead_face": {
+      "answer": "none",
+      "p": 1.0,
+      "source_tier": "unknown"
+     },
+     "S_draw_mode": {
+      "answer": "no",
+      "p": 0.15,
+      "source_tier": "unknown"
+     },
+     "S_spine_intact": {
+      "answer": "yes",
+      "p": 0.85,
+      "source_tier": "press"
+     },
+     "S_underdog_path": {
+      "answer": "no",
+      "p": 0.3,
+      "source_tier": "unknown"
+     }
+    },
+    "rubric_b": {
+     "at": "2026-10-18T21:52:18+08:00",
+     "belief": {
+      "0": 0.1,
+      "1": 0.18,
+      "3": 0.72
+     },
+     "items": {
+      "F_absence_away": {
+       "answer": "no",
+       "p": 0.05,
+       "source_tier": "unknown"
+      },
+      "F_absence_home": {
+       "answer": "no",
+       "p": 0.2,
+       "source_tier": "unknown"
+      },
+      "F_rotation": {
+       "answer": "none",
+       "p": 0.85,
+       "source_tier": "press"
+      },
+      "F_suspension": {
+       "answer": "none",
+       "p": 0.75,
+       "source_tier": "press"
+      },
+      "M_facts_priced": {
+       "answer": "yes",
+       "p": 0.7,
+       "source_tier": "unknown"
+      },
+      "M_market_read": {
+       "answer": "agree",
+       "p": 0.7,
+       "source_tier": "unknown"
+      },
+      "O_other_event": {
+       "answer": "home",
+       "p": 0.7,
+       "source_tier": "press"
+      },
+      "S_anchor_side": {
+       "answer": "home",
+       "p": 0.85,
+       "source_tier": "unknown"
+      },
+      "S_crash_candidate": {
+       "answer": "no",
+       "p": 0.4,
+       "source_tier": "unknown"
+      },
+      "S_dead_face": {
+       "answer": "none",
+       "p": 0.8,
+       "source_tier": "unknown"
+      },
+      "S_draw_mode": {
+       "answer": "no",
+       "p": 0.2,
+       "source_tier": "unknown"
+      },
+      "S_spine_intact": {
+       "answer": "yes",
+       "p": 0.8,
+       "source_tier": "press"
+      },
+      "S_underdog_path": {
+       "answer": "yes",
+       "p": 0.65,
+       "source_tier": "unknown"
+      }
+     },
+     "kappa": {
+      "agree": 0.727,
+      "items": {
+       "F_absence_away": null,
+       "F_absence_home": false,
+       "F_goalkeeper": null,
+       "F_rotation": null,
+       "F_suspension": true,
+       "F_venue": null,
+       "M_facts_priced": true,
+       "M_market_read": true,
+       "O_other_event": false,
+       "S_anchor_side": true,
+       "S_crash_candidate": true,
+       "S_dead_face": true,
+       "S_draw_mode": true,
+       "S_spine_intact": true,
+       "S_underdog_path": false
+      },
+      "kappa": 0.649,
+      "n": 11
+     },
+     "model": "haiku",
+     "prospective": true,
+     "version": "r1"
+    },
+    "rubric_belief": {
+     "0": 0.11,
+     "1": 0.16,
+     "3": 0.73
+    },
+    "rubric_overridden": false,
+    "rubric_version": "r1",
+    "stance_cover": null,
+    "stance_face": "3",
+    "stance_structure": "single",
+    "team_tags": {},
+    "tracking_tags": [],
+    "underdog_side": "away",
+    "underdog_strength": "weak"
+   },
+   "match_no": 10,
+   "name": "维拉-维京·3",
+   "note": "",
+   "polymarket": {
+    "event_id": "1154833",
+    "faces": {
+     "away": {
+      "ask": 0.08,
+      "bid": 0.07,
+      "condition_id": "0x1221e5f6597dd44060bb75efdca38e4e804f37860558cb32cb19f2596689e2eb",
+      "last_trade": 0.07,
+      "mid": 0.07500000000000001,
+      "token": "90389042462483041869368566515454135412855958107890154674195083278880896749260",
+      "volume": 7397.0364660000005,
+      "volume24hr": 1053.569028
+     },
+     "draw": {
+      "ask": 0.14,
+      "bid": 0.13,
+      "condition_id": "0x73df5ce3af422da603c6b81d04c4af70e78bc74b1056d401c0778462e82fb486",
+      "last_trade": 0.14,
+      "mid": 0.135,
+      "token": "114736926189469566260953906299738195145165536790983271831983631911098100131663",
+      "volume": 3005.8666670000002,
+      "volume24hr": 277.168554
+     },
+     "home": {
+      "ask": 0.8,
+      "bid": 0.79,
+      "condition_id": "0xb60857169897a428604e48f7253f02cd723ab2fbb0540540568f5797fbaa5586",
+      "last_trade": 0.8,
+      "mid": 0.795,
+      "token": "24905463477133991567942336060013495453249841416336518060981546192563311638101",
+      "volume": 3611.8437539999995,
+      "volume24hr": 870.55452
+     }
+    },
+    "fetched_at": "2026-10-20T18:31:30+08:00",
+    "kickoff": "2026-10-22T03:00:00+08:00",
+    "liquidity": 393161.0004,
+    "lopsided": false,
+    "probs": {
+     "away": 0.0746268656716418,
+     "draw": 0.13432835820895522,
+     "home": 0.7910447761194029
+    },
+    "rank": 9,
+    "title": "Aston Villa FC vs. Viking FK",
+    "volume": 14014.746887,
+    "volume24hr": 2201.292102,
+    "vs_market_pp": {
+     "away": -1.3,
+     "draw": -0.6,
+     "home": 1.9
+    }
+   },
+   "provably_prospective": true,
+   "quotes": {
+    "intl": {
+     "closing": {
+      "away": 11.3895,
+      "captured_at": "2026-10-20T10:30:04+00:00",
+      "draw": 7.1276,
+      "home": 1.2955
+     },
+     "n_snapshots": 4,
+     "opening": {
+      "away": 11.0742,
+      "captured_at": "2026-10-18T13:31:37+00:00",
+      "draw": 6.6225,
+      "home": 1.318
+     },
+     "span_hours": 44.97
+    }
+   },
+   "src": "zucai",
+   "team_load": {
+    "absences": {
+     "away": [],
+     "home": [
+      "缺阵"
+     ]
+    },
+    "away": "维京",
+    "away_key": "name:维京",
+    "away_load": {
+     "long_break": false,
+     "matches_14d": 2,
+     "next_days": null,
+     "rest_days": 8
+    },
+    "captured_at": "2026-10-20T18:45:04+08:00",
+    "flags": [],
+    "home": "维拉",
+    "home_key": "eng-aston-villa",
+    "home_load": {
+     "long_break": false,
+     "matches_14d": 3,
+     "next_days": null,
+     "rest_days": 4
+    },
+    "key": "26146-10",
+    "kickoff": "2026-10-22T03:00:00+08:00",
+    "load_diff_14": 1,
+    "match_id": "match-390c34d0321d4c12981b3703e27c1bfb",
+    "rest_diff": -4
+   },
+   "titan007_id": "3073157",
+   "twin_keys": [
+    "2026-10-21-周三008"
+   ]
   },
   "0146d2d8da6e762c": {
    "actual": "0",
@@ -28581,6 +29956,441 @@
     "rest_diff": -1
    },
    "titan007_id": "3013716"
+  },
+  "0f72252c9da60c7a": {
+   "actual": "1",
+   "belief": {
+    "away": 0.31696830316968305,
+    "draw": 0.29167083291670837,
+    "home": 0.3913608639136087
+   },
+   "belief_moved": true,
+   "call": null,
+   "closing": {
+    "all_books": 326,
+    "all_fair": {
+     "away": 0.30258,
+     "draw": 0.252751,
+     "home": 0.444669
+    },
+    "book_count": 327,
+    "fetched_at": "2026-10-19T02:45:27+00:00",
+    "sharp_books": 15,
+    "sharp_fair": {
+     "away": 0.300251,
+     "draw": 0.254895,
+     "home": 0.444854
+    },
+    "sharp_odds": {
+     "away": 3.1213,
+     "draw": 3.6767,
+     "home": 2.1067
+    },
+    "sharp_opening_odds": {
+     "away": 2.896,
+     "draw": 3.5947,
+     "home": 2.224
+    },
+    "source": "titan007_history",
+    "updated_at_max": "2026-10-19T02:35:00",
+    "updated_at_min": "2026-10-14T22:38:00"
+   },
+   "conf": 2,
+   "date": "2026-10-22",
+   "fair": {
+    "away": 0.31696830316968305,
+    "draw": 0.29167083291670837,
+    "home": 0.3913608639136087
+   },
+   "fair_kind": "read_time",
+   "fair_source": "legs-base",
+   "intl_drift_pp": {
+    "away": -3.23,
+    "draw": -0.81,
+    "home": 4.04
+   },
+   "issue": "26146",
+   "jczq_no": "周三010",
+   "judged_at_source": "legs-base.legs[n].judged_at",
+   "kernel": {
+    "actor_id": "judge:owner",
+    "commitment_tier": "commit",
+    "evidence_coverage": null,
+    "evidence_quality": null,
+    "falsifier": "拜仁 90 分钟内取胜，或阿森纳全场射正 ≤2 次且被拜仁控球压制至无有效反击。",
+    "forecast_revision_id": "fr-0c9761339679456da94c695ece234e91",
+    "information_cutoff_at": null,
+    "made_at": "2026-10-20T10:30:13+00:00",
+    "match_id": "match-f839c89b1c0f45ee9ef0de82293e9c05",
+    "model_name": null,
+    "outcome_source": "official-results",
+    "providers": [
+     "zucai-canonical"
+    ],
+    "revision_no": 5,
+    "scheduled_at": "2026-10-22"
+   },
+   "kernel_belief": {
+    "away": 0.31696830316968305,
+    "draw": 0.29167083291670837,
+    "home": 0.3913608639136087
+   },
+   "kernel_provably_prospective": true,
+   "key": "26146-11",
+   "labels": {
+    "anchor_integrity": "symmetric_damage",
+    "anchor_side": "home",
+    "crash_markers": [],
+    "death_three_proofs": {
+     "away": {
+      "a": false,
+      "b": false,
+      "c": false,
+      "proof_count": "0/3",
+      "verdict": "alive"
+     },
+     "draw": {
+      "a": false,
+      "b": false,
+      "c": false,
+      "proof_count": "0/3",
+      "verdict": "alive"
+     },
+     "home": {
+      "a": false,
+      "b": false,
+      "c": false,
+      "proof_count": "0/3",
+      "verdict": "alive"
+     }
+    },
+    "directional_flags": [
+     "anchor_shield_out"
+    ],
+    "hole_location_priced_in": true,
+    "hole_location_side": "both",
+    "hole_location_unit": "both",
+    "label_source": "legs+research",
+    "license_questions": {
+     "q1_spine": true,
+     "q2_route": true,
+     "q3a_opponent_scores": true,
+     "q3b_opponent_takes_points": true,
+     "q4_no_context_flag": false
+    },
+    "nondirectional_flags": [
+     "two_way_instability"
+    ],
+    "override_reason": null,
+    "precedents": [
+     [
+      "0",
+      "alive"
+     ],
+     [
+      "1",
+      "alive"
+     ]
+    ],
+    "researched_at": null,
+    "rest_days": null,
+    "rotation_risk": null,
+    "rubric": {
+     "F_absence_away": {
+      "answer": "yes",
+      "p": 0.95,
+      "source_tier": "club_official"
+     },
+     "F_absence_home": {
+      "answer": "yes",
+      "p": 0.95,
+      "source_tier": "press"
+     },
+     "F_goalkeeper": {
+      "answer": "home",
+      "p": 0.6,
+      "source_tier": "press"
+     },
+     "F_suspension": {
+      "answer": "home",
+      "p": 0.98,
+      "source_tier": "press"
+     },
+     "F_venue": {
+      "answer": "none",
+      "p": 0.98,
+      "source_tier": "league_official"
+     },
+     "M_facts_priced": {
+      "answer": "yes",
+      "p": 0.7,
+      "source_tier": "unknown"
+     },
+     "M_market_read": {
+      "answer": "overpriced_fav",
+      "p": 0.55,
+      "source_tier": "unknown"
+     },
+     "O_other_event": {
+      "answer": "home",
+      "p": 0.8,
+      "source_tier": "press"
+     },
+     "S_anchor_side": {
+      "answer": "home",
+      "p": 0.55,
+      "source_tier": "unknown"
+     },
+     "S_crash_candidate": {
+      "answer": "yes",
+      "p": 0.55,
+      "source_tier": "unknown"
+     },
+     "S_dead_face": {
+      "answer": "none",
+      "p": 0.9,
+      "source_tier": "unknown"
+     },
+     "S_draw_mode": {
+      "answer": "no",
+      "p": 0.2,
+      "source_tier": "unknown"
+     },
+     "S_spine_intact": {
+      "answer": "yes",
+      "p": 0.6,
+      "source_tier": "aggregator"
+     },
+     "S_underdog_path": {
+      "answer": "yes",
+      "p": 0.75,
+      "source_tier": "unknown"
+     }
+    },
+    "rubric_b": {
+     "at": "2026-10-18T21:52:18+08:00",
+     "belief": {
+      "0": 0.32,
+      "1": 0.26,
+      "3": 0.42
+     },
+     "items": {
+      "F_absence_away": {
+       "answer": "yes",
+       "p": 0.95,
+       "source_tier": "club_official"
+      },
+      "F_absence_home": {
+       "answer": "yes",
+       "p": 0.95,
+       "source_tier": "club_official"
+      },
+      "F_suspension": {
+       "answer": "home",
+       "p": 0.9,
+       "source_tier": "league_official"
+      },
+      "M_facts_priced": {
+       "answer": "yes",
+       "p": 0.75,
+       "source_tier": "unknown"
+      },
+      "M_market_read": {
+       "answer": "agree",
+       "p": 0.6,
+       "source_tier": "unknown"
+      },
+      "O_other_event": {
+       "answer": "away",
+       "p": 0.5,
+       "source_tier": "aggregator"
+      },
+      "S_anchor_side": {
+       "answer": "none",
+       "p": 0.7,
+       "source_tier": "unknown"
+      },
+      "S_crash_candidate": {
+       "answer": "yes",
+       "p": 0.5,
+       "source_tier": "unknown"
+      },
+      "S_dead_face": {
+       "answer": "none",
+       "p": 0.9,
+       "source_tier": "unknown"
+      },
+      "S_draw_mode": {
+       "answer": "no",
+       "p": 0.1,
+       "source_tier": "unknown"
+      },
+      "S_underdog_path": {
+       "answer": "yes",
+       "p": 0.8,
+       "source_tier": "unknown"
+      }
+     },
+     "kappa": {
+      "agree": 0.727,
+      "items": {
+       "F_absence_away": true,
+       "F_absence_home": true,
+       "F_goalkeeper": null,
+       "F_rotation": null,
+       "F_suspension": true,
+       "F_venue": null,
+       "M_facts_priced": true,
+       "M_market_read": false,
+       "O_other_event": false,
+       "S_anchor_side": false,
+       "S_crash_candidate": true,
+       "S_dead_face": true,
+       "S_draw_mode": true,
+       "S_spine_intact": null,
+       "S_underdog_path": true
+      },
+      "kappa": 0.633,
+      "n": 11
+     },
+     "model": "haiku",
+     "prospective": true,
+     "version": "r1"
+    },
+    "rubric_belief": {
+     "0": 0.32,
+     "1": 0.28,
+     "3": 0.4
+    },
+    "rubric_overridden": false,
+    "rubric_version": "r1",
+    "stance_cover": "1",
+    "stance_face": "0",
+    "stance_structure": "double",
+    "team_tags": {},
+    "tracking_tags": [],
+    "underdog_side": "away",
+    "underdog_strength": "real"
+   },
+   "match_no": 11,
+   "name": "拜仁-阿森纳·10",
+   "note": "",
+   "polymarket": {
+    "event_id": "1154850",
+    "faces": {
+     "away": {
+      "ask": 0.29,
+      "bid": 0.28,
+      "condition_id": "0x43bb68fc1b7e002559026c871d07b4d7e93d03beec11a986abdd950a0f4eaf1c",
+      "last_trade": 0.29,
+      "mid": 0.28500000000000003,
+      "token": "64479457833656173997570935422675377381802369658632636714002811001320587515495",
+      "volume": 15161.511586999999,
+      "volume24hr": 2800.593206
+     },
+     "draw": {
+      "ask": 0.25,
+      "bid": 0.24,
+      "condition_id": "0xed632f125120288fd153f59a4424a2357814ee95f01d36016a7ccbd28b8bd7fd",
+      "last_trade": 0.25,
+      "mid": 0.245,
+      "token": "11011844377313658791637238439980746281515251980331115205502276812973901198557",
+      "volume": 1431.181901,
+      "volume24hr": 279.64
+     },
+     "home": {
+      "ask": 0.48,
+      "bid": 0.47,
+      "condition_id": "0x6c99b60b726fcb7e4fdeecc1b4fbbd467fef8e984dfc6642abd0b675629a7eb3",
+      "last_trade": 0.48,
+      "mid": 0.475,
+      "token": "82853722658173342238781948595880114932844211419294037056959735369523146454820",
+      "volume": 30971.699513,
+      "volume24hr": 3674.09444
+     }
+    },
+    "fetched_at": "2026-10-20T18:31:30+08:00",
+    "kickoff": "2026-10-22T03:00:00+08:00",
+    "liquidity": 783532.8883,
+    "lopsided": false,
+    "probs": {
+     "away": 0.2835820895522388,
+     "draw": 0.24378109452736316,
+     "home": 0.47263681592039797
+    },
+    "rank": 5,
+    "title": "FC Bayern München vs. Arsenal FC",
+    "trend_pp": {
+     "away": -0.5,
+     "draw": -1.0,
+     "home": -9.5
+    },
+    "volume": 47564.393001,
+    "volume24hr": 6754.327646,
+    "vs_market_pp": {
+     "away": -0.3,
+     "draw": -0.8,
+     "home": 1.1
+    }
+   },
+   "provably_prospective": true,
+   "quotes": {
+    "intl": {
+     "closing": {
+      "away": 3.4847,
+      "captured_at": "2026-10-20T10:30:04+00:00",
+      "draw": 3.9734,
+      "home": 2.1675
+     },
+     "n_snapshots": 4,
+     "opening": {
+      "away": 3.2741,
+      "captured_at": "2026-10-18T13:31:37+00:00",
+      "draw": 3.9227,
+      "home": 2.2746
+     },
+     "span_hours": 44.97
+    }
+   },
+   "src": "zucai",
+   "team_load": {
+    "absences": {
+     "away": [
+      "缺阵"
+     ],
+     "home": [
+      "缺阵",
+      "停赛"
+     ]
+    },
+    "away": "阿森纳",
+    "away_key": "eng-arsenal",
+    "away_load": {
+     "long_break": false,
+     "matches_14d": 3,
+     "next_days": null,
+     "rest_days": 4
+    },
+    "captured_at": "2026-10-20T18:45:04+08:00",
+    "flags": [],
+    "home": "拜仁",
+    "home_key": "ger-bayern-munich",
+    "home_load": {
+     "long_break": false,
+     "matches_14d": 3,
+     "next_days": null,
+     "rest_days": 4
+    },
+    "key": "26146-11",
+    "kickoff": "2026-10-22T03:00:00+08:00",
+    "load_diff_14": 0,
+    "match_id": "match-f839c89b1c0f45ee9ef0de82293e9c05",
+    "rest_diff": 0
+   },
+   "titan007_id": "3073080",
+   "twin_keys": [
+    "2026-10-21-周三010"
+   ]
   },
   "1245aa84abd51687": {
    "actual": "3",
@@ -37948,6 +39758,309 @@
    "read_made_at": "2026-10-05T18:30:57+08:00",
    "src": "jczq",
    "titan007_id": "2981453"
+  },
+  "2807379eda8c8744": {
+   "actual": "0",
+   "belief": {
+    "away": 0.3279528252906022,
+    "draw": 0.24778560166202762,
+    "home": 0.4242615730473702
+   },
+   "belief_moved": false,
+   "books": 15,
+   "closing": {
+    "all_books": 321,
+    "all_fair": {
+     "away": 0.35534,
+     "draw": 0.245193,
+     "home": 0.399467
+    },
+    "book_count": 324,
+    "fetched_at": "2026-10-23T02:45:05+00:00",
+    "sharp_books": 15,
+    "sharp_fair": {
+     "away": 0.367664,
+     "draw": 0.244435,
+     "home": 0.387901
+    },
+    "sharp_odds": {
+     "away": 2.5033,
+     "draw": 3.7653,
+     "home": 2.3727
+    },
+    "sharp_opening_odds": {
+     "away": 2.8027,
+     "draw": 3.6767,
+     "home": 2.122
+    },
+    "source": "titan007_history",
+    "updated_at_max": "2026-10-21T10:00:00",
+    "updated_at_min": "2026-10-17T12:10:00"
+   },
+   "conf": 2,
+   "date": "2026-10-21",
+   "fair": {
+    "away": 0.327953,
+    "draw": 0.247786,
+    "home": 0.424261
+   },
+   "fair_kind": "read_time",
+   "fair_source": "bold_odds",
+   "goals": [
+    0,
+    3
+   ],
+   "ht": [
+    0,
+    0
+   ],
+   "issue": null,
+   "jczq_no": "周三003",
+   "judged_at_source": "research.captured_at",
+   "key": "2026-10-21-周三003",
+   "labels": {
+    "anchor_integrity": "pass",
+    "anchor_side": "none",
+    "crash_markers": [],
+    "death_three_proofs": {
+     "away": {
+      "a": false,
+      "b": false,
+      "c": true,
+      "proof_count": "1/3",
+      "verdict": "alive"
+     },
+     "draw": {
+      "a": false,
+      "b": false,
+      "c": true,
+      "proof_count": "1/3",
+      "verdict": "alive"
+     }
+    },
+    "directional_flags": [],
+    "hole_location_priced_in": true,
+    "hole_location_side": "none",
+    "hole_location_unit": "none",
+    "label_source": "research",
+    "license_questions": {
+     "q1_spine": true,
+     "q2_route": true,
+     "q3a_opponent_scores": true,
+     "q3b_opponent_takes_points": true,
+     "q4_no_context_flag": true
+    },
+    "nondirectional_flags": [],
+    "override_reason": null,
+    "precedents": [
+     [
+      "1",
+      "none"
+     ]
+    ],
+    "rest_days": "两队都只有 3 天恢复；大宫多一趟九州往返，富山从富山到埼玉路程较短。疲劳只算次要修正",
+    "rotation_risk": null,
+    "rubric": {
+     "F_absence_away": {
+      "answer": "no",
+      "p": 0.05,
+      "source_tier": "league_official"
+     },
+     "F_absence_home": {
+      "answer": "no",
+      "p": 0.05,
+      "source_tier": "league_official"
+     },
+     "F_goalkeeper": {
+      "answer": "none",
+      "p": 0.85,
+      "source_tier": "aggregator"
+     },
+     "F_suspension": {
+      "answer": "none",
+      "p": 0.95,
+      "source_tier": "league_official"
+     },
+     "F_venue": {
+      "answer": "none",
+      "p": 0.95,
+      "source_tier": "aggregator"
+     },
+     "M_market_read": {
+      "answer": "agree",
+      "p": 0.6,
+      "source_tier": "unknown"
+     },
+     "O_other_event": {
+      "answer": "none",
+      "p": 0.7,
+      "source_tier": "league_official"
+     },
+     "S_anchor_side": {
+      "answer": "none",
+      "p": 0.55,
+      "source_tier": "unknown"
+     },
+     "S_crash_candidate": {
+      "answer": "no",
+      "p": 0.2,
+      "source_tier": "unknown"
+     },
+     "S_dead_face": {
+      "answer": "none",
+      "p": 0.95,
+      "source_tier": "unknown"
+     },
+     "S_draw_mode": {
+      "answer": "no",
+      "p": 0.15,
+      "source_tier": "unknown"
+     },
+     "S_spine_intact": {
+      "answer": "yes",
+      "p": 0.85,
+      "source_tier": "league_official"
+     },
+     "S_underdog_path": {
+      "answer": "yes",
+      "p": 0.85,
+      "source_tier": "unknown"
+     }
+    },
+    "rubric_b": {
+     "at": "2026-10-21T10:45:18+08:00",
+     "belief": {
+      "0": 0.34,
+      "1": 0.25,
+      "3": 0.41
+     },
+     "items": {
+      "F_goalkeeper": {
+       "answer": "none",
+       "p": 0.85,
+       "source_tier": "aggregator"
+      },
+      "F_suspension": {
+       "answer": "none",
+       "p": 0.85,
+       "source_tier": "league_official"
+      },
+      "M_market_read": {
+       "answer": "overpriced_fav",
+       "p": 0.45,
+       "source_tier": "unknown"
+      },
+      "O_other_event": {
+       "answer": "home",
+       "p": 0.6,
+       "source_tier": "aggregator"
+      },
+      "S_anchor_side": {
+       "answer": "none",
+       "p": 0.9,
+       "source_tier": "unknown"
+      },
+      "S_dead_face": {
+       "answer": "none",
+       "p": 0.9,
+       "source_tier": "unknown"
+      },
+      "S_draw_mode": {
+       "answer": "no",
+       "p": 0.1,
+       "source_tier": "unknown"
+      },
+      "S_underdog_path": {
+       "answer": "yes",
+       "p": 0.7,
+       "source_tier": "unknown"
+      }
+     },
+     "kappa": {
+      "agree": 0.75,
+      "items": {
+       "F_absence_away": null,
+       "F_absence_home": null,
+       "F_goalkeeper": true,
+       "F_rotation": null,
+       "F_suspension": true,
+       "F_venue": null,
+       "M_facts_priced": null,
+       "M_market_read": false,
+       "O_other_event": false,
+       "S_anchor_side": true,
+       "S_crash_candidate": null,
+       "S_dead_face": true,
+       "S_draw_mode": true,
+       "S_spine_intact": null,
+       "S_underdog_path": true
+      },
+      "kappa": 0.619,
+      "n": 8
+     },
+     "model": "haiku",
+     "prospective": true,
+     "version": "r3"
+    },
+    "rubric_belief": {
+     "0": 0.33,
+     "1": 0.26,
+     "3": 0.41
+    },
+    "rubric_overridden": false,
+    "rubric_version": "r3",
+    "stance_cover": "0",
+    "stance_face": "3",
+    "stance_structure": "double",
+    "team_tags": {},
+    "tracking_tags": [],
+    "underdog_side": "away",
+    "underdog_strength": "strong"
+   },
+   "match_no": "周三003",
+   "name": null,
+   "note": "[周三003|大宫松鼠-富山胜利|deep_research] 两队底层数据很接近。大宫进 21 球、联赛最多（xG 1.65 / xGA 1.07，控球 56.9% 第 1）。富山场均射门 21.0、射正 7.8、机会构建率 17.3% 三项都是联赛第 1（xG 1.87 / xGA 1.08），但终结率只有 8.2%（第 15）。所以单看实力富山不比大宫弱，市场把大宫抬高约 10pp，主要是主场优势。最可能的走势：大宫靠 4-1-2-3 高位逼抢加控球，富山用三中卫出球、中路渗透和边翼卫传中对攻。两边都有稳定的破门手段，找不到双方都攻弱的证据，所以不支持小球或磨局；互有进球的一球差或平局是主线。状态与战意只是次要修正，净影响接近零：大宫上轮客场 1:2 负鸟栖，终结 11 轮不败，九州客场回来只隔 3 天再踢；富山 7 轮不败（3 胜 4 平），安达亮拿了 9 月月度最佳主帅。J 联赛 10/19 公布的停赛名单里没有这两队，也没查到伤停报道。最大",
+   "opening_odds": {
+    "away": 2.8027,
+    "draw": 3.6767,
+    "home": 2.122
+   },
+   "provably_prospective": true,
+   "read_id": "R-ai-jczq-2026-10-21-周三003-had-1715",
+   "read_made_at": "2026-10-21T17:15:03+08:00",
+   "src": "jczq",
+   "team_load": {
+    "absences": {
+     "away": [],
+     "home": []
+    },
+    "away": "富山胜利",
+    "away_key": "name:富山胜利",
+    "away_load": {
+     "long_break": true,
+     "matches_14d": 0,
+     "next_days": null,
+     "rest_days": 22
+    },
+    "captured_at": "2026-10-21T17:15:03+08:00",
+    "flags": [
+     "长歇:both"
+    ],
+    "home": "大宫松鼠",
+    "home_key": "name:大宫松鼠",
+    "home_load": {
+     "long_break": true,
+     "matches_14d": 0,
+     "next_days": null,
+     "rest_days": 25
+    },
+    "key": "2026-10-21-周三003",
+    "kickoff": "2026-10-21T18:00:00+08:00",
+    "load_diff_14": 0,
+    "match_id": "match-c4aa1d82a75342d09b7f77e9f5e45534",
+    "rest_diff": 3
+   },
+   "titan007_id": "3000127"
   },
   "2831b33ad478ed5a": {
    "actual": "0",
@@ -47385,6 +49498,363 @@
    },
    "titan007_id": "3008261"
   },
+  "3885c9e0a5db7e26": {
+   "actual": "0",
+   "belief": {
+    "away": 0.3174,
+    "draw": 0.28779999999999994,
+    "home": 0.39480000000000004
+   },
+   "belief_moved": true,
+   "call": null,
+   "closing": {
+    "all_books": 321,
+    "all_fair": {
+     "away": 0.30471,
+     "draw": 0.260702,
+     "home": 0.434588
+    },
+    "book_count": 322,
+    "fetched_at": "2026-10-19T02:45:26+00:00",
+    "sharp_books": 15,
+    "sharp_fair": {
+     "away": 0.309451,
+     "draw": 0.25756,
+     "home": 0.432989
+    },
+    "sharp_odds": {
+     "away": 3.0307,
+     "draw": 3.6413,
+     "home": 2.166
+    },
+    "sharp_opening_odds": {
+     "away": 3.1093,
+     "draw": 3.4993,
+     "home": 2.1533
+    },
+    "source": "titan007_history",
+    "updated_at_max": "2026-10-19T02:34:00",
+    "updated_at_min": "2026-10-14T23:48:00"
+   },
+   "conf": 2,
+   "date": "2026-10-22",
+   "fair": {
+    "away": 0.3174,
+    "draw": 0.28779999999999994,
+    "home": 0.39480000000000004
+   },
+   "fair_kind": "read_time",
+   "fair_source": "legs-base",
+   "intl_drift_pp": {
+    "away": 1.08,
+    "draw": -1.06,
+    "home": -0.02
+   },
+   "issue": "26146",
+   "jczq_no": "周三005",
+   "judged_at_source": "legs-base.legs[n].judged_at",
+   "kernel": {
+    "actor_id": "judge:owner",
+    "commitment_tier": "commit",
+    "evidence_coverage": null,
+    "evidence_quality": null,
+    "falsifier": "若里尔 90 分钟内净胜 ≥1 球且在 Giroud 之外有球员运动战破门，则本判断作废。",
+    "forecast_revision_id": "fr-d99aba654eef4aaba908d31dda98176c",
+    "information_cutoff_at": null,
+    "made_at": "2026-10-20T10:30:13+00:00",
+    "match_id": "match-efbe64534a88466bad589a2dfba5d4e6",
+    "model_name": null,
+    "outcome_source": "official-results",
+    "providers": [
+     "zucai-canonical"
+    ],
+    "revision_no": 5,
+    "scheduled_at": "2026-10-22"
+   },
+   "kernel_belief": {
+    "away": 0.3174,
+    "draw": 0.28779999999999994,
+    "home": 0.39480000000000004
+   },
+   "kernel_provably_prospective": true,
+   "key": "26146-9",
+   "labels": {
+    "anchor_integrity": "fail",
+    "anchor_side": "home",
+    "crash_markers": [],
+    "death_three_proofs": {
+     "away": {
+      "a": false,
+      "b": false,
+      "c": false,
+      "proof_count": "0/3",
+      "verdict": "alive"
+     },
+     "draw": {
+      "a": false,
+      "b": false,
+      "c": false,
+      "proof_count": "0/3",
+      "verdict": "alive"
+     },
+     "home": {
+      "a": false,
+      "b": false,
+      "c": false,
+      "proof_count": "0/3",
+      "verdict": "alive"
+     }
+    },
+    "directional_flags": [
+     "suspension_breaker_out"
+    ],
+    "hole_location_priced_in": false,
+    "hole_location_side": "home",
+    "hole_location_unit": "attack",
+    "label_source": "legs+research",
+    "license_questions": {
+     "q1_spine": true,
+     "q2_route": false,
+     "q3a_opponent_scores": true,
+     "q3b_opponent_takes_points": true,
+     "q4_no_context_flag": false
+    },
+    "nondirectional_flags": [
+     "two_way_instability"
+    ],
+    "override_reason": null,
+    "precedents": [
+     [
+      "0",
+      "alive"
+     ],
+     [
+      "1",
+      "alive"
+     ]
+    ],
+    "researched_at": null,
+    "rest_days": null,
+    "rotation_risk": null,
+    "rubric": {
+     "F_absence_away": {
+      "answer": "yes",
+      "p": 0.75,
+      "source_tier": "press"
+     },
+     "F_absence_home": {
+      "answer": "yes",
+      "p": 0.9,
+      "source_tier": "press"
+     },
+     "F_goalkeeper": {
+      "answer": "none",
+      "p": 0.8,
+      "source_tier": "press"
+     },
+     "F_suspension": {
+      "answer": "home",
+      "p": 0.98,
+      "source_tier": "league_official"
+     },
+     "F_venue": {
+      "answer": "none",
+      "p": 0.9,
+      "source_tier": "club_official"
+     },
+     "M_facts_priced": {
+      "answer": "yes",
+      "p": 0.5,
+      "source_tier": "unknown"
+     },
+     "M_market_read": {
+      "answer": "overpriced_fav",
+      "p": 0.55,
+      "source_tier": "unknown"
+     },
+     "S_anchor_side": {
+      "answer": "home",
+      "p": 0.55,
+      "source_tier": "unknown"
+     },
+     "S_crash_candidate": {
+      "answer": "no",
+      "p": 0.45,
+      "source_tier": "unknown"
+     },
+     "S_dead_face": {
+      "answer": "none",
+      "p": 1.0,
+      "source_tier": "unknown"
+     },
+     "S_draw_mode": {
+      "answer": "no",
+      "p": 0.35,
+      "source_tier": "unknown"
+     },
+     "S_spine_intact": {
+      "answer": "yes",
+      "p": 0.85,
+      "source_tier": "press"
+     },
+     "S_underdog_path": {
+      "answer": "yes",
+      "p": 0.6,
+      "source_tier": "unknown"
+     }
+    },
+    "rubric_b": {
+     "at": "2026-10-18T21:53:36+08:00",
+     "belief": {
+      "0": 0.34,
+      "1": 0.3,
+      "3": 0.36
+     },
+     "items": {
+      "F_absence_home": {
+       "answer": "yes",
+       "p": 0.9,
+       "source_tier": "press"
+      },
+      "F_suspension": {
+       "answer": "home",
+       "p": 0.8,
+       "source_tier": "press"
+      },
+      "M_market_read": {
+       "answer": "overpriced_fav",
+       "p": 0.5,
+       "source_tier": "unknown"
+      },
+      "O_other_event": {
+       "answer": "away",
+       "p": 0.6,
+       "source_tier": "press"
+      },
+      "S_anchor_side": {
+       "answer": "none",
+       "p": 0.6,
+       "source_tier": "unknown"
+      },
+      "S_dead_face": {
+       "answer": "none",
+       "p": 0.85,
+       "source_tier": "unknown"
+      },
+      "S_draw_mode": {
+       "answer": "yes",
+       "p": 0.5,
+       "source_tier": "unknown"
+      },
+      "S_underdog_path": {
+       "answer": "yes",
+       "p": 0.7,
+       "source_tier": "unknown"
+      }
+     },
+     "kappa": {
+      "agree": 0.714,
+      "items": {
+       "F_absence_away": null,
+       "F_absence_home": true,
+       "F_goalkeeper": null,
+       "F_rotation": null,
+       "F_suspension": true,
+       "F_venue": null,
+       "M_facts_priced": null,
+       "M_market_read": true,
+       "O_other_event": null,
+       "S_anchor_side": false,
+       "S_crash_candidate": null,
+       "S_dead_face": true,
+       "S_draw_mode": false,
+       "S_spine_intact": null,
+       "S_underdog_path": true
+      },
+      "kappa": 0.632,
+      "n": 7
+     },
+     "model": "haiku",
+     "prospective": true,
+     "version": "r1"
+    },
+    "rubric_belief": {
+     "0": 0.34,
+     "1": 0.28,
+     "3": 0.38
+    },
+    "rubric_overridden": false,
+    "rubric_version": "r1",
+    "stance_cover": "1",
+    "stance_face": "0",
+    "stance_structure": "double",
+    "team_tags": {},
+    "tracking_tags": [],
+    "underdog_side": "away",
+    "underdog_strength": "real"
+   },
+   "match_no": 9,
+   "name": "里尔-加拉塔·10",
+   "note": "",
+   "provably_prospective": true,
+   "quotes": {
+    "intl": {
+     "closing": {
+      "away": 3.2531,
+      "captured_at": "2026-10-20T10:30:04+00:00",
+      "draw": 3.879,
+      "home": 2.2999
+     },
+     "n_snapshots": 4,
+     "opening": {
+      "away": 3.2531,
+      "captured_at": "2026-10-18T13:31:37+00:00",
+      "draw": 3.8595,
+      "home": 2.3068
+     },
+     "span_hours": 44.97
+    }
+   },
+   "src": "zucai",
+   "team_load": {
+    "absences": {
+     "away": [
+      "缺阵"
+     ],
+     "home": [
+      "缺阵",
+      "停赛"
+     ]
+    },
+    "away": "加拉塔",
+    "away_key": "name:加拉塔",
+    "away_load": {
+     "long_break": false,
+     "matches_14d": 1,
+     "next_days": null,
+     "rest_days": 8
+    },
+    "captured_at": "2026-10-20T18:45:04+08:00",
+    "flags": [],
+    "home": "里尔",
+    "home_key": "name:里尔",
+    "home_load": {
+     "long_break": false,
+     "matches_14d": 2,
+     "next_days": null,
+     "rest_days": 8
+    },
+    "key": "26146-9",
+    "kickoff": "2026-10-22T00:45:00+08:00",
+    "load_diff_14": 1,
+    "match_id": "match-efbe64534a88466bad589a2dfba5d4e6",
+    "rest_diff": 0
+   },
+   "titan007_id": "3073188",
+   "twin_keys": [
+    "2026-10-21-周三005"
+   ]
+  },
   "38a116ef1382946f": {
    "actual": "0",
    "belief": {
@@ -49618,6 +52088,375 @@
     "rest_diff": 0
    },
    "titan007_id": "3073185"
+  },
+  "3daa2e58fbf72abe": {
+   "actual": "3",
+   "belief": {
+    "away": 0.2502,
+    "draw": 0.2556,
+    "home": 0.49420000000000003
+   },
+   "belief_moved": true,
+   "call": null,
+   "closing": {
+    "all_books": 324,
+    "all_fair": {
+     "away": 0.191902,
+     "draw": 0.214352,
+     "home": 0.593746
+    },
+    "book_count": 325,
+    "fetched_at": "2026-10-19T02:45:23+00:00",
+    "sharp_books": 15,
+    "sharp_fair": {
+     "away": 0.196838,
+     "draw": 0.216584,
+     "home": 0.586578
+    },
+    "sharp_odds": {
+     "away": 4.768,
+     "draw": 4.3333,
+     "home": 1.6
+    },
+    "sharp_opening_odds": {
+     "away": 5.16,
+     "draw": 4.2533,
+     "home": 1.554
+    },
+    "source": "titan007_history",
+    "updated_at_max": "2026-10-19T02:44:00",
+    "updated_at_min": "2026-10-14T22:24:00"
+   },
+   "conf": 2,
+   "date": "2026-10-21",
+   "fair": {
+    "away": 0.2502,
+    "draw": 0.2556,
+    "home": 0.49420000000000003
+   },
+   "fair_kind": "read_time",
+   "fair_source": "legs-base",
+   "intl_drift_pp": {
+    "away": 4.42,
+    "draw": 1.64,
+    "home": -6.05
+   },
+   "issue": "26146",
+   "jczq_no": "周二004",
+   "judged_at_source": "legs-base.legs[n].judged_at",
+   "kernel": {
+    "actor_id": "judge:owner",
+    "commitment_tier": "commit",
+    "evidence_coverage": null,
+    "evidence_quality": null,
+    "falsifier": "博德先进球，或那不勒 90 分钟未能破门——任一成立即本判断作废",
+    "forecast_revision_id": "fr-3ee35afad5e9420ca73a39cf037eb005",
+    "information_cutoff_at": null,
+    "made_at": "2026-10-18T13:52:16+00:00",
+    "match_id": "match-dafb694e691a48768f4331abc6b325d3",
+    "model_name": null,
+    "outcome_source": "official-results",
+    "providers": [
+     "zucai-canonical"
+    ],
+    "revision_no": 2,
+    "scheduled_at": "2026-10-21"
+   },
+   "kernel_belief": {
+    "away": 0.22300000000000003,
+    "draw": 0.23600000000000002,
+    "home": 0.541
+   },
+   "kernel_provably_prospective": true,
+   "key": "26146-3",
+   "labels": {
+    "anchor_integrity": "pass",
+    "anchor_side": "home",
+    "crash_markers": [],
+    "death_three_proofs": {
+     "away": {
+      "a": false,
+      "b": false,
+      "c": true,
+      "proof_count": "0/3",
+      "verdict": "alive"
+     },
+     "draw": {
+      "a": false,
+      "b": false,
+      "c": true,
+      "proof_count": "0/3",
+      "verdict": "alive"
+     },
+     "home": {
+      "a": false,
+      "b": false,
+      "c": true,
+      "proof_count": "0/3",
+      "verdict": "alive"
+     }
+    },
+    "directional_flags": [],
+    "hole_location_priced_in": true,
+    "hole_location_side": "home",
+    "hole_location_unit": "attack",
+    "label_source": "legs+research",
+    "license_questions": {
+     "q1_spine": true,
+     "q2_route": true,
+     "q3a_opponent_scores": true,
+     "q3b_opponent_takes_points": true,
+     "q4_no_context_flag": false
+    },
+    "nondirectional_flags": [
+     "dressing_room_turmoil"
+    ],
+    "override_reason": null,
+    "precedents": [
+     [
+      "0",
+      "alive"
+     ],
+     [
+      "1",
+      "alive"
+     ]
+    ],
+    "researched_at": null,
+    "rest_days": null,
+    "rotation_risk": null,
+    "rubric": {
+     "F_absence_away": {
+      "answer": "no",
+      "p": 0.35,
+      "source_tier": "aggregator"
+     },
+     "F_absence_home": {
+      "answer": "yes",
+      "p": 0.9,
+      "source_tier": "aggregator"
+     },
+     "F_suspension": {
+      "answer": "none",
+      "p": 0.85,
+      "source_tier": "aggregator"
+     },
+     "F_venue": {
+      "answer": "none",
+      "p": 0.95,
+      "source_tier": "league_official"
+     },
+     "M_facts_priced": {
+      "answer": "yes",
+      "p": 0.75,
+      "source_tier": "unknown"
+     },
+     "M_market_read": {
+      "answer": "agree",
+      "p": 0.5,
+      "source_tier": "unknown"
+     },
+     "O_other_event": {
+      "answer": "home",
+      "p": 0.7,
+      "source_tier": "club_official"
+     },
+     "S_anchor_side": {
+      "answer": "home",
+      "p": 0.8,
+      "source_tier": "unknown"
+     },
+     "S_crash_candidate": {
+      "answer": "yes",
+      "p": 0.6,
+      "source_tier": "unknown"
+     },
+     "S_dead_face": {
+      "answer": "none",
+      "p": 0.9,
+      "source_tier": "unknown"
+     },
+     "S_draw_mode": {
+      "answer": "no",
+      "p": 0.3,
+      "source_tier": "unknown"
+     },
+     "S_spine_intact": {
+      "answer": "yes",
+      "p": 0.7,
+      "source_tier": "press"
+     },
+     "S_underdog_path": {
+      "answer": "yes",
+      "p": 0.55,
+      "source_tier": "unknown"
+     }
+    },
+    "rubric_b": {
+     "at": "2026-10-18T21:52:58+08:00",
+     "belief": {
+      "0": 0.2,
+      "1": 0.25,
+      "3": 0.55
+     },
+     "items": {
+      "F_absence_away": {
+       "answer": "no",
+       "p": 0.1,
+       "source_tier": "unknown"
+      },
+      "F_absence_home": {
+       "answer": "yes",
+       "p": 0.6,
+       "source_tier": "press"
+      },
+      "F_venue": {
+       "answer": "none",
+       "p": 0.7,
+       "source_tier": "unknown"
+      },
+      "M_market_read": {
+       "answer": "agree",
+       "p": 0.6,
+       "source_tier": "unknown"
+      },
+      "O_other_event": {
+       "answer": "home",
+       "p": 0.8,
+       "source_tier": "press"
+      },
+      "S_anchor_side": {
+       "answer": "home",
+       "p": 0.7,
+       "source_tier": "unknown"
+      },
+      "S_crash_candidate": {
+       "answer": "yes",
+       "p": 0.8,
+       "source_tier": "unknown"
+      },
+      "S_dead_face": {
+       "answer": "none",
+       "p": 0.6,
+       "source_tier": "unknown"
+      },
+      "S_draw_mode": {
+       "answer": "no",
+       "p": 0.25,
+       "source_tier": "unknown"
+      },
+      "S_spine_intact": {
+       "answer": "yes",
+       "p": 0.75,
+       "source_tier": "aggregator"
+      },
+      "S_underdog_path": {
+       "answer": "yes",
+       "p": 0.8,
+       "source_tier": "unknown"
+      }
+     },
+     "kappa": {
+      "agree": 1.0,
+      "items": {
+       "F_absence_away": true,
+       "F_absence_home": true,
+       "F_goalkeeper": null,
+       "F_rotation": null,
+       "F_suspension": null,
+       "F_venue": true,
+       "M_facts_priced": null,
+       "M_market_read": true,
+       "O_other_event": true,
+       "S_anchor_side": true,
+       "S_crash_candidate": true,
+       "S_dead_face": true,
+       "S_draw_mode": true,
+       "S_spine_intact": true,
+       "S_underdog_path": true
+      },
+      "kappa": 1.0,
+      "n": 11
+     },
+     "model": "haiku",
+     "prospective": true,
+     "version": "r1"
+    },
+    "rubric_belief": {
+     "0": 0.21,
+     "1": 0.25,
+     "3": 0.54
+    },
+    "rubric_overridden": false,
+    "rubric_version": "r1",
+    "stance_cover": "1",
+    "stance_face": "3",
+    "stance_structure": "double",
+    "team_tags": {},
+    "tracking_tags": [],
+    "underdog_side": "away",
+    "underdog_strength": "real"
+   },
+   "match_no": 3,
+   "name": "那不勒-博德·31",
+   "note": "",
+   "provably_prospective": true,
+   "quotes": {
+    "intl": {
+     "closing": {
+      "away": 4.5413,
+      "captured_at": "2026-10-20T10:30:04+00:00",
+      "draw": 4.2445,
+      "home": 1.8376
+     },
+     "n_snapshots": 4,
+     "opening": {
+      "away": 5.1813,
+      "captured_at": "2026-10-18T13:31:37+00:00",
+      "draw": 4.6296,
+      "home": 1.692
+     },
+     "span_hours": 44.97
+    }
+   },
+   "src": "zucai",
+   "team_load": {
+    "absences": {
+     "away": [],
+     "home": [
+      "缺阵"
+     ]
+    },
+    "away": "博德",
+    "away_key": "name:博德",
+    "away_load": {
+     "long_break": false,
+     "matches_14d": 1,
+     "next_days": null,
+     "rest_days": 6
+    },
+    "captured_at": "2026-10-20T18:45:04+08:00",
+    "flags": [
+     "负荷差≥2:home"
+    ],
+    "home": "那不勒",
+    "home_key": "ita-napoli",
+    "home_load": {
+     "long_break": false,
+     "matches_14d": 3,
+     "next_days": null,
+     "rest_days": 4
+    },
+    "key": "26146-3",
+    "kickoff": "2026-10-21T03:00:00+08:00",
+    "load_diff_14": 2,
+    "match_id": "match-dafb694e691a48768f4331abc6b325d3",
+    "rest_diff": -2
+   },
+   "titan007_id": "3073185",
+   "twin_keys": [
+    "2026-10-20-周二004"
+   ]
   },
   "3dd16aa481c1428e": {
    "actual": "1",
@@ -52170,6 +55009,347 @@
     "rest_diff": 2
    },
    "titan007_id": "3013724"
+  },
+  "41dcc40d326be4ee": {
+   "actual": "3",
+   "belief": {
+    "away": 0.32389999999999997,
+    "draw": 0.25129999999999997,
+    "home": 0.4248
+   },
+   "belief_moved": true,
+   "call": null,
+   "closing": {
+    "all_books": 321,
+    "all_fair": {
+     "away": 0.296178,
+     "draw": 0.246409,
+     "home": 0.457413
+    },
+    "book_count": 322,
+    "fetched_at": "2026-10-19T02:45:28+00:00",
+    "sharp_books": 15,
+    "sharp_fair": {
+     "away": 0.2979,
+     "draw": 0.248069,
+     "home": 0.454031
+    },
+    "sharp_odds": {
+     "away": 3.1427,
+     "draw": 3.774,
+     "home": 2.062
+    },
+    "sharp_opening_odds": {
+     "away": 2.924,
+     "draw": 3.57,
+     "home": 2.2433
+    },
+    "source": "titan007_history",
+    "updated_at_max": "2026-10-19T02:45:00",
+    "updated_at_min": "2026-10-14T22:37:00"
+   },
+   "conf": 3,
+   "date": "2026-10-22",
+   "fair": {
+    "away": 0.32389999999999997,
+    "draw": 0.25129999999999997,
+    "home": 0.4248
+   },
+   "fair_kind": "read_time",
+   "fair_source": "legs-base",
+   "intl_drift_pp": {
+    "away": -2.43,
+    "draw": -2.2,
+    "home": 4.63
+   },
+   "issue": "26146",
+   "jczq_no": "周三012",
+   "judged_at_source": "legs-base.legs[n].judged_at",
+   "kernel": {
+    "actor_id": "judge:owner",
+    "commitment_tier": "commit",
+    "evidence_coverage": null,
+    "evidence_quality": null,
+    "falsifier": "若布鲁日首发中轴（Sommer/Mechele/Vanetti 级组织核）赛前官宣缺阵，或朗斯 90 分钟内射正 ≥6 且先进球，本判断作废",
+    "forecast_revision_id": "fr-dfac3f9609ab4117952b31dbc31919db",
+    "information_cutoff_at": null,
+    "made_at": "2026-10-20T10:30:13+00:00",
+    "match_id": "match-b201572947da4709b42da6ae4284d043",
+    "model_name": null,
+    "outcome_source": "official-results",
+    "providers": [
+     "zucai-canonical"
+    ],
+    "revision_no": 5,
+    "scheduled_at": "2026-10-22"
+   },
+   "kernel_belief": {
+    "away": 0.32389999999999997,
+    "draw": 0.25129999999999997,
+    "home": 0.4248
+   },
+   "kernel_provably_prospective": true,
+   "key": "26146-12",
+   "labels": {
+    "anchor_integrity": "pass",
+    "anchor_side": "home",
+    "crash_markers": [],
+    "death_three_proofs": {
+     "away": {
+      "a": false,
+      "b": false,
+      "c": true,
+      "proof_count": "1/3",
+      "verdict": "alive"
+     }
+    },
+    "directional_flags": [],
+    "hole_location_priced_in": true,
+    "hole_location_side": "home",
+    "hole_location_unit": "defense",
+    "label_source": "legs+research",
+    "license_questions": {
+     "q1_spine": true,
+     "q2_route": true,
+     "q3a_opponent_scores": true,
+     "q3b_opponent_takes_points": true,
+     "q4_no_context_flag": true
+    },
+    "nondirectional_flags": [],
+    "override_reason": null,
+    "precedents": [
+     [
+      "3",
+      "alive"
+     ],
+     [
+      "0",
+      "alive"
+     ]
+    ],
+    "researched_at": null,
+    "rest_days": null,
+    "rotation_risk": null,
+    "rubric": {
+     "F_absence_away": {
+      "answer": "no",
+      "p": 0.4,
+      "source_tier": "press"
+     },
+     "F_absence_home": {
+      "answer": "yes",
+      "p": 0.95,
+      "source_tier": "press"
+     },
+     "F_goalkeeper": {
+      "answer": "none",
+      "p": 0.8,
+      "source_tier": "press"
+     },
+     "F_rotation": {
+      "answer": "none",
+      "p": 0.8,
+      "source_tier": "press"
+     },
+     "F_suspension": {
+      "answer": "none",
+      "p": 0.8,
+      "source_tier": "aggregator"
+     },
+     "F_venue": {
+      "answer": "none",
+      "p": 0.95,
+      "source_tier": "press"
+     },
+     "M_facts_priced": {
+      "answer": "yes",
+      "p": 0.85,
+      "source_tier": "unknown"
+     },
+     "M_market_read": {
+      "answer": "agree",
+      "p": 0.6,
+      "source_tier": "unknown"
+     },
+     "S_anchor_side": {
+      "answer": "home",
+      "p": 0.65,
+      "source_tier": "unknown"
+     },
+     "S_crash_candidate": {
+      "answer": "no",
+      "p": 0.35,
+      "source_tier": "unknown"
+     },
+     "S_dead_face": {
+      "answer": "none",
+      "p": 0.9,
+      "source_tier": "unknown"
+     },
+     "S_draw_mode": {
+      "answer": "no",
+      "p": 0.15,
+      "source_tier": "unknown"
+     },
+     "S_spine_intact": {
+      "answer": "yes",
+      "p": 0.6,
+      "source_tier": "press"
+     },
+     "S_underdog_path": {
+      "answer": "yes",
+      "p": 0.55,
+      "source_tier": "unknown"
+     }
+    },
+    "rubric_b": {
+     "at": "2026-10-18T22:01:00+08:00",
+     "belief": {
+      "0": 0.28,
+      "1": 0.24,
+      "3": 0.48
+     },
+     "items": {
+      "M_facts_priced": {
+       "answer": "no",
+       "p": 0.4,
+       "source_tier": "unknown"
+      },
+      "M_market_read": {
+       "answer": "agree",
+       "p": 0.7,
+       "source_tier": "unknown"
+      },
+      "S_anchor_side": {
+       "answer": "home",
+       "p": 0.7,
+       "source_tier": "unknown"
+      },
+      "S_crash_candidate": {
+       "answer": "yes",
+       "p": 0.6,
+       "source_tier": "unknown"
+      },
+      "S_dead_face": {
+       "answer": "none",
+       "p": 0.8,
+       "source_tier": "unknown"
+      },
+      "S_draw_mode": {
+       "answer": "no",
+       "p": 0.1,
+       "source_tier": "unknown"
+      },
+      "S_spine_intact": {
+       "answer": "no",
+       "p": 0.15,
+       "source_tier": "unknown"
+      },
+      "S_underdog_path": {
+       "answer": "yes",
+       "p": 0.7,
+       "source_tier": "unknown"
+      }
+     },
+     "kappa": {
+      "agree": 0.625,
+      "items": {
+       "F_absence_away": null,
+       "F_absence_home": null,
+       "F_goalkeeper": null,
+       "F_rotation": null,
+       "F_suspension": null,
+       "F_venue": null,
+       "M_facts_priced": false,
+       "M_market_read": true,
+       "O_other_event": null,
+       "S_anchor_side": true,
+       "S_crash_candidate": false,
+       "S_dead_face": true,
+       "S_draw_mode": true,
+       "S_spine_intact": false,
+       "S_underdog_path": true
+      },
+      "kappa": 0.51,
+      "n": 8
+     },
+     "model": "haiku",
+     "prospective": true,
+     "version": "r1"
+    },
+    "rubric_belief": {
+     "0": 0.3,
+     "1": 0.23,
+     "3": 0.47
+    },
+    "rubric_overridden": false,
+    "rubric_version": "r1",
+    "stance_cover": "0",
+    "stance_face": "3",
+    "stance_structure": "double",
+    "team_tags": {},
+    "tracking_tags": [],
+    "underdog_side": "away",
+    "underdog_strength": "real"
+   },
+   "match_no": 12,
+   "name": "布鲁日-朗斯·30",
+   "note": "",
+   "provably_prospective": true,
+   "quotes": {
+    "intl": {
+     "closing": {
+      "away": 3.4025,
+      "captured_at": "2026-10-20T10:30:04+00:00",
+      "draw": 4.1442,
+      "home": 2.1515
+     },
+     "n_snapshots": 4,
+     "opening": {
+      "away": 3.3746,
+      "captured_at": "2026-10-18T13:31:37+00:00",
+      "draw": 4.0028,
+      "home": 2.2034
+     },
+     "span_hours": 44.97
+    }
+   },
+   "src": "zucai",
+   "team_load": {
+    "absences": {
+     "away": [],
+     "home": [
+      "缺阵"
+     ]
+    },
+    "away": "朗斯",
+    "away_key": "name:朗斯",
+    "away_load": {
+     "long_break": false,
+     "matches_14d": 2,
+     "next_days": null,
+     "rest_days": 8
+    },
+    "captured_at": "2026-10-20T18:45:04+08:00",
+    "flags": [],
+    "home": "布鲁日",
+    "home_key": "name:布鲁日",
+    "home_load": {
+     "long_break": false,
+     "matches_14d": 1,
+     "next_days": null,
+     "rest_days": 8
+    },
+    "key": "26146-12",
+    "kickoff": "2026-10-22T03:00:00+08:00",
+    "load_diff_14": -1,
+    "match_id": "match-b201572947da4709b42da6ae4284d043",
+    "rest_diff": 0
+   },
+   "titan007_id": "3073145",
+   "twin_keys": [
+    "2026-10-21-周三012"
+   ]
   },
   "41eda65d3de5003e": {
    "actual": "1",
@@ -56268,6 +59448,373 @@
     "rest_diff": -3
    },
    "titan007_id": "2993824"
+  },
+  "4a6e3623aab332bf": {
+   "actual": "1",
+   "belief": {
+    "away": 0.4611,
+    "draw": 0.2481,
+    "home": 0.2908
+   },
+   "belief_moved": false,
+   "call": null,
+   "closing": {
+    "all_books": 328,
+    "all_fair": {
+     "away": 0.452152,
+     "draw": 0.250677,
+     "home": 0.297171
+    },
+    "book_count": 329,
+    "fetched_at": "2026-10-19T02:45:25+00:00",
+    "sharp_books": 15,
+    "sharp_fair": {
+     "away": 0.44952,
+     "draw": 0.250671,
+     "home": 0.299809
+    },
+    "sharp_odds": {
+     "away": 2.0867,
+     "draw": 3.742,
+     "home": 3.1287
+    },
+    "sharp_opening_odds": {
+     "away": 2.268,
+     "draw": 3.6133,
+     "home": 2.8153
+    },
+    "source": "titan007_history",
+    "updated_at_max": "2026-10-19T02:40:00",
+    "updated_at_min": "2026-10-15T03:45:00"
+   },
+   "conf": 2,
+   "date": "2026-10-21",
+   "fair": {
+    "away": 0.4611,
+    "draw": 0.2481,
+    "home": 0.2908
+   },
+   "fair_kind": "read_time",
+   "fair_source": "legs-base",
+   "intl_drift_pp": {
+    "away": 4.88,
+    "draw": -1.21,
+    "home": -3.67
+   },
+   "issue": "26146",
+   "jczq_no": "周二009",
+   "judged_at_source": "legs-base.legs[n].judged_at",
+   "kernel": {
+    "actor_id": "judge:owner",
+    "commitment_tier": "commit",
+    "evidence_coverage": null,
+    "evidence_quality": null,
+    "falsifier": "若赛后马竞核心首发缺阵或轮换，且斯图加 90 分钟内赢球，则本判断作废",
+    "forecast_revision_id": "fr-f705659418ae4e9493df75b6ca1e19ac",
+    "information_cutoff_at": null,
+    "made_at": "2026-10-20T10:30:13+00:00",
+    "match_id": "match-919de3142dad454f9be6c3fa9ea6eda7",
+    "model_name": null,
+    "outcome_source": "official-results",
+    "providers": [
+     "zucai-canonical"
+    ],
+    "revision_no": 4,
+    "scheduled_at": "2026-10-21"
+   },
+   "kernel_belief": {
+    "away": 0.4611,
+    "draw": 0.2481,
+    "home": 0.2908
+   },
+   "kernel_provably_prospective": true,
+   "key": "26146-7",
+   "labels": {
+    "anchor_integrity": "pass",
+    "anchor_side": "away",
+    "crash_markers": [],
+    "death_three_proofs": {
+     "away": {
+      "a": false,
+      "b": false,
+      "c": true,
+      "proof_count": "1/3",
+      "verdict": "alive"
+     },
+     "draw": {
+      "a": false,
+      "b": false,
+      "c": true,
+      "proof_count": "1/3",
+      "verdict": "alive"
+     },
+     "home": {
+      "a": false,
+      "b": false,
+      "c": true,
+      "proof_count": "1/3",
+      "verdict": "alive"
+     }
+    },
+    "directional_flags": [],
+    "hole_location_priced_in": false,
+    "hole_location_side": "none",
+    "hole_location_unit": "none",
+    "label_source": "legs+research",
+    "license_questions": {
+     "q1_spine": true,
+     "q2_route": true,
+     "q3a_opponent_scores": true,
+     "q3b_opponent_takes_points": true,
+     "q4_no_context_flag": true
+    },
+    "nondirectional_flags": [],
+    "override_reason": null,
+    "precedents": [
+     [
+      "3",
+      "none"
+     ]
+    ],
+    "researched_at": null,
+    "rest_days": null,
+    "rotation_risk": null,
+    "rubric": {
+     "F_venue": {
+      "answer": "none",
+      "p": 0.8,
+      "source_tier": "unknown"
+     },
+     "M_market_read": {
+      "answer": "agree",
+      "p": 0.6,
+      "source_tier": "unknown"
+     },
+     "S_anchor_side": {
+      "answer": "away",
+      "p": 0.6,
+      "source_tier": "unknown"
+     },
+     "S_dead_face": {
+      "answer": "none",
+      "p": 1.0,
+      "source_tier": "unknown"
+     },
+     "S_underdog_path": {
+      "answer": "yes",
+      "p": 0.55,
+      "source_tier": "unknown"
+     }
+    },
+    "rubric_b": {
+     "at": "2026-10-18T21:53:23+08:00",
+     "belief": {
+      "0": 0.4,
+      "1": 0.26,
+      "3": 0.34
+     },
+     "items": {
+      "F_absence_away": {
+       "answer": "no",
+       "p": 0.0,
+       "source_tier": "unknown"
+      },
+      "F_absence_home": {
+       "answer": "no",
+       "p": 0.0,
+       "source_tier": "unknown"
+      },
+      "O_other_event": {
+       "answer": "none",
+       "p": 0.7,
+       "source_tier": "unknown"
+      },
+      "S_anchor_side": {
+       "answer": "away",
+       "p": 0.5,
+       "source_tier": "unknown"
+      },
+      "S_crash_candidate": {
+       "answer": "no",
+       "p": 0.45,
+       "source_tier": "unknown"
+      },
+      "S_dead_face": {
+       "answer": "none",
+       "p": 0.9,
+       "source_tier": "unknown"
+      },
+      "S_draw_mode": {
+       "answer": "no",
+       "p": 0.15,
+       "source_tier": "unknown"
+      },
+      "S_spine_intact": {
+       "answer": "yes",
+       "p": 0.75,
+       "source_tier": "aggregator"
+      },
+      "S_underdog_path": {
+       "answer": "yes",
+       "p": 0.7,
+       "source_tier": "unknown"
+      }
+     },
+     "kappa": {
+      "agree": 1.0,
+      "items": {
+       "F_absence_away": null,
+       "F_absence_home": null,
+       "F_goalkeeper": null,
+       "F_rotation": null,
+       "F_suspension": null,
+       "F_venue": null,
+       "M_facts_priced": null,
+       "M_market_read": null,
+       "O_other_event": null,
+       "S_anchor_side": true,
+       "S_crash_candidate": true,
+       "S_dead_face": true,
+       "S_draw_mode": true,
+       "S_spine_intact": null,
+       "S_underdog_path": true
+      },
+      "kappa": 1.0,
+      "n": 5
+     },
+     "model": "haiku",
+     "prospective": true,
+     "version": "r1"
+    },
+    "rubric_belief": {
+     "0": 0.45,
+     "1": 0.25,
+     "3": 0.3
+    },
+    "rubric_overridden": false,
+    "rubric_version": "r3",
+    "stance_cover": "1",
+    "stance_face": "0",
+    "stance_structure": "double",
+    "team_tags": {},
+    "tracking_tags": [],
+    "underdog_side": "home",
+    "underdog_strength": "real"
+   },
+   "match_no": 7,
+   "name": "斯图加-马竞技·10",
+   "note": "",
+   "polymarket": {
+    "event_id": "1149394",
+    "faces": {
+     "away": {
+      "ask": 0.47,
+      "bid": 0.46,
+      "condition_id": "0xa3d3cf21cf944837111faf32cf4af550f70220eab242b0ff91762f1fb99863b8",
+      "last_trade": 0.47,
+      "mid": 0.46499999999999997,
+      "token": "51984997454937657901454874709086259552637154994634502199968541067673238320102",
+      "volume": 70829.86659100001,
+      "volume24hr": 32601.413930000002
+     },
+     "draw": {
+      "ask": 0.25,
+      "bid": 0.24,
+      "condition_id": "0xaeda820ed14d04bd68c95f3619094b7d886793eed2c537e514aca19af557d230",
+      "last_trade": 0.25,
+      "mid": 0.245,
+      "token": "42498652218707483295039246895111986049808997193277255279611738870699208179395",
+      "volume": 9280.602401,
+      "volume24hr": 9030.707638
+     },
+     "home": {
+      "ask": 0.29,
+      "bid": 0.28,
+      "condition_id": "0x5e88fad104944537382d929fab99802c33625c49a17ed3ae87fd698d3bd9d387",
+      "last_trade": 0.29,
+      "mid": 0.28500000000000003,
+      "token": "92967396661000784683403432096407397256426858341871160047496698644450517580803",
+      "volume": 8193.642385000001,
+      "volume24hr": 3559.7429829999996
+     }
+    },
+    "fetched_at": "2026-10-20T18:31:30+08:00",
+    "kickoff": "2026-10-21T03:00:00+08:00",
+    "liquidity": 1038533.0421,
+    "lopsided": false,
+    "probs": {
+     "away": 0.4673366834170854,
+     "draw": 0.24623115577889448,
+     "home": 0.2864321608040202
+    },
+    "rank": 3,
+    "title": "VfB Stuttgart vs. Club Atlético de Madrid",
+    "trend_pp": {
+     "away": 0.5,
+     "draw": -1.5,
+     "home": -5.5
+    },
+    "volume": 88304.11137700001,
+    "volume24hr": 45191.864551000006,
+    "vs_market_pp": {
+     "away": 0.6,
+     "draw": -0.2,
+     "home": -0.4
+    }
+   },
+   "provably_prospective": true,
+   "quotes": {
+    "intl": {
+     "closing": {
+      "away": 2.1687,
+      "captured_at": "2026-10-20T10:30:04+00:00",
+      "draw": 4.0306,
+      "home": 3.4388
+     },
+     "n_snapshots": 4,
+     "opening": {
+      "away": 2.2217,
+      "captured_at": "2026-10-18T13:31:37+00:00",
+      "draw": 3.9651,
+      "home": 3.3591
+     },
+     "span_hours": 44.97
+    }
+   },
+   "src": "zucai",
+   "team_load": {
+    "absences": {
+     "away": [],
+     "home": []
+    },
+    "away": "马竞技",
+    "away_key": "esp-atletico-madrid",
+    "away_load": {
+     "long_break": false,
+     "matches_14d": 3,
+     "next_days": null,
+     "rest_days": 4
+    },
+    "captured_at": "2026-10-20T18:45:04+08:00",
+    "flags": [],
+    "home": "斯图加",
+    "home_key": "ger-vfb-stuttgart",
+    "home_load": {
+     "long_break": false,
+     "matches_14d": 3,
+     "next_days": null,
+     "rest_days": 4
+    },
+    "key": "26146-7",
+    "kickoff": "2026-10-21T03:00:00+08:00",
+    "load_diff_14": 0,
+    "match_id": "match-919de3142dad454f9be6c3fa9ea6eda7",
+    "rest_diff": 0
+   },
+   "titan007_id": "3073110",
+   "twin_keys": [
+    "2026-10-20-周二009"
+   ]
   },
   "4a7c632617162fb6": {
    "actual": "0",
@@ -61926,6 +65473,394 @@
     "rest_diff": 0
    },
    "titan007_id": "3018832"
+  },
+  "55904e5720038ca8": {
+   "actual": "1",
+   "belief": {
+    "away": 0.2383549458134585,
+    "draw": 0.24970336688741074,
+    "home": 0.5119416872991308
+   },
+   "belief_moved": false,
+   "books": 15,
+   "closing": {
+    "all_books": 352,
+    "all_fair": {
+     "away": 0.243596,
+     "draw": 0.250988,
+     "home": 0.505416
+    },
+    "book_count": 355,
+    "fetched_at": "2026-10-23T02:45:04+00:00",
+    "sharp_books": 15,
+    "sharp_fair": {
+     "away": 0.227174,
+     "draw": 0.246143,
+     "home": 0.526683
+    },
+    "sharp_odds": {
+     "away": 4.0913,
+     "draw": 3.776,
+     "home": 1.7647
+    },
+    "sharp_opening_odds": {
+     "away": 2.9513,
+     "draw": 3.4473,
+     "home": 2.21
+    },
+    "source": "titan007_history",
+    "updated_at_max": "2026-10-21T10:00:00",
+    "updated_at_min": "2026-10-17T11:22:00"
+   },
+   "conf": 2,
+   "date": "2026-10-21",
+   "fair": {
+    "away": 0.238355,
+    "draw": 0.249703,
+    "home": 0.511942
+   },
+   "fair_kind": "read_time",
+   "fair_source": "bold_odds",
+   "goals": [
+    0,
+    0
+   ],
+   "ht": [
+    0,
+    0
+   ],
+   "issue": null,
+   "jczq_no": "周三001",
+   "judged_at_source": "research.captured_at",
+   "key": "2026-10-21-周三001",
+   "labels": {
+    "anchor_integrity": "pass",
+    "anchor_side": "home",
+    "crash_markers": [],
+    "death_three_proofs": {
+     "away": {
+      "a": false,
+      "b": false,
+      "c": true,
+      "proof_count": "1/3",
+      "verdict": "alive"
+     },
+     "draw": {
+      "a": false,
+      "b": false,
+      "c": true,
+      "proof_count": "1/3",
+      "verdict": "alive"
+     },
+     "home": {
+      "a": false,
+      "b": false,
+      "c": false,
+      "proof_count": "0/3",
+      "verdict": "alive"
+     }
+    },
+    "directional_flags": [],
+    "hole_location_priced_in": true,
+    "hole_location_side": "away",
+    "hole_location_unit": "defense",
+    "label_source": "research",
+    "license_questions": {
+     "q1_spine": true,
+     "q2_route": true,
+     "q3a_opponent_scores": true,
+     "q3b_opponent_takes_points": true,
+     "q4_no_context_flag": true
+    },
+    "nondirectional_flags": [],
+    "override_reason": null,
+    "precedents": [
+     [
+      "3",
+      "alive"
+     ],
+     [
+      "0",
+      "alive"
+     ]
+    ],
+    "rest_days": {
+     "away": 3,
+     "home": 3
+    },
+    "rotation_risk": null,
+    "rubric": {
+     "F_absence_away": {
+      "answer": "yes",
+      "p": 0.9,
+      "source_tier": "club_official"
+     },
+     "F_absence_home": {
+      "answer": "no",
+      "p": 0.1,
+      "source_tier": "press"
+     },
+     "F_goalkeeper": {
+      "answer": "away",
+      "p": 0.65,
+      "source_tier": "press"
+     },
+     "F_suspension": {
+      "answer": "none",
+      "p": 0.95,
+      "source_tier": "league_official"
+     },
+     "F_venue": {
+      "answer": "none",
+      "p": 0.95,
+      "source_tier": "league_official"
+     },
+     "M_facts_priced": {
+      "answer": "yes",
+      "p": 0.7,
+      "source_tier": "unknown"
+     },
+     "M_market_read": {
+      "answer": "agree",
+      "p": 0.55,
+      "source_tier": "unknown"
+     },
+     "O_other_event": {
+      "answer": "none",
+      "p": 0.7,
+      "source_tier": "aggregator"
+     },
+     "S_anchor_side": {
+      "answer": "home",
+      "p": 0.6,
+      "source_tier": "unknown"
+     },
+     "S_crash_candidate": {
+      "answer": "no",
+      "p": 0.2,
+      "source_tier": "unknown"
+     },
+     "S_dead_face": {
+      "answer": "none",
+      "p": 0.9,
+      "source_tier": "unknown"
+     },
+     "S_draw_mode": {
+      "answer": "no",
+      "p": 0.15,
+      "source_tier": "unknown"
+     },
+     "S_spine_intact": {
+      "answer": "yes",
+      "p": 0.85,
+      "source_tier": "club_official"
+     },
+     "S_underdog_path": {
+      "answer": "yes",
+      "p": 0.8,
+      "source_tier": "unknown"
+     }
+    },
+    "rubric_b": {
+     "at": "2026-10-21T09:47:24+08:00",
+     "belief": {
+      "0": 0.28,
+      "1": 0.27,
+      "3": 0.45
+     },
+     "items": {
+      "F_absence_away": {
+       "answer": "yes",
+       "p": 0.95,
+       "source_tier": "club_official"
+      },
+      "F_absence_home": {
+       "answer": "no",
+       "p": 0.1,
+       "source_tier": "unknown"
+      },
+      "M_market_read": {
+       "answer": "agree",
+       "p": 0.55,
+       "source_tier": "unknown"
+      },
+      "O_other_event": {
+       "answer": "away",
+       "p": 0.6,
+       "source_tier": "club_official"
+      },
+      "S_anchor_side": {
+       "answer": "home",
+       "p": 0.6,
+       "source_tier": "unknown"
+      },
+      "S_crash_candidate": {
+       "answer": "no",
+       "p": 0.3,
+       "source_tier": "unknown"
+      },
+      "S_dead_face": {
+       "answer": "none",
+       "p": 0.9,
+       "source_tier": "unknown"
+      },
+      "S_draw_mode": {
+       "answer": "no",
+       "p": 0.1,
+       "source_tier": "unknown"
+      },
+      "S_spine_intact": {
+       "answer": "yes",
+       "p": 0.85,
+       "source_tier": "league_official"
+      },
+      "S_underdog_path": {
+       "answer": "yes",
+       "p": 0.75,
+       "source_tier": "unknown"
+      }
+     },
+     "kappa": {
+      "agree": 0.9,
+      "items": {
+       "F_absence_away": true,
+       "F_absence_home": true,
+       "F_goalkeeper": null,
+       "F_rotation": null,
+       "F_suspension": null,
+       "F_venue": null,
+       "M_facts_priced": null,
+       "M_market_read": true,
+       "O_other_event": false,
+       "S_anchor_side": true,
+       "S_crash_candidate": true,
+       "S_dead_face": true,
+       "S_draw_mode": true,
+       "S_spine_intact": true,
+       "S_underdog_path": true
+      },
+      "kappa": 0.872,
+      "n": 10
+     },
+     "model": "haiku",
+     "prospective": true,
+     "version": "r3"
+    },
+    "rubric_belief": {
+     "0": 0.29,
+     "1": 0.25,
+     "3": 0.46
+    },
+    "rubric_overridden": false,
+    "rubric_version": "r3",
+    "stance_cover": "0",
+    "stance_face": "3",
+    "stance_structure": "double",
+    "team_tags": {},
+    "tracking_tags": [],
+    "underdog_side": "away",
+    "underdog_strength": "strong"
+   },
+   "match_no": "周三001",
+   "name": null,
+   "note": "[周三001|东京FC-柏太阳神|deep_research] 前提纠正：柏本季（2026/27 J1）10轮后排第5（7胜0平3负，22进17失），第9轮后还曾登顶，并非画像写的「综合第15」。画像由此推出的「控球第一却打不开→自产平局尾巴」不成立：柏场均进2.2球，10场一场没平。两队都在争冠区，东京略占上风：主场作战，5连胜且连续5场零封，金承奎、Schulz、稻村、长仓这条中轴完整。柏连续6轮失球2个以上，中卫马场晴也前十字韧带断裂报销，国脚后腰熊坂光希伤缺未归，门将若原智哉连续两场疑似脑震荡被担架抬下，本场大概率由永井坚梧顶替（未官宣）。最可能的走势是柏控球，东京中区块断球后快攻、加上定位球，去打柏推进中丢球后的转换空当，比赛偏开放，不是磨局。双方都是8天3赛，战意上没有差别。最大的不确定：东京的零封连胜对手多是下游（德比对手第18分钟就少一人），唯一一次碰到强攻对手是首轮主场1-5负町田；柏有小泉佳穗组织＋替补濑川祐辅（8球全部替补打进）这",
+   "opening_odds": {
+    "away": 2.9513,
+    "draw": 3.4473,
+    "home": 2.21
+   },
+   "polymarket": {
+    "event_id": "1149754",
+    "faces": {
+     "away": {
+      "ask": 0.24,
+      "bid": 0.23,
+      "condition_id": "0x0e129bffa849f707fd613b56828dd3a062eec931000176a49c408c35ab601ca3",
+      "last_trade": 0.24,
+      "mid": 0.235,
+      "token": "43320162030801325838736995864179513068623568709727308870444118928747497214161",
+      "volume": 2613.3768009999994,
+      "volume24hr": 2715.876801
+     },
+     "draw": {
+      "ask": 0.25,
+      "bid": 0.24,
+      "condition_id": "0xa774ad3ae5358036d087d1eba6b3ea91264db67e401220f4ea02bce5c98cdb09",
+      "last_trade": 0.25,
+      "mid": 0.245,
+      "token": "104620400482228567087262981512105925288430546426989250932566218090392057386603",
+      "volume": 255.923195,
+      "volume24hr": 180.923195
+     },
+     "home": {
+      "ask": 0.53,
+      "bid": 0.52,
+      "condition_id": "0x6796aea53a473a638e19f1b36bb8b27d8998fdabeca8d764e8ab020079bdc143",
+      "last_trade": 0.53,
+      "mid": 0.525,
+      "token": "21218529139445204909077389493668052055977292761058521858297371375565575186023",
+      "volume": 6376.403464,
+      "volume24hr": 6399.403464
+     }
+    },
+    "fetched_at": "2026-10-21T17:15:04+08:00",
+    "kickoff": "2026-10-21T18:00:00+08:00",
+    "liquidity": 366861.5292,
+    "lopsided": false,
+    "probs": {
+     "away": 0.23383084577114427,
+     "draw": 0.24378109452736316,
+     "home": 0.5223880597014925
+    },
+    "rank": 8,
+    "title": "FC Tōkyō vs. Kashiwa Reysol",
+    "volume": 9245.703459999999,
+    "volume24hr": 9296.20346,
+    "vs_market_pp": {
+     "away": -0.5,
+     "draw": -0.6,
+     "home": 1.0
+    }
+   },
+   "provably_prospective": true,
+   "read_id": "R-ai-jczq-2026-10-21-周三001-had-1715",
+   "read_made_at": "2026-10-21T17:15:03+08:00",
+   "src": "jczq",
+   "team_load": {
+    "absences": {
+     "away": [
+      "缺阵"
+     ],
+     "home": []
+    },
+    "away": "柏太阳神",
+    "away_key": "jpn-kashiwa",
+    "away_load": {
+     "long_break": false,
+     "matches_14d": 3,
+     "next_days": null,
+     "rest_days": 4
+    },
+    "captured_at": "2026-10-21T17:15:03+08:00",
+    "flags": [
+     "负荷差≥2:away",
+     "长歇:home"
+    ],
+    "home": "东京FC",
+    "home_key": "jpn-fc-tokyo",
+    "home_load": {
+     "long_break": true,
+     "matches_14d": 0,
+     "next_days": null,
+     "rest_days": 39
+    },
+    "key": "2026-10-21-周三001",
+    "kickoff": "2026-10-21T18:00:00+08:00",
+    "load_diff_14": -3,
+    "match_id": "match-cd3e3257de0f45dbbcdfc3db5ee422e0",
+    "rest_diff": 35
+   },
+   "titan007_id": "3000494"
   },
   "55e4908a2a47e5c5": {
    "actual": "0",
@@ -72798,6 +76733,333 @@
    "src": "jczq",
    "titan007_id": "2910909"
   },
+  "6af835e6b4b4ed55": {
+   "actual": "0",
+   "belief": {
+    "away": 0.08618592604433954,
+    "draw": 0.13853612022822587,
+    "home": 0.7752779537274346
+   },
+   "belief_moved": false,
+   "books": 15,
+   "closing": {
+    "all_books": 357,
+    "all_fair": {
+     "away": 0.120478,
+     "draw": 0.164848,
+     "home": 0.714674
+    },
+    "book_count": 359,
+    "fetched_at": "2026-10-23T02:45:11+00:00",
+    "sharp_books": 15,
+    "sharp_fair": {
+     "away": 0.137751,
+     "draw": 0.169901,
+     "home": 0.692348
+    },
+    "sharp_odds": {
+     "away": 6.842,
+     "draw": 5.5473,
+     "home": 1.3613
+    },
+    "sharp_opening_odds": {
+     "away": 9.6093,
+     "draw": 6.5073,
+     "home": 1.234
+    },
+    "source": "titan007_history",
+    "updated_at_max": "2026-10-21T19:00:00",
+    "updated_at_min": "2026-10-15T03:47:00"
+   },
+   "conf": 3,
+   "date": "2026-10-21",
+   "fair": {
+    "away": 0.086186,
+    "draw": 0.138536,
+    "home": 0.775278
+   },
+   "fair_kind": "read_time",
+   "fair_source": "bold_odds",
+   "goals": [
+    2,
+    3
+   ],
+   "ht": [
+    1,
+    1
+   ],
+   "issue": null,
+   "jczq_no": "周三011",
+   "judged_at_source": "research.captured_at",
+   "key": "2026-10-21-周三011",
+   "labels": {
+    "anchor_integrity": "pass",
+    "anchor_side": "home",
+    "crash_markers": [],
+    "death_three_proofs": {
+     "away": {
+      "a": false,
+      "b": true,
+      "c": true,
+      "proof_count": "2/3",
+      "verdict": "alive"
+     },
+     "draw": {
+      "a": false,
+      "b": false,
+      "c": true,
+      "proof_count": "1/3",
+      "verdict": "alive"
+     },
+     "home": {
+      "a": false,
+      "b": false,
+      "c": false,
+      "proof_count": "0/3",
+      "verdict": "alive"
+     }
+    },
+    "directional_flags": [],
+    "hole_location_priced_in": true,
+    "hole_location_side": "home",
+    "hole_location_unit": "creation",
+    "label_source": "research",
+    "license_questions": {
+     "q1_spine": true,
+     "q2_route": true,
+     "q3a_opponent_scores": true,
+     "q3b_opponent_takes_points": false,
+     "q4_no_context_flag": true
+    },
+    "nondirectional_flags": [],
+    "override_reason": null,
+    "precedents": [
+     [
+      "0",
+      "dead"
+     ],
+     [
+      "1",
+      "alive"
+     ]
+    ],
+    "rest_days": {
+     "away": 4,
+     "home": 8
+    },
+    "rotation_risk": null,
+    "rubric": {
+     "F_absence_away": {
+      "answer": "no",
+      "p": 0.2,
+      "source_tier": "press"
+     },
+     "F_absence_home": {
+      "answer": "yes",
+      "p": 0.95,
+      "source_tier": "press"
+     },
+     "F_rotation": {
+      "answer": "none",
+      "p": 0.7,
+      "source_tier": "press"
+     },
+     "F_suspension": {
+      "answer": "none",
+      "p": 0.85,
+      "source_tier": "press"
+     },
+     "F_venue": {
+      "answer": "none",
+      "p": 0.85,
+      "source_tier": "press"
+     },
+     "M_facts_priced": {
+      "answer": "yes",
+      "p": 0.85,
+      "source_tier": "unknown"
+     },
+     "M_market_read": {
+      "answer": "overpriced_fav",
+      "p": 0.45,
+      "source_tier": "unknown"
+     },
+     "O_other_event": {
+      "answer": "none",
+      "p": 0.65,
+      "source_tier": "club_official"
+     },
+     "S_anchor_side": {
+      "answer": "home",
+      "p": 0.9,
+      "source_tier": "unknown"
+     },
+     "S_crash_candidate": {
+      "answer": "no",
+      "p": 0.2,
+      "source_tier": "unknown"
+     },
+     "S_dead_face": {
+      "answer": "none",
+      "p": 0.9,
+      "source_tier": "unknown"
+     },
+     "S_draw_mode": {
+      "answer": "no",
+      "p": 0.1,
+      "source_tier": "unknown"
+     },
+     "S_spine_intact": {
+      "answer": "yes",
+      "p": 0.75,
+      "source_tier": "press"
+     },
+     "S_underdog_path": {
+      "answer": "no",
+      "p": 0.45,
+      "source_tier": "unknown"
+     }
+    },
+    "rubric_b": {
+     "at": "2026-10-21T09:48:23+08:00",
+     "belief": {
+      "0": 0.1,
+      "1": 0.15,
+      "3": 0.75
+     },
+     "items": {
+      "F_absence_home": {
+       "answer": "yes",
+       "p": 0.95,
+       "source_tier": "press"
+      },
+      "M_market_read": {
+       "answer": "agree",
+       "p": 0.6,
+       "source_tier": "unknown"
+      },
+      "O_other_event": {
+       "answer": "away",
+       "p": 0.6,
+       "source_tier": "club_official"
+      },
+      "S_anchor_side": {
+       "answer": "home",
+       "p": 0.75,
+       "source_tier": "unknown"
+      },
+      "S_crash_candidate": {
+       "answer": "no",
+       "p": 0.3,
+       "source_tier": "unknown"
+      },
+      "S_dead_face": {
+       "answer": "none",
+       "p": 0.85,
+       "source_tier": "unknown"
+      },
+      "S_draw_mode": {
+       "answer": "no",
+       "p": 0.1,
+       "source_tier": "unknown"
+      },
+      "S_spine_intact": {
+       "answer": "no",
+       "p": 0.1,
+       "source_tier": "press"
+      },
+      "S_underdog_path": {
+       "answer": "yes",
+       "p": 0.85,
+       "source_tier": "unknown"
+      }
+     },
+     "kappa": {
+      "agree": 0.556,
+      "items": {
+       "F_absence_away": null,
+       "F_absence_home": true,
+       "F_goalkeeper": null,
+       "F_rotation": null,
+       "F_suspension": null,
+       "F_venue": null,
+       "M_facts_priced": null,
+       "M_market_read": false,
+       "O_other_event": false,
+       "S_anchor_side": true,
+       "S_crash_candidate": true,
+       "S_dead_face": true,
+       "S_draw_mode": true,
+       "S_spine_intact": false,
+       "S_underdog_path": false
+      },
+      "kappa": 0.446,
+      "n": 9
+     },
+     "model": "haiku",
+     "prospective": true,
+     "version": "r3"
+    },
+    "rubric_belief": {
+     "0": 0.1,
+     "1": 0.16,
+     "3": 0.74
+    },
+    "rubric_overridden": false,
+    "rubric_version": "r3",
+    "stance_cover": null,
+    "stance_face": "3",
+    "stance_structure": "single",
+    "team_tags": {},
+    "tracking_tags": [],
+    "underdog_side": "away",
+    "underdog_strength": "real"
+   },
+   "match_no": "周三011",
+   "name": null,
+   "note": "[周三011|里斯本-LASK林茨|deep_research] 两队实力差距明显。Sporting 主场作战，休整了 8 天，10 场正式比赛不败（7胜3平），Suárez 10 场 9 球。对手 LASK 是奥地利卫冕冠军，这是他们第一个欧冠赛季，目前 0 分，在客胜 Lustenau 之前连续 7 场正式比赛失球。画像里 2025-26 赛季 82 分、89-24 的数据属实，但已经过时：夏窗 Hjulmand、Trincão、Diomandé、Morita、Quenda 都已离队；本场还缺 Zalazar（组织核心）和 Debast（中卫），这两人客场对 Lens 时就已缺阵，已在价内。最可能的走势是 Sporting 控球破门，LASK 被迫前压后被反击扩大比分；双方都有进球手段，不是小球局。观察项（n=3，不挂旗）：Sporting 本季联赛三次 2 球以上领先被追近（客 Estrela 2-2、主 Arouca 2-2、主 Guimarãe",
+   "opening_odds": {
+    "away": 9.6093,
+    "draw": 6.5073,
+    "home": 1.234
+   },
+   "provably_prospective": true,
+   "read_id": "R-ai-jczq-2026-10-21-周三011-had-1715",
+   "read_made_at": "2026-10-21T17:15:03+08:00",
+   "src": "jczq",
+   "team_load": {
+    "absences": {
+     "away": [],
+     "home": [
+      "缺阵"
+     ]
+    },
+    "away": "LASK林茨",
+    "away_key": "name:lask林茨",
+    "away_load": {
+     "long_break": false,
+     "matches_14d": 1,
+     "next_days": null,
+     "rest_days": 7
+    },
+    "captured_at": "2026-10-21T18:45:02+08:00",
+    "flags": [],
+    "home": "里斯本",
+    "home_key": "por-sporting",
+    "home_load": {
+     "long_break": false,
+     "matches_14d": 2,
+     "next_days": null,
+     "rest_days": 8
+    },
+    "key": "2026-10-21-周三011",
+    "kickoff": "2026-10-22T03:00:00+08:00",
+    "load_diff_14": 1,
+    "match_id": "match-bc076021f9b24482a1add184d9bc7320",
+    "rest_diff": 1
+   },
+   "titan007_id": "3073173"
+  },
   "6b16817b7366f17e": {
    "actual": "0",
    "belief": {
@@ -76838,6 +81100,432 @@
    "titan007_id": "3075310",
    "twin_keys": [
     "2026-10-15-周四002"
+   ]
+  },
+  "7479c36942d419a7": {
+   "actual": "3",
+   "belief": {
+    "away": 0.308030803080308,
+    "draw": 0.2972297229722972,
+    "home": 0.3947394739473947
+   },
+   "belief_moved": true,
+   "call": null,
+   "closing": {
+    "all_books": 318,
+    "all_fair": {
+     "away": 0.328591,
+     "draw": 0.25628,
+     "home": 0.415129
+    },
+    "book_count": 319,
+    "fetched_at": "2026-10-19T02:45:26+00:00",
+    "sharp_books": 15,
+    "sharp_fair": {
+     "away": 0.331906,
+     "draw": 0.255675,
+     "home": 0.412419
+    },
+    "sharp_odds": {
+     "away": 2.824,
+     "draw": 3.666,
+     "home": 2.2727
+    },
+    "sharp_opening_odds": {
+     "away": 2.8747,
+     "draw": 3.548,
+     "home": 2.2547
+    },
+    "source": "titan007_history",
+    "updated_at_max": "2026-10-19T02:28:00",
+    "updated_at_min": "2026-10-15T03:02:00"
+   },
+   "conf": 2,
+   "date": "2026-10-22",
+   "fair": {
+    "away": 0.308030803080308,
+    "draw": 0.2972297229722972,
+    "home": 0.3947394739473947
+   },
+   "fair_kind": "read_time",
+   "fair_source": "legs-base",
+   "intl_drift_pp": {
+    "away": 0.65,
+    "draw": -0.73,
+    "home": 0.08
+   },
+   "issue": "26146",
+   "jczq_no": "周三004",
+   "judged_at_source": "legs-base.legs[n].judged_at",
+   "kernel": {
+    "actor_id": "judge:owner",
+    "commitment_tier": "commit",
+    "evidence_coverage": null,
+    "evidence_quality": null,
+    "falsifier": "若曼联 90 分钟内净胜≥2 球或科莫全场射正≤2，本判断作废",
+    "forecast_revision_id": "fr-49bb5828df4e4a7d8850d7c77faf5bb0",
+    "information_cutoff_at": null,
+    "made_at": "2026-10-20T10:30:13+00:00",
+    "match_id": "match-82e7cadf96ef4ad78eeedc529d8c806e",
+    "model_name": null,
+    "outcome_source": "official-results",
+    "providers": [
+     "zucai-canonical"
+    ],
+    "revision_no": 5,
+    "scheduled_at": "2026-10-22"
+   },
+   "kernel_belief": {
+    "away": 0.308030803080308,
+    "draw": 0.2972297229722972,
+    "home": 0.3947394739473947
+   },
+   "kernel_provably_prospective": true,
+   "key": "26146-8",
+   "labels": {
+    "anchor_integrity": "symmetric_damage",
+    "anchor_side": "home",
+    "crash_markers": [],
+    "death_three_proofs": {
+     "away": {
+      "a": false,
+      "b": false,
+      "c": false,
+      "proof_count": "0/3",
+      "verdict": "alive"
+     },
+     "draw": {
+      "a": false,
+      "b": false,
+      "c": false,
+      "proof_count": "0/3",
+      "verdict": "alive"
+     },
+     "home": {
+      "a": false,
+      "b": false,
+      "c": false,
+      "proof_count": "0/3",
+      "verdict": "alive"
+     }
+    },
+    "directional_flags": [
+     "anchor_shield_out"
+    ],
+    "hole_location_priced_in": false,
+    "hole_location_side": "both",
+    "hole_location_unit": "both",
+    "label_source": "legs+research",
+    "license_questions": {
+     "q1_spine": false,
+     "q2_route": true,
+     "q3a_opponent_scores": true,
+     "q3b_opponent_takes_points": true,
+     "q4_no_context_flag": false
+    },
+    "nondirectional_flags": [
+     "two_way_instability"
+    ],
+    "override_reason": null,
+    "precedents": [
+     [
+      "3",
+      "alive"
+     ],
+     [
+      "0",
+      "alive"
+     ]
+    ],
+    "researched_at": null,
+    "rest_days": null,
+    "rotation_risk": null,
+    "rubric": {
+     "F_absence_away": {
+      "answer": "yes",
+      "p": 0.95,
+      "source_tier": "press"
+     },
+     "F_absence_home": {
+      "answer": "yes",
+      "p": 0.85,
+      "source_tier": "press"
+     },
+     "F_goalkeeper": {
+      "answer": "none",
+      "p": 0.8,
+      "source_tier": "press"
+     },
+     "F_suspension": {
+      "answer": "away",
+      "p": 0.9,
+      "source_tier": "press"
+     },
+     "F_venue": {
+      "answer": "none",
+      "p": 0.9,
+      "source_tier": "league_official"
+     },
+     "M_facts_priced": {
+      "answer": "yes",
+      "p": 0.65,
+      "source_tier": "unknown"
+     },
+     "M_market_read": {
+      "answer": "agree",
+      "p": 0.6,
+      "source_tier": "unknown"
+     },
+     "O_other_event": {
+      "answer": "away",
+      "p": 0.6,
+      "source_tier": "press"
+     },
+     "S_anchor_side": {
+      "answer": "home",
+      "p": 0.55,
+      "source_tier": "unknown"
+     },
+     "S_crash_candidate": {
+      "answer": "no",
+      "p": 0.45,
+      "source_tier": "unknown"
+     },
+     "S_dead_face": {
+      "answer": "none",
+      "p": 0.9,
+      "source_tier": "unknown"
+     },
+     "S_draw_mode": {
+      "answer": "no",
+      "p": 0.2,
+      "source_tier": "unknown"
+     },
+     "S_spine_intact": {
+      "answer": "no",
+      "p": 0.45,
+      "source_tier": "press"
+     },
+     "S_underdog_path": {
+      "answer": "yes",
+      "p": 0.6,
+      "source_tier": "unknown"
+     }
+    },
+    "rubric_b": {
+     "at": "2026-10-18T21:53:27+08:00",
+     "belief": {
+      "0": 0.31,
+      "1": 0.27,
+      "3": 0.42
+     },
+     "items": {
+      "F_absence_away": {
+       "answer": "yes",
+       "p": 0.9,
+       "source_tier": "press"
+      },
+      "F_absence_home": {
+       "answer": "yes",
+       "p": 0.6,
+       "source_tier": "press"
+      },
+      "F_suspension": {
+       "answer": "away",
+       "p": 0.75,
+       "source_tier": "press"
+      },
+      "M_facts_priced": {
+       "answer": "no",
+       "p": 0.4,
+       "source_tier": "unknown"
+      },
+      "M_market_read": {
+       "answer": "agree",
+       "p": 0.8,
+       "source_tier": "unknown"
+      },
+      "O_other_event": {
+       "answer": "home",
+       "p": 0.5,
+       "source_tier": "press"
+      },
+      "S_crash_candidate": {
+       "answer": "yes",
+       "p": 0.55,
+       "source_tier": "unknown"
+      },
+      "S_dead_face": {
+       "answer": "none",
+       "p": 0.8,
+       "source_tier": "unknown"
+      },
+      "S_draw_mode": {
+       "answer": "no",
+       "p": 0.2,
+       "source_tier": "unknown"
+      },
+      "S_underdog_path": {
+       "answer": "yes",
+       "p": 0.8,
+       "source_tier": "unknown"
+      }
+     },
+     "kappa": {
+      "agree": 0.7,
+      "items": {
+       "F_absence_away": true,
+       "F_absence_home": true,
+       "F_goalkeeper": null,
+       "F_rotation": null,
+       "F_suspension": true,
+       "F_venue": null,
+       "M_facts_priced": false,
+       "M_market_read": true,
+       "O_other_event": false,
+       "S_anchor_side": null,
+       "S_crash_candidate": false,
+       "S_dead_face": true,
+       "S_draw_mode": true,
+       "S_spine_intact": null,
+       "S_underdog_path": true
+      },
+      "kappa": 0.605,
+      "n": 10
+     },
+     "model": "haiku",
+     "prospective": true,
+     "version": "r1"
+    },
+    "rubric_belief": {
+     "0": 0.33,
+     "1": 0.26,
+     "3": 0.41
+    },
+    "rubric_overridden": false,
+    "rubric_version": "r1",
+    "stance_cover": "0",
+    "stance_face": "3",
+    "stance_structure": "double",
+    "team_tags": {},
+    "tracking_tags": [],
+    "underdog_side": "away",
+    "underdog_strength": "real"
+   },
+   "match_no": 8,
+   "name": "科莫-曼联·30",
+   "note": "",
+   "polymarket": {
+    "event_id": "1149404",
+    "faces": {
+     "away": {
+      "ask": 0.33,
+      "bid": 0.32,
+      "condition_id": "0x967d15f6404763ebd802aa6cfba45edfbf004805eb143e130b542550a8f04962",
+      "last_trade": 0.33,
+      "mid": 0.325,
+      "token": "92550237320664152543752854662781858843571683418255807727579120518019778847474",
+      "volume": 4808.665099999999,
+      "volume24hr": 423.549046
+     },
+     "draw": {
+      "ask": 0.26,
+      "bid": 0.25,
+      "condition_id": "0x67990a298f65aea586e0c9fc7feb98c5f8a0c4b2ecbd59bbddd5b87de9080f07",
+      "last_trade": 0.26,
+      "mid": 0.255,
+      "token": "110153294433837932005230895592096208757474937979869020284169927017513250774639",
+      "volume": 858.1535860000001,
+      "volume24hr": 384.6553830000001
+     },
+     "home": {
+      "ask": 0.43,
+      "bid": 0.42,
+      "condition_id": "0xb4d88924fa5c7ad311444e584ff46da4f0f4c0fa50cc6446c3f543e6b0798436",
+      "last_trade": 0.43,
+      "mid": 0.425,
+      "token": "21547411149225201408999552136008292726389103403378181868630108215268270101911",
+      "volume": 1655.6638610000002,
+      "volume24hr": 525.450838
+     }
+    },
+    "fetched_at": "2026-10-20T18:31:30+08:00",
+    "kickoff": "2026-10-22T00:45:00+08:00",
+    "liquidity": 428996.9799,
+    "lopsided": false,
+    "probs": {
+     "away": 0.32338308457711445,
+     "draw": 0.2537313432835821,
+     "home": 0.4228855721393035
+    },
+    "rank": 10,
+    "title": "Como 1907 vs. Manchester United FC",
+    "volume": 7322.482547,
+    "volume24hr": 1333.655267,
+    "vs_market_pp": {
+     "away": -0.5,
+     "draw": -0.3,
+     "home": 0.8
+    }
+   },
+   "provably_prospective": true,
+   "quotes": {
+    "intl": {
+     "closing": {
+      "away": 3.0485,
+      "captured_at": "2026-10-20T10:30:04+00:00",
+      "draw": 3.8876,
+      "home": 2.4111
+     },
+     "n_snapshots": 4,
+     "opening": {
+      "away": 3.0248,
+      "captured_at": "2026-10-18T13:31:37+00:00",
+      "draw": 3.9093,
+      "home": 2.4178
+     },
+     "span_hours": 44.97
+    }
+   },
+   "src": "zucai",
+   "team_load": {
+    "absences": {
+     "away": [
+      "缺阵",
+      "停赛"
+     ],
+     "home": [
+      "缺阵",
+      "中轴缺"
+     ]
+    },
+    "away": "曼联",
+    "away_key": "eng-manchester-united",
+    "away_load": {
+     "long_break": false,
+     "matches_14d": 3,
+     "next_days": null,
+     "rest_days": 4
+    },
+    "captured_at": "2026-10-20T18:45:04+08:00",
+    "flags": [],
+    "home": "科莫",
+    "home_key": "ita-como",
+    "home_load": {
+     "long_break": false,
+     "matches_14d": 3,
+     "next_days": null,
+     "rest_days": 4
+    },
+    "key": "26146-8",
+    "kickoff": "2026-10-22T00:45:00+08:00",
+    "load_diff_14": 0,
+    "match_id": "match-82e7cadf96ef4ad78eeedc529d8c806e",
+    "rest_diff": 0
+   },
+   "titan007_id": "3073171",
+   "twin_keys": [
+    "2026-10-21-周三004"
    ]
   },
   "757f12bc9be6d126": {
@@ -96052,6 +100740,450 @@
     "rest_diff": null
    },
    "titan007_id": "2912286"
+  },
+  "9567fed0481da9ab": {
+   "actual": "3",
+   "belief": {
+    "away": 0.06770000000000001,
+    "draw": 0.13930000000000003,
+    "home": 0.793
+   },
+   "belief_moved": true,
+   "call": null,
+   "closing": {
+    "all_books": 327,
+    "all_fair": {
+     "away": 0.065612,
+     "draw": 0.122724,
+     "home": 0.811664
+    },
+    "book_count": 328,
+    "fetched_at": "2026-10-19T02:45:25+00:00",
+    "sharp_books": 15,
+    "sharp_fair": {
+     "away": 0.069043,
+     "draw": 0.119883,
+     "home": 0.811074
+    },
+    "sharp_odds": {
+     "away": 13.6187,
+     "draw": 7.8433,
+     "home": 1.1593
+    },
+    "sharp_opening_odds": {
+     "away": 14.3193,
+     "draw": 8.4253,
+     "home": 1.1367
+    },
+    "source": "titan007_history",
+    "updated_at_max": "2026-10-19T02:28:00",
+    "updated_at_min": "2026-10-15T03:44:00"
+   },
+   "conf": 4,
+   "date": "2026-10-21",
+   "fair": {
+    "away": 0.06770000000000001,
+    "draw": 0.13930000000000003,
+    "home": 0.793
+   },
+   "fair_kind": "read_time",
+   "fair_source": "legs-base",
+   "intl_drift_pp": {
+    "away": -1.87,
+    "draw": -1.52,
+    "home": 3.39
+   },
+   "issue": "26146",
+   "jczq_no": "周二005",
+   "judged_at_source": "legs-base.legs[n].judged_at",
+   "kernel": {
+    "actor_id": "judge:owner",
+    "commitment_tier": "commit",
+    "evidence_coverage": null,
+    "evidence_quality": null,
+    "falsifier": "罗马90分钟未能战胜斯洛文（平或负）。",
+    "forecast_revision_id": "fr-863df377bbd244469aee42af8cb67170",
+    "information_cutoff_at": null,
+    "made_at": "2026-10-18T13:52:16+00:00",
+    "match_id": "match-52f339d4631342ccaae8aa7aa0704582",
+    "model_name": null,
+    "outcome_source": "official-results",
+    "providers": [
+     "zucai-canonical"
+    ],
+    "revision_no": 2,
+    "scheduled_at": "2026-10-21"
+   },
+   "kernel_belief": {
+    "away": 0.0837,
+    "draw": 0.15719999999999998,
+    "home": 0.7590999999999999
+   },
+   "kernel_provably_prospective": true,
+   "key": "26146-6",
+   "labels": {
+    "anchor_integrity": "fail",
+    "anchor_side": "home",
+    "crash_markers": [],
+    "death_three_proofs": {
+     "away": {
+      "a": false,
+      "b": false,
+      "c": false,
+      "proof_count": "1/3",
+      "verdict": "alive"
+     },
+     "draw": {
+      "a": false,
+      "b": false,
+      "c": false,
+      "proof_count": "0/3",
+      "verdict": "alive"
+     },
+     "home": {
+      "a": false,
+      "b": false,
+      "c": false,
+      "proof_count": "0/3",
+      "verdict": "alive"
+     }
+    },
+    "directional_flags": [
+     "anchor_shield_out"
+    ],
+    "hole_location_priced_in": true,
+    "hole_location_side": "home",
+    "hole_location_unit": "goalkeeper",
+    "label_source": "legs+research",
+    "license_questions": {
+     "q1_spine": false,
+     "q2_route": true,
+     "q3a_opponent_scores": true,
+     "q3b_opponent_takes_points": false,
+     "q4_no_context_flag": true
+    },
+    "nondirectional_flags": [],
+    "override_reason": null,
+    "precedents": [
+     [
+      "0",
+      "none"
+     ]
+    ],
+    "researched_at": null,
+    "rest_days": null,
+    "rotation_risk": null,
+    "rubric": {
+     "F_absence_home": {
+      "answer": "yes",
+      "p": 1.0,
+      "source_tier": "press"
+     },
+     "F_goalkeeper": {
+      "answer": "home",
+      "p": 1.0,
+      "source_tier": "press"
+     },
+     "F_suspension": {
+      "answer": "none",
+      "p": 0.9,
+      "source_tier": "press"
+     },
+     "F_venue": {
+      "answer": "none",
+      "p": 0.95,
+      "source_tier": "press"
+     },
+     "M_facts_priced": {
+      "answer": "yes",
+      "p": 0.8,
+      "source_tier": "unknown"
+     },
+     "M_market_read": {
+      "answer": "agree",
+      "p": 0.75,
+      "source_tier": "unknown"
+     },
+     "O_other_event": {
+      "answer": "none",
+      "p": 0.8,
+      "source_tier": "unknown"
+     },
+     "S_anchor_side": {
+      "answer": "home",
+      "p": 0.95,
+      "source_tier": "unknown"
+     },
+     "S_crash_candidate": {
+      "answer": "no",
+      "p": 0.35,
+      "source_tier": "unknown"
+     },
+     "S_dead_face": {
+      "answer": "none",
+      "p": 0.9,
+      "source_tier": "unknown"
+     },
+     "S_draw_mode": {
+      "answer": "no",
+      "p": 0.1,
+      "source_tier": "unknown"
+     },
+     "S_spine_intact": {
+      "answer": "no",
+      "p": 0.2,
+      "source_tier": "press"
+     },
+     "S_underdog_path": {
+      "answer": "no",
+      "p": 0.25,
+      "source_tier": "unknown"
+     }
+    },
+    "rubric_b": {
+     "at": "2026-10-18T21:53:20+08:00",
+     "belief": {
+      "0": 0.07,
+      "1": 0.13,
+      "3": 0.8
+     },
+     "items": {
+      "F_absence_away": {
+       "answer": "no",
+       "p": 0.05,
+       "source_tier": "unknown"
+      },
+      "F_absence_home": {
+       "answer": "yes",
+       "p": 0.95,
+       "source_tier": "press"
+      },
+      "F_goalkeeper": {
+       "answer": "home",
+       "p": 0.9,
+       "source_tier": "press"
+      },
+      "F_rotation": {
+       "answer": "none",
+       "p": 0.9,
+       "source_tier": "unknown"
+      },
+      "F_suspension": {
+       "answer": "none",
+       "p": 0.8,
+       "source_tier": "unknown"
+      },
+      "F_venue": {
+       "answer": "none",
+       "p": 0.95,
+       "source_tier": "unknown"
+      },
+      "M_facts_priced": {
+       "answer": "yes",
+       "p": 0.85,
+       "source_tier": "unknown"
+      },
+      "M_market_read": {
+       "answer": "agree",
+       "p": 0.7,
+       "source_tier": "unknown"
+      },
+      "O_other_event": {
+       "answer": "home",
+       "p": 0.8,
+       "source_tier": "aggregator"
+      },
+      "S_anchor_side": {
+       "answer": "home",
+       "p": 0.9,
+       "source_tier": "unknown"
+      },
+      "S_crash_candidate": {
+       "answer": "yes",
+       "p": 0.75,
+       "source_tier": "unknown"
+      },
+      "S_dead_face": {
+       "answer": "none",
+       "p": 0.9,
+       "source_tier": "unknown"
+      },
+      "S_draw_mode": {
+       "answer": "no",
+       "p": 0.1,
+       "source_tier": "unknown"
+      },
+      "S_spine_intact": {
+       "answer": "no",
+       "p": 0.05,
+       "source_tier": "unknown"
+      },
+      "S_underdog_path": {
+       "answer": "no",
+       "p": 0.3,
+       "source_tier": "unknown"
+      }
+     },
+     "kappa": {
+      "agree": 0.846,
+      "items": {
+       "F_absence_away": null,
+       "F_absence_home": true,
+       "F_goalkeeper": true,
+       "F_rotation": null,
+       "F_suspension": true,
+       "F_venue": true,
+       "M_facts_priced": true,
+       "M_market_read": true,
+       "O_other_event": false,
+       "S_anchor_side": true,
+       "S_crash_candidate": false,
+       "S_dead_face": true,
+       "S_draw_mode": true,
+       "S_spine_intact": true,
+       "S_underdog_path": true
+      },
+      "kappa": 0.803,
+      "n": 13
+     },
+     "model": "haiku",
+     "prospective": true,
+     "version": "r1"
+    },
+    "rubric_belief": {
+     "0": 0.08,
+     "1": 0.13,
+     "3": 0.79
+    },
+    "rubric_overridden": false,
+    "rubric_version": "r1",
+    "stance_cover": null,
+    "stance_face": "3",
+    "stance_structure": "single",
+    "team_tags": {},
+    "tracking_tags": [],
+    "underdog_side": "away",
+    "underdog_strength": "weak"
+   },
+   "match_no": 6,
+   "name": "罗马-布拉迪·3",
+   "note": "",
+   "polymarket": {
+    "event_id": "1149360",
+    "faces": {
+     "away": {
+      "ask": 0.04,
+      "bid": 0.039,
+      "condition_id": "0x71944e3bcf53b5866bd16006f3b9da54fc7c642cd9df349fdfd37235794b4947",
+      "last_trade": 0.04,
+      "mid": 0.0395,
+      "token": "948296427752891571526025279230487980041418307550301655082961834200781222113",
+      "volume": 7015.237434000001,
+      "volume24hr": 7843.261045000001
+     },
+     "draw": {
+      "ask": 0.1,
+      "bid": 0.09,
+      "condition_id": "0x6e5f39a6552e1f67dbd0b9fd31977b4a4a139c0af303550830477fa4a15fbdfb",
+      "last_trade": 0.11,
+      "mid": 0.095,
+      "token": "96473234810798313501748090965550066771275786001240453264235504908501372946959",
+      "volume": 9206.946128,
+      "volume24hr": 4151.301006
+     },
+     "home": {
+      "ask": 0.87,
+      "bid": 0.86,
+      "condition_id": "0x181994de1d01c061f92cc5249f06218d121a23b08eb3eb7b98b3147b1c8c9f9a",
+      "last_trade": 0.87,
+      "mid": 0.865,
+      "token": "91859012058117507834528256568123869774085748487238931914827397734363309658157",
+      "volume": 32061.279077,
+      "volume24hr": 25391.013359000004
+     }
+    },
+    "fetched_at": "2026-10-20T18:31:30+08:00",
+    "kickoff": "2026-10-21T03:00:00+08:00",
+    "liquidity": 911921.78588,
+    "lopsided": false,
+    "probs": {
+     "away": 0.03951975987993998,
+     "draw": 0.09504752376188094,
+     "home": 0.8654327163581791
+    },
+    "rank": 4,
+    "title": "AS Roma vs. ŠK Slovan Bratislava",
+    "trend_pp": {
+     "away": -5.0,
+     "draw": -9.0,
+     "home": 8.0
+    },
+    "volume": 48283.462639,
+    "volume24hr": 37385.575410000005,
+    "vs_market_pp": {
+     "away": -0.8,
+     "draw": -0.4,
+     "home": 1.2
+    }
+   },
+   "provably_prospective": true,
+   "quotes": {
+    "intl": {
+     "closing": {
+      "away": 20.9644,
+      "captured_at": "2026-10-20T10:30:04+00:00",
+      "draw": 10.0705,
+      "home": 1.1723
+     },
+     "n_snapshots": 4,
+     "opening": {
+      "away": 15.6986,
+      "captured_at": "2026-10-18T13:31:37+00:00",
+      "draw": 8.5324,
+      "home": 1.2209
+     },
+     "span_hours": 44.97
+    }
+   },
+   "src": "zucai",
+   "team_load": {
+    "absences": {
+     "away": [],
+     "home": [
+      "缺阵",
+      "中轴缺"
+     ]
+    },
+    "away": "布拉迪",
+    "away_key": "name:布拉迪",
+    "away_load": {
+     "long_break": false,
+     "matches_14d": 1,
+     "next_days": null,
+     "rest_days": 6
+    },
+    "captured_at": "2026-10-20T18:45:04+08:00",
+    "flags": [
+     "负荷差≥2:home"
+    ],
+    "home": "罗马",
+    "home_key": "ita-as-roma",
+    "home_load": {
+     "long_break": false,
+     "matches_14d": 3,
+     "next_days": null,
+     "rest_days": 3
+    },
+    "key": "26146-6",
+    "kickoff": "2026-10-21T03:00:00+08:00",
+    "load_diff_14": 2,
+    "match_id": "match-52f339d4631342ccaae8aa7aa0704582",
+    "rest_diff": -3
+   },
+   "titan007_id": "3073165",
+   "twin_keys": [
+    "2026-10-20-周二005"
+   ]
   },
   "960e72512b4f47bf": {
    "actual": "3",
@@ -115511,6 +120643,409 @@
    },
    "titan007_id": "3073103"
   },
+  "bb79af4fcf377453": {
+   "actual": "3",
+   "belief": {
+    "away": 0.1906,
+    "draw": 0.2033,
+    "home": 0.6061
+   },
+   "belief_moved": false,
+   "call": null,
+   "closing": {
+    "all_books": 325,
+    "all_fair": {
+     "away": 0.174237,
+     "draw": 0.20055,
+     "home": 0.625213
+    },
+    "book_count": 326,
+    "fetched_at": "2026-10-19T02:45:28+00:00",
+    "sharp_books": 15,
+    "sharp_fair": {
+     "away": 0.17923,
+     "draw": 0.198074,
+     "home": 0.622696
+    },
+    "sharp_odds": {
+     "away": 5.2347,
+     "draw": 4.7367,
+     "home": 1.5067
+    },
+    "sharp_opening_odds": {
+     "away": 5.2193,
+     "draw": 4.3407,
+     "home": 1.542
+    },
+    "source": "titan007_history",
+    "updated_at_max": "2026-10-19T02:35:00",
+    "updated_at_min": "2026-10-14T23:48:00"
+   },
+   "conf": 3,
+   "date": "2026-10-22",
+   "fair": {
+    "away": 0.1906,
+    "draw": 0.2033,
+    "home": 0.6061
+   },
+   "fair_kind": "read_time",
+   "fair_source": "legs-base",
+   "intl_drift_pp": {
+    "away": 1.44,
+    "draw": -1.3,
+    "home": -0.14
+   },
+   "issue": "26146",
+   "jczq_no": "周三009",
+   "judged_at_source": "legs-base.legs[n].judged_at",
+   "kernel": {
+    "actor_id": "judge:owner",
+    "commitment_tier": "commit",
+    "evidence_coverage": null,
+    "evidence_quality": null,
+    "falsifier": "若贝蒂斯 90 分钟未取胜，且赛后数据显示费耶诺德 xG ≥ 贝蒂斯（即并非贝蒂斯压制下的偶然失分），则「贝蒂斯本场明显更强」的判断作废",
+    "forecast_revision_id": "fr-8ea7f13c3bc344cda92a92830297035f",
+    "information_cutoff_at": null,
+    "made_at": "2026-10-20T10:30:13+00:00",
+    "match_id": "match-e395dc252f284bd69047d6d57505c62e",
+    "model_name": null,
+    "outcome_source": "official-results",
+    "providers": [
+     "zucai-canonical"
+    ],
+    "revision_no": 4,
+    "scheduled_at": "2026-10-22"
+   },
+   "kernel_belief": {
+    "away": 0.1906,
+    "draw": 0.2033,
+    "home": 0.6061
+   },
+   "kernel_provably_prospective": true,
+   "key": "26146-13",
+   "labels": {
+    "anchor_integrity": "pass",
+    "anchor_side": "home",
+    "crash_markers": [],
+    "death_three_proofs": {
+     "away": {
+      "a": false,
+      "b": false,
+      "c": true,
+      "proof_count": "1/3",
+      "verdict": "alive"
+     }
+    },
+    "directional_flags": [],
+    "hole_location_priced_in": true,
+    "hole_location_side": "both",
+    "hole_location_unit": "defense",
+    "label_source": "legs+research",
+    "license_questions": {
+     "q1_spine": true,
+     "q2_route": true,
+     "q3a_opponent_scores": true,
+     "q3b_opponent_takes_points": true,
+     "q4_no_context_flag": true
+    },
+    "nondirectional_flags": [],
+    "override_reason": null,
+    "precedents": [
+     [
+      "3",
+      "alive"
+     ]
+    ],
+    "researched_at": null,
+    "rest_days": null,
+    "rotation_risk": null,
+    "rubric": {
+     "F_absence_away": {
+      "answer": "no",
+      "p": 0.4,
+      "source_tier": "press"
+     },
+     "F_goalkeeper": {
+      "answer": "none",
+      "p": 0.7,
+      "source_tier": "press"
+     },
+     "F_suspension": {
+      "answer": "none",
+      "p": 0.85,
+      "source_tier": "press"
+     },
+     "F_venue": {
+      "answer": "none",
+      "p": 0.9,
+      "source_tier": "press"
+     },
+     "M_facts_priced": {
+      "answer": "yes",
+      "p": 0.8,
+      "source_tier": "unknown"
+     },
+     "M_market_read": {
+      "answer": "agree",
+      "p": 0.7,
+      "source_tier": "unknown"
+     },
+     "O_other_event": {
+      "answer": "none",
+      "p": 1.0,
+      "source_tier": "unknown"
+     },
+     "S_anchor_side": {
+      "answer": "home",
+      "p": 0.8,
+      "source_tier": "unknown"
+     },
+     "S_crash_candidate": {
+      "answer": "no",
+      "p": 0.3,
+      "source_tier": "unknown"
+     },
+     "S_dead_face": {
+      "answer": "none",
+      "p": 1.0,
+      "source_tier": "unknown"
+     },
+     "S_draw_mode": {
+      "answer": "no",
+      "p": 0.15,
+      "source_tier": "unknown"
+     },
+     "S_spine_intact": {
+      "answer": "yes",
+      "p": 0.75,
+      "source_tier": "press"
+     },
+     "S_underdog_path": {
+      "answer": "yes",
+      "p": 0.6,
+      "source_tier": "unknown"
+     }
+    },
+    "rubric_b": {
+     "at": "2026-10-18T21:52:18+08:00",
+     "belief": {
+      "0": 0.2,
+      "1": 0.2,
+      "3": 0.6
+     },
+     "items": {
+      "F_absence_away": {
+       "answer": "yes",
+       "p": 0.5,
+       "source_tier": "aggregator"
+      },
+      "F_absence_home": {
+       "answer": "no",
+       "p": 0.03,
+       "source_tier": "unknown"
+      },
+      "F_suspension": {
+       "answer": "none",
+       "p": 0.85,
+       "source_tier": "press"
+      },
+      "F_venue": {
+       "answer": "none",
+       "p": 0.85,
+       "source_tier": "unknown"
+      },
+      "M_market_read": {
+       "answer": "agree",
+       "p": 0.8,
+       "source_tier": "unknown"
+      },
+      "O_other_event": {
+       "answer": "away",
+       "p": 0.6,
+       "source_tier": "press"
+      },
+      "S_anchor_side": {
+       "answer": "home",
+       "p": 0.7,
+       "source_tier": "unknown"
+      },
+      "S_crash_candidate": {
+       "answer": "yes",
+       "p": 0.5,
+       "source_tier": "unknown"
+      },
+      "S_dead_face": {
+       "answer": "none",
+       "p": 0.9,
+       "source_tier": "unknown"
+      },
+      "S_draw_mode": {
+       "answer": "no",
+       "p": 0.12,
+       "source_tier": "unknown"
+      },
+      "S_spine_intact": {
+       "answer": "yes",
+       "p": 0.8,
+       "source_tier": "press"
+      },
+      "S_underdog_path": {
+       "answer": "yes",
+       "p": 0.7,
+       "source_tier": "unknown"
+      }
+     },
+     "kappa": {
+      "agree": 0.727,
+      "items": {
+       "F_absence_away": false,
+       "F_absence_home": null,
+       "F_goalkeeper": null,
+       "F_rotation": null,
+       "F_suspension": true,
+       "F_venue": true,
+       "M_facts_priced": null,
+       "M_market_read": true,
+       "O_other_event": false,
+       "S_anchor_side": true,
+       "S_crash_candidate": false,
+       "S_dead_face": true,
+       "S_draw_mode": true,
+       "S_spine_intact": true,
+       "S_underdog_path": true
+      },
+      "kappa": 0.656,
+      "n": 11
+     },
+     "model": "haiku",
+     "prospective": true,
+     "version": "r1"
+    },
+    "rubric_belief": {
+     "0": 0.2,
+     "1": 0.2,
+     "3": 0.6
+    },
+    "rubric_overridden": false,
+    "rubric_version": "r1",
+    "stance_cover": null,
+    "stance_face": "3",
+    "stance_structure": "single",
+    "team_tags": {},
+    "tracking_tags": [],
+    "underdog_side": "away",
+    "underdog_strength": "real"
+   },
+   "match_no": 13,
+   "name": "贝蒂斯-费耶诺·3",
+   "note": "",
+   "polymarket": {
+    "event_id": "1154818",
+    "faces": {
+     "away": {
+      "ask": 0.19,
+      "bid": 0.18,
+      "condition_id": "0x1d61e2584e4eee88f7f5e82d9fa4e89a730d1266464977c506233ca941030e2d",
+      "last_trade": 0.19,
+      "mid": 0.185,
+      "token": "110086631212346956290454380622813435356217919310788046586878939665983677081518",
+      "volume": 2000.746123,
+      "volume24hr": 1764.138279
+     },
+     "draw": {
+      "ask": 0.21,
+      "bid": 0.2,
+      "condition_id": "0x5903927fb340ab4167fcde366b0fad240cac594119c6711b6095e70a787d2c4a",
+      "last_trade": 0.21,
+      "mid": 0.20500000000000002,
+      "token": "40376609365937395752191680593363289530648292078080094965499326115365746486705",
+      "volume": 102.61905000000002,
+      "volume24hr": 69.28571600000001
+     },
+     "home": {
+      "ask": 0.62,
+      "bid": 0.61,
+      "condition_id": "0x9300f159f0ee66458701046e66aacd6e7156d6c1dccadc7553aa13fd66ebe266",
+      "last_trade": 0.62,
+      "mid": 0.615,
+      "token": "39813265034171879821864777955525427398800761363707656187208444348734481077774",
+      "volume": 14714.821471000001,
+      "volume24hr": 12387.806899999998
+     }
+    },
+    "fetched_at": "2026-10-20T18:31:30+08:00",
+    "kickoff": "2026-10-22T03:00:00+08:00",
+    "liquidity": 395483.8932,
+    "lopsided": false,
+    "probs": {
+     "away": 0.18407960199004977,
+     "draw": 0.2039800995024876,
+     "home": 0.6119402985074628
+    },
+    "rank": 8,
+    "title": "Real Betis Balompié vs. Feyenoord Rotterdam",
+    "volume": 16818.186644,
+    "volume24hr": 14221.230894999997,
+    "vs_market_pp": {
+     "away": -0.7,
+     "draw": 0.1,
+     "home": 0.6
+    }
+   },
+   "provably_prospective": true,
+   "quotes": {
+    "intl": {
+     "closing": {
+      "away": 5.2466,
+      "captured_at": "2026-10-20T10:30:04+00:00",
+      "draw": 4.9188,
+      "home": 1.6499
+     },
+     "n_snapshots": 4,
+     "opening": {
+      "away": 5.6561,
+      "captured_at": "2026-10-18T13:31:37+00:00",
+      "draw": 4.995,
+      "home": 1.6051
+     },
+     "span_hours": 44.97
+    }
+   },
+   "src": "zucai",
+   "team_load": {
+    "absences": {
+     "away": [],
+     "home": []
+    },
+    "away": "费耶诺",
+    "away_key": "ned-feyenoord",
+    "away_load": {
+     "long_break": false,
+     "matches_14d": 3,
+     "next_days": null,
+     "rest_days": 4
+    },
+    "captured_at": "2026-10-20T18:45:04+08:00",
+    "flags": [],
+    "home": "贝蒂斯",
+    "home_key": "esp-real-betis",
+    "home_load": {
+     "long_break": false,
+     "matches_14d": 3,
+     "next_days": null,
+     "rest_days": 4
+    },
+    "key": "26146-13",
+    "kickoff": "2026-10-22T03:00:00+08:00",
+    "load_diff_14": 0,
+    "match_id": "match-e395dc252f284bd69047d6d57505c62e",
+    "rest_diff": 0
+   },
+   "titan007_id": "3073160",
+   "twin_keys": [
+    "2026-10-21-周三009"
+   ]
+  },
   "bbc1642b6d4d8f89": {
    "actual": "1",
    "belief": {
@@ -116399,6 +121934,400 @@
    },
    "titan007_id": "2993818"
   },
+  "bf3f64861561096f": {
+   "actual": "0",
+   "belief": {
+    "away": 0.24469915745328666,
+    "draw": 0.2851958056692542,
+    "home": 0.4701050368774592
+   },
+   "belief_moved": false,
+   "books": 15,
+   "closing": {
+    "all_books": 357,
+    "all_fair": {
+     "away": 0.173736,
+     "draw": 0.277317,
+     "home": 0.548947
+    },
+    "book_count": 360,
+    "fetched_at": "2026-10-23T02:45:12+00:00",
+    "sharp_books": 15,
+    "sharp_fair": {
+     "away": 0.177243,
+     "draw": 0.276568,
+     "home": 0.546189
+    },
+    "sharp_odds": {
+     "away": 5.2387,
+     "draw": 3.3573,
+     "home": 1.7
+    },
+    "sharp_opening_odds": {
+     "away": 3.7027,
+     "draw": 3.3393,
+     "home": 1.9527
+    },
+    "source": "titan007_history",
+    "updated_at_max": "2026-10-22T00:30:00",
+    "updated_at_min": "2026-10-15T04:07:00"
+   },
+   "conf": 3,
+   "date": "2026-10-21",
+   "fair": {
+    "away": 0.244699,
+    "draw": 0.285196,
+    "home": 0.470105
+   },
+   "fair_kind": "read_time",
+   "fair_source": "bold_odds",
+   "goals": [
+    0,
+    1
+   ],
+   "ht": [
+    0,
+    0
+   ],
+   "issue": null,
+   "jczq_no": "周三013",
+   "judged_at_source": "research.captured_at",
+   "key": "2026-10-21-周三013",
+   "labels": {
+    "anchor_integrity": "pass",
+    "anchor_side": "home",
+    "crash_markers": [],
+    "death_three_proofs": {
+     "away": {
+      "a": false,
+      "b": false,
+      "c": true,
+      "proof_count": "1/3",
+      "verdict": "alive"
+     },
+     "draw": {
+      "a": false,
+      "b": false,
+      "c": true,
+      "proof_count": "1/3",
+      "verdict": "alive"
+     }
+    },
+    "directional_flags": [],
+    "hole_location_priced_in": true,
+    "hole_location_side": "none",
+    "hole_location_unit": "none",
+    "label_source": "research",
+    "license_questions": {
+     "q1_spine": true,
+     "q2_route": true,
+     "q3a_opponent_scores": true,
+     "q3b_opponent_takes_points": true,
+     "q4_no_context_flag": false
+    },
+    "nondirectional_flags": [
+     "undecided_second_leg"
+    ],
+    "override_reason": null,
+    "precedents": [
+     [
+      "3",
+      "alive"
+     ],
+     [
+      "0",
+      "alive"
+     ]
+    ],
+    "rest_days": null,
+    "rotation_risk": null,
+    "rubric": {
+     "F_absence_away": {
+      "answer": "yes",
+      "p": 0.95,
+      "source_tier": "club_official"
+     },
+     "F_absence_home": {
+      "answer": "yes",
+      "p": 0.85,
+      "source_tier": "press"
+     },
+     "F_goalkeeper": {
+      "answer": "none",
+      "p": 0.8,
+      "source_tier": "press"
+     },
+     "F_rotation": {
+      "answer": "none",
+      "p": 0.8,
+      "source_tier": "press"
+     },
+     "F_suspension": {
+      "answer": "none",
+      "p": 0.85,
+      "source_tier": "club_official"
+     },
+     "F_venue": {
+      "answer": "none",
+      "p": 0.85,
+      "source_tier": "press"
+     },
+     "M_facts_priced": {
+      "answer": "yes",
+      "p": 0.85,
+      "source_tier": "unknown"
+     },
+     "M_market_read": {
+      "answer": "agree",
+      "p": 0.6,
+      "source_tier": "unknown"
+     },
+     "O_other_event": {
+      "answer": "none",
+      "p": 0.6,
+      "source_tier": "press"
+     },
+     "S_anchor_side": {
+      "answer": "home",
+      "p": 0.8,
+      "source_tier": "unknown"
+     },
+     "S_crash_candidate": {
+      "answer": "no",
+      "p": 0.15,
+      "source_tier": "unknown"
+     },
+     "S_dead_face": {
+      "answer": "none",
+      "p": 0.9,
+      "source_tier": "unknown"
+     },
+     "S_draw_mode": {
+      "answer": "no",
+      "p": 0.3,
+      "source_tier": "unknown"
+     },
+     "S_spine_intact": {
+      "answer": "yes",
+      "p": 0.85,
+      "source_tier": "press"
+     },
+     "S_underdog_path": {
+      "answer": "yes",
+      "p": 0.6,
+      "source_tier": "unknown"
+     }
+    },
+    "rubric_b": {
+     "at": "2026-10-21T09:48:40+08:00",
+     "belief": {
+      "0": 0.25,
+      "1": 0.28,
+      "3": 0.47
+     },
+     "items": {
+      "F_absence_away": {
+       "answer": "yes",
+       "p": 0.95,
+       "source_tier": "club_official"
+      },
+      "F_goalkeeper": {
+       "answer": "none",
+       "p": 0.85,
+       "source_tier": "unknown"
+      },
+      "F_rotation": {
+       "answer": "none",
+       "p": 0.7,
+       "source_tier": "unknown"
+      },
+      "F_suspension": {
+       "answer": "home",
+       "p": 0.85,
+       "source_tier": "press"
+      },
+      "F_venue": {
+       "answer": "none",
+       "p": 0.9,
+       "source_tier": "unknown"
+      },
+      "M_market_read": {
+       "answer": "agree",
+       "p": 0.6,
+       "source_tier": "unknown"
+      },
+      "S_anchor_side": {
+       "answer": "home",
+       "p": 0.8,
+       "source_tier": "unknown"
+      },
+      "S_crash_candidate": {
+       "answer": "no",
+       "p": 0.15,
+       "source_tier": "unknown"
+      },
+      "S_dead_face": {
+       "answer": "none",
+       "p": 0.9,
+       "source_tier": "unknown"
+      },
+      "S_draw_mode": {
+       "answer": "no",
+       "p": 0.35,
+       "source_tier": "unknown"
+      },
+      "S_spine_intact": {
+       "answer": "yes",
+       "p": 0.9,
+       "source_tier": "press"
+      },
+      "S_underdog_path": {
+       "answer": "yes",
+       "p": 0.85,
+       "source_tier": "unknown"
+      }
+     },
+     "kappa": {
+      "agree": 0.917,
+      "items": {
+       "F_absence_away": true,
+       "F_absence_home": null,
+       "F_goalkeeper": true,
+       "F_rotation": true,
+       "F_suspension": false,
+       "F_venue": true,
+       "M_facts_priced": null,
+       "M_market_read": true,
+       "O_other_event": null,
+       "S_anchor_side": true,
+       "S_crash_candidate": true,
+       "S_dead_face": true,
+       "S_draw_mode": true,
+       "S_spine_intact": true,
+       "S_underdog_path": true
+      },
+      "kappa": 0.889,
+      "n": 12
+     },
+     "model": "haiku",
+     "prospective": true,
+     "version": "r3"
+    },
+    "rubric_belief": {
+     "0": 0.23,
+     "1": 0.28,
+     "3": 0.49
+    },
+    "rubric_overridden": false,
+    "rubric_version": "r3",
+    "stance_cover": "1",
+    "stance_face": "3",
+    "stance_structure": "double",
+    "team_tags": {},
+    "tracking_tags": [],
+    "underdog_side": "away",
+    "underdog_strength": "real"
+   },
+   "match_no": "周三013",
+   "name": null,
+   "note": "[周三013|帕梅拉斯-弗鲁米嫩|deep_research] 帕梅拉斯首回合客场 2-1 取胜，本场主场 90 分钟打平就能晋级，弗鲁米嫩赢 1 球进点球、赢 2 球直接晋级。纸面实力和状态都是帕梅拉斯占优：巴甲第 2（66 分，落后弗拉门戈 1 分），联赛主场 11 胜 3 平 1 负，近况四到五连胜；弗鲁米嫩巴甲第 5（51 分），联赛客场 3 胜 6 平 6 负，三连败，头号射手 John Kennedy 前交叉韧带断裂赛季报销，Cano 大腿伤随队但出场存疑。最可能的走势是弗鲁米嫩控球压上，帕梅拉斯用三中卫打中低位，再靠 Arias 和 Flaco López 反击。首回合弗鲁米嫩控球 70%，xG 却只有 0.985 比 0.977，帕梅拉斯的两个进球都来自效率和反击；次回合弗鲁米嫩必须更压上，身后空间会更大，所以本场不是小球局，进球来自压上与反击的转换。状态净影响偏帕梅拉斯（Abel 停赛期满回到场边，主力只缺 Vitor Roque）；",
+   "opening_odds": {
+    "away": 3.7027,
+    "draw": 3.3393,
+    "home": 1.9527
+   },
+   "polymarket": {
+    "event_id": "1154038",
+    "faces": {
+     "away": {
+      "ask": 0.23,
+      "bid": 0.22,
+      "condition_id": "0xc4cae56bb73c3b986f843e82ab83eb9b16d814f41d9cba5d9f5262ed70561714",
+      "last_trade": 0.24,
+      "mid": 0.225,
+      "token": "106880379793252910179523666422089999201038728070757526201080937231393548187866",
+      "volume": 2716.7987329999996,
+      "volume24hr": 1843.1344449999997
+     },
+     "draw": {
+      "ask": 0.3,
+      "bid": 0.28,
+      "condition_id": "0x366bcc9c4facf4115a9ac27408517e4d11f21dfd3b37d12e7f3a7c0f7df95532",
+      "last_trade": null,
+      "mid": 0.29000000000000004,
+      "token": "70862620757603204945975215545281191541277553511948823972509178541798630497945",
+      "volume": null,
+      "volume24hr": null
+     },
+     "home": {
+      "ask": 0.5,
+      "bid": 0.48,
+      "condition_id": "0x2447f92530db0538cf9ded6905492eb2e3e5a5c0c5ad0ea273b6f02d91bebf39",
+      "last_trade": 0.49,
+      "mid": 0.49,
+      "token": "2790086222828231518900888914941526306743862027163195238386140530469013546872",
+      "volume": 2481.47456,
+      "volume24hr": 1906.352942
+     }
+    },
+    "fetched_at": "2026-10-21T17:15:04+08:00",
+    "kickoff": "2026-10-22T08:30:00+08:00",
+    "liquidity": 81897.0519,
+    "lopsided": false,
+    "probs": {
+     "away": 0.22388059701492538,
+     "draw": 0.28855721393034833,
+     "home": 0.4875621890547264
+    },
+    "rank": 9,
+    "title": "SE Palmeiras vs. Fluminense FC",
+    "volume": 5198.273292999999,
+    "volume24hr": 3749.4873869999997,
+    "vs_market_pp": {
+     "away": -2.1,
+     "draw": 0.3,
+     "home": 1.7
+    }
+   },
+   "provably_prospective": true,
+   "read_id": "R-ai-jczq-2026-10-21-周三013-had-1715",
+   "read_made_at": "2026-10-21T17:15:03+08:00",
+   "src": "jczq",
+   "team_load": {
+    "absences": {
+     "away": [
+      "缺阵"
+     ],
+     "home": [
+      "缺阵"
+     ]
+    },
+    "away": "弗鲁米嫩",
+    "away_key": "name:弗鲁米嫩",
+    "away_load": {
+     "long_break": false,
+     "matches_14d": 3,
+     "next_days": null,
+     "rest_days": 3
+    },
+    "captured_at": "2026-10-21T18:45:02+08:00",
+    "flags": [],
+    "home": "帕梅拉斯",
+    "home_key": "name:帕梅拉斯",
+    "home_load": {
+     "long_break": false,
+     "matches_14d": 2,
+     "next_days": null,
+     "rest_days": 7
+    },
+    "key": "2026-10-21-周三013",
+    "kickoff": "2026-10-22T08:30:00+08:00",
+    "load_diff_14": -1,
+    "match_id": "match-5f6a27bad00f45bea51a44c202acc358",
+    "rest_diff": 4
+   },
+   "titan007_id": "3092418"
+  },
   "bfe07eb20feca616": {
    "actual": "3",
    "belief": {
@@ -116735,6 +122664,412 @@
     "rest_diff": 5
    },
    "titan007_id": "3018836"
+  },
+  "c1249cc1c685cc68": {
+   "actual": "3",
+   "belief": {
+    "away": 0.3953,
+    "draw": 0.2191,
+    "home": 0.3856
+   },
+   "belief_moved": false,
+   "call": null,
+   "closing": {
+    "all_books": 335,
+    "all_fair": {
+     "away": 0.386314,
+     "draw": 0.216961,
+     "home": 0.396725
+    },
+    "book_count": 338,
+    "fetched_at": "2026-10-21T02:45:08+00:00",
+    "sharp_books": 15,
+    "sharp_fair": {
+     "away": 0.378156,
+     "draw": 0.219751,
+     "home": 0.402093
+    },
+    "sharp_odds": {
+     "away": 2.486,
+     "draw": 4.278,
+     "home": 2.338
+    },
+    "sharp_opening_odds": {
+     "away": 2.562,
+     "draw": 3.974,
+     "home": 2.3447
+    },
+    "source": "titan007_history",
+    "updated_at_max": "2026-10-20T19:00:00",
+    "updated_at_min": "2026-10-15T10:16:00"
+   },
+   "conf": 2,
+   "date": "2026-10-21",
+   "fair": {
+    "away": 0.3953,
+    "draw": 0.2191,
+    "home": 0.3856
+   },
+   "fair_kind": "read_time",
+   "fair_source": "legs-base",
+   "intl_drift_pp": {
+    "away": 2.93,
+    "draw": -1.52,
+    "home": -1.42
+   },
+   "issue": "26146",
+   "jczq_no": "周二006",
+   "judged_at_source": "legs-base.legs[n].judged_at",
+   "kernel": {
+    "actor_id": "judge:owner",
+    "commitment_tier": "commit",
+    "evidence_coverage": null,
+    "evidence_quality": null,
+    "falsifier": "若 PSG 主力首发齐整（马尔基尼奥斯/帕乔/维蒂尼亚/登贝莱均首发）仍在 90 分钟内未胜，则「休整+主场+巴萨后卫带伤」的状态差判断作废",
+    "forecast_revision_id": "fr-c1a8f0fc5a2649dd89729a9c7924c98c",
+    "information_cutoff_at": null,
+    "made_at": "2026-10-20T10:30:13+00:00",
+    "match_id": "match-3529da48f00849f3b8f3e7c310fe41e5",
+    "model_name": null,
+    "outcome_source": "official-results",
+    "providers": [
+     "zucai-canonical"
+    ],
+    "revision_no": 4,
+    "scheduled_at": "2026-10-21"
+   },
+   "kernel_belief": {
+    "away": 0.3953,
+    "draw": 0.2191,
+    "home": 0.3856
+   },
+   "kernel_provably_prospective": true,
+   "key": "26146-5",
+   "labels": {
+    "anchor_integrity": "symmetric_damage",
+    "anchor_side": "none",
+    "crash_markers": [],
+    "death_three_proofs": {
+     "away": {
+      "a": false,
+      "b": false,
+      "c": false,
+      "proof_count": "0/3",
+      "verdict": "alive"
+     },
+     "draw": {
+      "a": false,
+      "b": false,
+      "c": false,
+      "proof_count": "0/3",
+      "verdict": "alive"
+     },
+     "home": {
+      "a": false,
+      "b": false,
+      "c": false,
+      "proof_count": "0/3",
+      "verdict": "alive"
+     }
+    },
+    "directional_flags": [],
+    "hole_location_priced_in": true,
+    "hole_location_side": "away",
+    "hole_location_unit": "defense",
+    "label_source": "legs+research",
+    "license_questions": {
+     "q1_spine": true,
+     "q2_route": true,
+     "q3a_opponent_scores": true,
+     "q3b_opponent_takes_points": true,
+     "q4_no_context_flag": false
+    },
+    "nondirectional_flags": [
+     "two_way_instability"
+    ],
+    "override_reason": null,
+    "precedents": [
+     [
+      "3",
+      "alive"
+     ]
+    ],
+    "researched_at": null,
+    "rest_days": null,
+    "rotation_risk": null,
+    "rubric": {
+     "F_absence_away": {
+      "answer": "no",
+      "p": 0.45,
+      "source_tier": "press"
+     },
+     "F_absence_home": {
+      "answer": "no",
+      "p": 0.15,
+      "source_tier": "press"
+     },
+     "F_goalkeeper": {
+      "answer": "none",
+      "p": 0.85,
+      "source_tier": "aggregator"
+     },
+     "F_suspension": {
+      "answer": "none",
+      "p": 0.9,
+      "source_tier": "press"
+     },
+     "F_venue": {
+      "answer": "none",
+      "p": 0.95,
+      "source_tier": "league_official"
+     },
+     "M_facts_priced": {
+      "answer": "yes",
+      "p": 0.6,
+      "source_tier": "unknown"
+     },
+     "M_market_read": {
+      "answer": "agree",
+      "p": 0.65,
+      "source_tier": "unknown"
+     },
+     "O_other_event": {
+      "answer": "away",
+      "p": 0.5,
+      "source_tier": "press"
+     },
+     "S_anchor_side": {
+      "answer": "none",
+      "p": 0.6,
+      "source_tier": "unknown"
+     },
+     "S_crash_candidate": {
+      "answer": "no",
+      "p": 0.2,
+      "source_tier": "unknown"
+     },
+     "S_dead_face": {
+      "answer": "none",
+      "p": 0.9,
+      "source_tier": "unknown"
+     },
+     "S_draw_mode": {
+      "answer": "no",
+      "p": 0.12,
+      "source_tier": "unknown"
+     },
+     "S_underdog_path": {
+      "answer": "yes",
+      "p": 0.7,
+      "source_tier": "unknown"
+     }
+    },
+    "rubric_b": {
+     "at": "2026-10-18T21:53:08+08:00",
+     "belief": {
+      "0": 0.37,
+      "1": 0.21,
+      "3": 0.42
+     },
+     "items": {
+      "F_absence_away": {
+       "answer": "yes",
+       "p": 0.9,
+       "source_tier": "aggregator"
+      },
+      "F_absence_home": {
+       "answer": "no",
+       "p": 0.0,
+       "source_tier": "unknown"
+      },
+      "M_market_read": {
+       "answer": "agree",
+       "p": 0.7,
+       "source_tier": "unknown"
+      },
+      "O_other_event": {
+       "answer": "away",
+       "p": 0.7,
+       "source_tier": "press"
+      },
+      "S_anchor_side": {
+       "answer": "none",
+       "p": 0.7,
+       "source_tier": "unknown"
+      },
+      "S_dead_face": {
+       "answer": "none",
+       "p": 0.9,
+       "source_tier": "unknown"
+      },
+      "S_draw_mode": {
+       "answer": "no",
+       "p": 0.15,
+       "source_tier": "unknown"
+      },
+      "S_underdog_path": {
+       "answer": "yes",
+       "p": 0.75,
+       "source_tier": "unknown"
+      }
+     },
+     "kappa": {
+      "agree": 0.875,
+      "items": {
+       "F_absence_away": false,
+       "F_absence_home": true,
+       "F_goalkeeper": null,
+       "F_rotation": null,
+       "F_suspension": null,
+       "F_venue": null,
+       "M_facts_priced": null,
+       "M_market_read": true,
+       "O_other_event": true,
+       "S_anchor_side": true,
+       "S_crash_candidate": null,
+       "S_dead_face": true,
+       "S_draw_mode": true,
+       "S_spine_intact": null,
+       "S_underdog_path": true
+      },
+      "kappa": 0.84,
+      "n": 8
+     },
+     "model": "haiku",
+     "prospective": true,
+     "version": "r1"
+    },
+    "rubric_belief": {
+     "0": 0.36,
+     "1": 0.22,
+     "3": 0.42
+    },
+    "rubric_overridden": false,
+    "rubric_version": "r1",
+    "stance_cover": "0",
+    "stance_face": "3",
+    "stance_structure": "double",
+    "team_tags": {},
+    "tracking_tags": [],
+    "underdog_side": "away",
+    "underdog_strength": "real"
+   },
+   "match_no": 5,
+   "name": "日尔曼-巴萨·30",
+   "note": "",
+   "polymarket": {
+    "event_id": "1149399",
+    "faces": {
+     "away": {
+      "ask": 0.4,
+      "bid": 0.39,
+      "condition_id": "0x130d93a16ff24b39208e549bb9581ff4f7f600248b2dc71fff9a8bed860648cf",
+      "last_trade": 0.4,
+      "mid": 0.395,
+      "token": "31682511723608770150053064810802010400448330082929879191712653876010261915911",
+      "volume": 957303.3613459999,
+      "volume24hr": 870063.6906810001
+     },
+     "draw": {
+      "ask": 0.22,
+      "bid": 0.21,
+      "condition_id": "0x40b38c5003ee76cabef7162c5e41923eb5fc611dffcae9756461795c2000becd",
+      "last_trade": 0.22,
+      "mid": 0.215,
+      "token": "67663514218312333544563894318029407264693493524344306629077712685778694931883",
+      "volume": 32669.737111,
+      "volume24hr": 15997.184243999998
+     },
+     "home": {
+      "ask": 0.39,
+      "bid": 0.38,
+      "condition_id": "0xf4bcfc73a0bc66dfaa13cbe9669a6aed0738e4739698faf079eab69f96eb4fe9",
+      "last_trade": 0.39,
+      "mid": 0.385,
+      "token": "26770595787602001462130355491642361938223218040760514066563322814696934151767",
+      "volume": 103596.36087199999,
+      "volume24hr": 44290.31729199999
+     }
+    },
+    "fetched_at": "2026-10-20T18:31:30+08:00",
+    "kickoff": "2026-10-21T03:00:00+08:00",
+    "liquidity": 2093641.9981,
+    "lopsided": false,
+    "probs": {
+     "away": 0.3969849246231156,
+     "draw": 0.21608040201005024,
+     "home": 0.3869346733668342
+    },
+    "rank": 1,
+    "title": "Paris Saint-Germain FC vs. FC Barcelona",
+    "trend_pp": {
+     "away": -7.5,
+     "draw": 1.0,
+     "home": -4.0
+    },
+    "volume": 1093569.459329,
+    "volume24hr": 930351.1922170001,
+    "vs_market_pp": {
+     "away": 0.2,
+     "draw": -0.3,
+     "home": 0.1
+    }
+   },
+   "provably_prospective": true,
+   "quotes": {
+    "intl": {
+     "closing": {
+      "away": 2.5297,
+      "captured_at": "2026-10-20T10:30:04+00:00",
+      "draw": 4.5641,
+      "home": 2.5934
+     },
+     "n_snapshots": 4,
+     "opening": {
+      "away": 2.5846,
+      "captured_at": "2026-10-18T13:31:37+00:00",
+      "draw": 4.5851,
+      "home": 2.5316
+     },
+     "span_hours": 44.97
+    }
+   },
+   "src": "zucai",
+   "team_load": {
+    "absences": {
+     "away": [],
+     "home": []
+    },
+    "away": "巴萨",
+    "away_key": "esp-barcelona",
+    "away_load": {
+     "long_break": false,
+     "matches_14d": 3,
+     "next_days": null,
+     "rest_days": 3
+    },
+    "captured_at": "2026-10-20T18:45:04+08:00",
+    "flags": [
+     "负荷差≥2:away"
+    ],
+    "home": "日尔曼",
+    "home_key": "name:日尔曼",
+    "home_load": {
+     "long_break": false,
+     "matches_14d": 1,
+     "next_days": null,
+     "rest_days": 6
+    },
+    "key": "26146-5",
+    "kickoff": "2026-10-21T03:00:00+08:00",
+    "load_diff_14": -2,
+    "match_id": "match-3529da48f00849f3b8f3e7c310fe41e5",
+    "rest_diff": 3
+   },
+   "titan007_id": "3073077",
+   "twin_keys": [
+    "2026-10-20-周二006"
+   ]
   },
   "c1fb268526fca13c": {
    "actual": "0",
@@ -120789,6 +127124,349 @@
    "read_made_at": null,
    "src": "jczq",
    "titan007_id": "3049657"
+  },
+  "cc6de149607dcafc": {
+   "actual": "3",
+   "belief": {
+    "away": 0.41819216007128074,
+    "draw": 0.26061621068493107,
+    "home": 0.32119162924378813
+   },
+   "belief_moved": false,
+   "books": 15,
+   "closing": {
+    "all_books": 348,
+    "all_fair": {
+     "away": 0.414906,
+     "draw": 0.263114,
+     "home": 0.32198
+    },
+    "book_count": 351,
+    "fetched_at": "2026-10-23T02:45:05+00:00",
+    "sharp_books": 15,
+    "sharp_fair": {
+     "away": 0.435455,
+     "draw": 0.258123,
+     "home": 0.306422
+    },
+    "sharp_odds": {
+     "away": 2.1387,
+     "draw": 3.608,
+     "home": 3.0393
+    },
+    "sharp_opening_odds": {
+     "away": 2.6947,
+     "draw": 3.5487,
+     "home": 2.3307
+    },
+    "source": "titan007_history",
+    "updated_at_max": "2026-10-21T10:00:00",
+    "updated_at_min": "2026-10-18T07:40:00"
+   },
+   "conf": 2,
+   "date": "2026-10-21",
+   "fair": {
+    "away": 0.418192,
+    "draw": 0.260616,
+    "home": 0.321192
+   },
+   "fair_kind": "read_time",
+   "fair_source": "bold_odds",
+   "goals": [
+    2,
+    1
+   ],
+   "ht": [
+    0,
+    0
+   ],
+   "issue": null,
+   "jczq_no": "周三002",
+   "judged_at_source": "research.captured_at",
+   "key": "2026-10-21-周三002",
+   "labels": {
+    "anchor_integrity": "symmetric_damage",
+    "anchor_side": "none",
+    "crash_markers": [],
+    "death_three_proofs": {
+     "away": {
+      "a": false,
+      "b": false,
+      "c": false,
+      "proof_count": "0/3",
+      "verdict": "alive"
+     },
+     "draw": {
+      "a": false,
+      "b": false,
+      "c": false,
+      "proof_count": "0/3",
+      "verdict": "alive"
+     },
+     "home": {
+      "a": false,
+      "b": false,
+      "c": false,
+      "proof_count": "0/3",
+      "verdict": "alive"
+     }
+    },
+    "directional_flags": [],
+    "hole_location_priced_in": true,
+    "hole_location_side": "home",
+    "hole_location_unit": "defense",
+    "label_source": "research",
+    "license_questions": {
+     "q1_spine": false,
+     "q2_route": true,
+     "q3a_opponent_scores": true,
+     "q3b_opponent_takes_points": true,
+     "q4_no_context_flag": false
+    },
+    "nondirectional_flags": [
+     "two_way_instability",
+     "information_asymmetry"
+    ],
+    "override_reason": null,
+    "precedents": [],
+    "rest_days": null,
+    "rotation_risk": null,
+    "rubric": {
+     "F_absence_away": {
+      "answer": "yes",
+      "p": 0.55,
+      "source_tier": "club_official"
+     },
+     "F_absence_home": {
+      "answer": "yes",
+      "p": 0.75,
+      "source_tier": "club_official"
+     },
+     "F_venue": {
+      "answer": "none",
+      "p": 0.9,
+      "source_tier": "aggregator"
+     },
+     "M_facts_priced": {
+      "answer": "yes",
+      "p": 0.6,
+      "source_tier": "unknown"
+     },
+     "M_market_read": {
+      "answer": "agree",
+      "p": 0.5,
+      "source_tier": "unknown"
+     },
+     "S_anchor_side": {
+      "answer": "none",
+      "p": 0.6,
+      "source_tier": "unknown"
+     },
+     "S_crash_candidate": {
+      "answer": "no",
+      "p": 0.4,
+      "source_tier": "unknown"
+     },
+     "S_dead_face": {
+      "answer": "none",
+      "p": 0.95,
+      "source_tier": "unknown"
+     },
+     "S_draw_mode": {
+      "answer": "no",
+      "p": 0.2,
+      "source_tier": "unknown"
+     },
+     "S_underdog_path": {
+      "answer": "yes",
+      "p": 0.65,
+      "source_tier": "unknown"
+     }
+    },
+    "rubric_b": {
+     "at": "2026-10-21T09:47:24+08:00",
+     "belief": {
+      "0": 0.36,
+      "1": 0.27,
+      "3": 0.37
+     },
+     "items": {
+      "F_absence_home": {
+       "answer": "yes",
+       "p": 0.85,
+       "source_tier": "press"
+      },
+      "M_market_read": {
+       "answer": "agree",
+       "p": 0.7,
+       "source_tier": "unknown"
+      },
+      "O_other_event": {
+       "answer": "home",
+       "p": 0.6,
+       "source_tier": "press"
+      },
+      "S_anchor_side": {
+       "answer": "none",
+       "p": 0.6,
+       "source_tier": "unknown"
+      },
+      "S_dead_face": {
+       "answer": "none",
+       "p": 0.9,
+       "source_tier": "unknown"
+      },
+      "S_draw_mode": {
+       "answer": "no",
+       "p": 0.15,
+       "source_tier": "unknown"
+      },
+      "S_underdog_path": {
+       "answer": "yes",
+       "p": 0.7,
+       "source_tier": "unknown"
+      }
+     },
+     "kappa": {
+      "agree": 1.0,
+      "items": {
+       "F_absence_away": null,
+       "F_absence_home": true,
+       "F_goalkeeper": null,
+       "F_rotation": null,
+       "F_suspension": null,
+       "F_venue": null,
+       "M_facts_priced": null,
+       "M_market_read": true,
+       "O_other_event": null,
+       "S_anchor_side": true,
+       "S_crash_candidate": null,
+       "S_dead_face": true,
+       "S_draw_mode": true,
+       "S_spine_intact": null,
+       "S_underdog_path": true
+      },
+      "kappa": 1.0,
+      "n": 6
+     },
+     "model": "haiku",
+     "prospective": true,
+     "version": "r3"
+    },
+    "rubric_belief": {
+     "0": 0.34,
+     "1": 0.26,
+     "3": 0.4
+    },
+    "rubric_overridden": false,
+    "rubric_version": "r3",
+    "stance_cover": "0",
+    "stance_face": "3",
+    "stance_structure": "double",
+    "team_tags": {},
+    "tracking_tags": [],
+    "underdog_side": "away",
+    "underdog_strength": "real"
+   },
+   "match_no": "周三002",
+   "name": null,
+   "note": "[周三002|川崎前锋-神户胜利|deep_research] 前提纠正：画像「2026 综合第8」与报道不符——長谷部茂利治下川崎是 2025 赛季 J1 第8、2026 百年构想联赛第10，2026/27 赛季当前排名没有查到（主帅長谷部仍在任）。纸面上两队大体均势，市场主39.8/平26.1/客34.0 给的只是主场小优。本场最大的结构变量是川崎后防残缺：中卫谷口栄斗内收肌拉伤（俱乐部10/12公布），DF 野田10/18又公布受伤；赛前预览的标题就是「满身创痍的最后一道防线」（targma 10/20）。川崎近期主要靠中场橘田、脇坂、大関远射破门，10/11 客场1-2负名古屋。神户方面，佐々木大樹6月做了半月板手术，聚合站另列扇原等人膝伤，但神户当季排名、主帅和亚冠赛程都没有查到，这一侧信息不全。最大的不确定性是，神户的直接冲击和压迫能把川崎临时拼凑的后防打穿到什么程度；伤情消息公布已有数天，可能已部分进价，所以不据此翻面，跟市场。",
+   "opening_odds": {
+    "away": 2.6947,
+    "draw": 3.5487,
+    "home": 2.3307
+   },
+   "polymarket": {
+    "event_id": "1149760",
+    "faces": {
+     "away": {
+      "ask": 0.43,
+      "bid": 0.42,
+      "condition_id": "0xb325c7cb4321186b3a3e1e69f69b3c11d94a326dd221166b544426fc79964b12",
+      "last_trade": 0.43,
+      "mid": 0.425,
+      "token": "15910566366779342133492769692648146932523663350265890835679909388665437643071",
+      "volume": 2868.4641559999995,
+      "volume24hr": 2966.1651530000004
+     },
+     "draw": {
+      "ask": 0.26,
+      "bid": 0.25,
+      "condition_id": "0x0719a6d4c2523968006d28d8008e2d6db4215ea7c66b31b4ef1b9c948794a957",
+      "last_trade": 0.26,
+      "mid": 0.255,
+      "token": "98539341416848909729221886807764527015643313125023343494267769423050955382342",
+      "volume": 8462.438478,
+      "volume24hr": 7525.496409
+     },
+     "home": {
+      "ask": 0.32,
+      "bid": 0.31,
+      "condition_id": "0xa94197c8c2fbd2c3b4a5f1f41cba31db1bef05eaa6c4c58a9c0dd1192b6b2f78",
+      "last_trade": 0.33,
+      "mid": 0.315,
+      "token": "32543312568115667413943032093004663901363982462601035170579011724130841424776",
+      "volume": 8174.548054,
+      "volume24hr": 7921.815295
+     }
+    },
+    "fetched_at": "2026-10-21T17:15:04+08:00",
+    "kickoff": "2026-10-21T18:00:00+08:00",
+    "liquidity": 414139.1426,
+    "lopsided": false,
+    "probs": {
+     "away": 0.4271356783919598,
+     "draw": 0.2562814070351759,
+     "home": 0.3165829145728643
+    },
+    "rank": 7,
+    "title": "Kawasaki Frontale vs. Vissel Kōbe",
+    "volume": 19505.450688,
+    "volume24hr": 18413.476857,
+    "vs_market_pp": {
+     "away": 0.9,
+     "draw": -0.4,
+     "home": -0.5
+    }
+   },
+   "provably_prospective": true,
+   "read_id": "R-ai-jczq-2026-10-21-周三002-had-1715",
+   "read_made_at": "2026-10-21T17:15:03+08:00",
+   "src": "jczq",
+   "team_load": {
+    "absences": {
+     "away": [
+      "缺阵"
+     ],
+     "home": [
+      "缺阵"
+     ]
+    },
+    "away": "神户胜利",
+    "away_key": "name:神户胜利",
+    "away_load": {
+     "long_break": false,
+     "matches_14d": 0,
+     "next_days": null,
+     "rest_days": null
+    },
+    "captured_at": "2026-10-21T17:15:03+08:00",
+    "flags": [],
+    "home": "川崎前锋",
+    "home_key": "jpn-kawasaki",
+    "home_load": {
+     "long_break": false,
+     "matches_14d": 1,
+     "next_days": null,
+     "rest_days": 10
+    },
+    "key": "2026-10-21-周三002",
+    "kickoff": "2026-10-21T18:00:00+08:00",
+    "load_diff_14": 1,
+    "match_id": "match-12efe6c8c8b846afae45601b73cf6060",
+    "rest_diff": null
+   },
+   "titan007_id": "3000495"
   },
   "cdc726ddc87a11a1": {
    "actual": "3",
@@ -127577,6 +134255,437 @@
     "rest_diff": 1
    },
    "titan007_id": "3073077"
+  },
+  "d9d1feea40d93bae": {
+   "actual": "3",
+   "belief": {
+    "away": 0.16890000000000002,
+    "draw": 0.2324,
+    "home": 0.5987
+   },
+   "belief_moved": true,
+   "call": null,
+   "closing": {
+    "all_books": 330,
+    "all_fair": {
+     "away": 0.158808,
+     "draw": 0.203047,
+     "home": 0.638145
+    },
+    "book_count": 331,
+    "fetched_at": "2026-10-19T02:45:22+00:00",
+    "sharp_books": 15,
+    "sharp_fair": {
+     "away": 0.162177,
+     "draw": 0.202599,
+     "home": 0.635224
+    },
+    "sharp_odds": {
+     "away": 5.784,
+     "draw": 4.63,
+     "home": 1.4767
+    },
+    "sharp_opening_odds": {
+     "away": 5.6133,
+     "draw": 4.2593,
+     "home": 1.5233
+    },
+    "source": "titan007_history",
+    "updated_at_max": "2026-10-19T02:39:00",
+    "updated_at_min": "2026-10-15T03:46:00"
+   },
+   "conf": 3,
+   "date": "2026-10-21",
+   "fair": {
+    "away": 0.16890000000000002,
+    "draw": 0.2324,
+    "home": 0.5987
+   },
+   "fair_kind": "read_time",
+   "fair_source": "legs-base",
+   "intl_drift_pp": {
+    "away": -0.84,
+    "draw": -1.77,
+    "home": 2.6
+   },
+   "issue": "26146",
+   "jczq_no": "周二007",
+   "judged_at_source": "legs-base.legs[n].judged_at",
+   "kernel": {
+    "actor_id": "judge:owner",
+    "commitment_tier": "commit",
+    "evidence_coverage": null,
+    "evidence_quality": null,
+    "falsifier": "若利物浦在90分钟内零封且净胜≥2球，则「右路结构洞导致开放对攻」的判断作废",
+    "forecast_revision_id": "fr-39add76fbdeb4b2b9b2bd31fbd2eef26",
+    "information_cutoff_at": null,
+    "made_at": "2026-10-18T13:52:16+00:00",
+    "match_id": "match-c0fd93f332aa44f1b5fe831783f6592e",
+    "model_name": null,
+    "outcome_source": "official-results",
+    "providers": [
+     "zucai-canonical"
+    ],
+    "revision_no": 2,
+    "scheduled_at": "2026-10-21"
+   },
+   "kernel_belief": {
+    "away": 0.171,
+    "draw": 0.2339,
+    "home": 0.5951
+   },
+   "kernel_provably_prospective": true,
+   "key": "26146-1",
+   "labels": {
+    "anchor_integrity": "fail",
+    "anchor_side": "home",
+    "crash_markers": [],
+    "death_three_proofs": {
+     "away": {
+      "a": false,
+      "b": false,
+      "c": false,
+      "proof_count": "0/3",
+      "verdict": "alive"
+     },
+     "draw": {
+      "a": false,
+      "b": false,
+      "c": false,
+      "proof_count": "0/3",
+      "verdict": "alive"
+     }
+    },
+    "directional_flags": [],
+    "hole_location_priced_in": true,
+    "hole_location_side": "home",
+    "hole_location_unit": "defense",
+    "label_source": "legs+research",
+    "license_questions": {
+     "q1_spine": false,
+     "q2_route": true,
+     "q3a_opponent_scores": true,
+     "q3b_opponent_takes_points": true,
+     "q4_no_context_flag": false
+    },
+    "nondirectional_flags": [
+     "two_way_instability"
+    ],
+    "override_reason": null,
+    "precedents": [
+     [
+      "3",
+      "alive"
+     ],
+     [
+      "0",
+      "alive"
+     ]
+    ],
+    "researched_at": null,
+    "rest_days": null,
+    "rotation_risk": null,
+    "rubric": {
+     "F_absence_away": {
+      "answer": "yes",
+      "p": 0.9,
+      "source_tier": "press"
+     },
+     "F_absence_home": {
+      "answer": "yes",
+      "p": 0.95,
+      "source_tier": "club_official"
+     },
+     "F_goalkeeper": {
+      "answer": "none",
+      "p": 0.8,
+      "source_tier": "press"
+     },
+     "F_suspension": {
+      "answer": "none",
+      "p": 0.9,
+      "source_tier": "club_official"
+     },
+     "F_venue": {
+      "answer": "none",
+      "p": 0.95,
+      "source_tier": "league_official"
+     },
+     "M_facts_priced": {
+      "answer": "yes",
+      "p": 0.65,
+      "source_tier": "unknown"
+     },
+     "M_market_read": {
+      "answer": "overpriced_fav",
+      "p": 0.55,
+      "source_tier": "unknown"
+     },
+     "O_other_event": {
+      "answer": "none",
+      "p": 1.0,
+      "source_tier": "unknown"
+     },
+     "S_anchor_side": {
+      "answer": "home",
+      "p": 0.8,
+      "source_tier": "unknown"
+     },
+     "S_crash_candidate": {
+      "answer": "no",
+      "p": 0.45,
+      "source_tier": "unknown"
+     },
+     "S_dead_face": {
+      "answer": "none",
+      "p": 0.9,
+      "source_tier": "unknown"
+     },
+     "S_draw_mode": {
+      "answer": "no",
+      "p": 0.15,
+      "source_tier": "unknown"
+     },
+     "S_spine_intact": {
+      "answer": "no",
+      "p": 0.35,
+      "source_tier": "club_official"
+     },
+     "S_underdog_path": {
+      "answer": "yes",
+      "p": 0.6,
+      "source_tier": "unknown"
+     }
+    },
+    "rubric_b": {
+     "at": "2026-10-18T21:52:18+08:00",
+     "belief": {
+      "0": 0.2,
+      "1": 0.22,
+      "3": 0.58
+     },
+     "items": {
+      "F_absence_away": {
+       "answer": "no",
+       "p": 0.0,
+       "source_tier": "unknown"
+      },
+      "F_absence_home": {
+       "answer": "yes",
+       "p": 0.6,
+       "source_tier": "club_official"
+      },
+      "F_goalkeeper": {
+       "answer": "away",
+       "p": 0.7,
+       "source_tier": "press"
+      },
+      "F_suspension": {
+       "answer": "none",
+       "p": 0.6,
+       "source_tier": "club_official"
+      },
+      "M_market_read": {
+       "answer": "agree",
+       "p": 0.6,
+       "source_tier": "unknown"
+      },
+      "O_other_event": {
+       "answer": "away",
+       "p": 0.6,
+       "source_tier": "press"
+      },
+      "S_anchor_side": {
+       "answer": "home",
+       "p": 0.8,
+       "source_tier": "unknown"
+      },
+      "S_crash_candidate": {
+       "answer": "yes",
+       "p": 0.6,
+       "source_tier": "unknown"
+      },
+      "S_dead_face": {
+       "answer": "none",
+       "p": 0.8,
+       "source_tier": "unknown"
+      },
+      "S_draw_mode": {
+       "answer": "no",
+       "p": 0.15,
+       "source_tier": "unknown"
+      },
+      "S_spine_intact": {
+       "answer": "no",
+       "p": 0.2,
+       "source_tier": "unknown"
+      },
+      "S_underdog_path": {
+       "answer": "yes",
+       "p": 0.8,
+       "source_tier": "unknown"
+      }
+     },
+     "kappa": {
+      "agree": 0.583,
+      "items": {
+       "F_absence_away": false,
+       "F_absence_home": true,
+       "F_goalkeeper": false,
+       "F_rotation": null,
+       "F_suspension": true,
+       "F_venue": null,
+       "M_facts_priced": null,
+       "M_market_read": false,
+       "O_other_event": false,
+       "S_anchor_side": true,
+       "S_crash_candidate": false,
+       "S_dead_face": true,
+       "S_draw_mode": true,
+       "S_spine_intact": true,
+       "S_underdog_path": true
+      },
+      "kappa": 0.487,
+      "n": 12
+     },
+     "model": "haiku",
+     "prospective": true,
+     "version": "r1"
+    },
+    "rubric_belief": {
+     "0": 0.2,
+     "1": 0.22,
+     "3": 0.58
+    },
+    "rubric_overridden": false,
+    "rubric_version": "r1",
+    "stance_cover": "0",
+    "stance_face": "3",
+    "stance_structure": "double",
+    "team_tags": {},
+    "tracking_tags": [],
+    "underdog_side": "away",
+    "underdog_strength": "real"
+   },
+   "match_no": 1,
+   "name": "利物浦-比利亚雷亚尔·30",
+   "note": "",
+   "polymarket": {
+    "event_id": "1149377",
+    "faces": {
+     "away": {
+      "ask": 0.15,
+      "bid": 0.14,
+      "condition_id": "0x01e61629b57a75990faee4c926c2ff65ae9fa08519c8bd974553eef0a467dfe7",
+      "last_trade": 0.15,
+      "mid": 0.14500000000000002,
+      "token": "41882480092829549571924082239642797929003884364980579911941485151562193998177",
+      "volume": 27636.367705,
+      "volume24hr": 25913.127107000004
+     },
+     "draw": {
+      "ask": 0.21,
+      "bid": 0.2,
+      "condition_id": "0xbc10882cdfaefa8bec2af7c7da57afda1e1de3e15ae5833bd30be687085c636f",
+      "last_trade": 0.21,
+      "mid": 0.20500000000000002,
+      "token": "61297641406769101755474646518626773552748383102859594438162761580707818768947",
+      "volume": 2693.4672320000004,
+      "volume24hr": 1448.992861
+     },
+     "home": {
+      "ask": 0.65,
+      "bid": 0.64,
+      "condition_id": "0x861976c8959eac728c009b3ef46d7ae57cf0fb973dd80d905ddbe74f82378171",
+      "last_trade": 0.65,
+      "mid": 0.645,
+      "token": "42875196329401023002930058809401212627506324790293590174173105387831241058359",
+      "volume": 64486.169767,
+      "volume24hr": 46275.439121999996
+     }
+    },
+    "fetched_at": "2026-10-20T18:31:30+08:00",
+    "kickoff": "2026-10-21T03:00:00+08:00",
+    "liquidity": 1384881.0774,
+    "lopsided": false,
+    "probs": {
+     "away": 0.1457286432160804,
+     "draw": 0.20603015075376885,
+     "home": 0.6482412060301507
+    },
+    "rank": 2,
+    "title": "Liverpool FC vs. Villarreal CF",
+    "trend_pp": {
+     "away": -5.5,
+     "draw": -2.5,
+     "home": 3.0
+    },
+    "volume": 94816.004704,
+    "volume24hr": 73637.55909,
+    "vs_market_pp": {
+     "away": -1.3,
+     "draw": 0.4,
+     "home": 1.0
+    }
+   },
+   "provably_prospective": true,
+   "quotes": {
+    "intl": {
+     "closing": {
+      "away": 6.2933,
+      "captured_at": "2026-10-20T10:30:04+00:00",
+      "draw": 4.9407,
+      "home": 1.5657
+     },
+     "n_snapshots": 4,
+     "opening": {
+      "away": 6.2112,
+      "captured_at": "2026-10-18T13:31:37+00:00",
+      "draw": 4.9044,
+      "home": 1.5746
+     },
+     "span_hours": 44.97
+    }
+   },
+   "src": "zucai",
+   "team_load": {
+    "absences": {
+     "away": [
+      "缺阵"
+     ],
+     "home": [
+      "缺阵",
+      "中轴缺"
+     ]
+    },
+    "away": "比利亚雷亚尔",
+    "away_key": "esp-villarreal",
+    "away_load": {
+     "long_break": false,
+     "matches_14d": 3,
+     "next_days": null,
+     "rest_days": 4
+    },
+    "captured_at": "2026-10-20T18:45:04+08:00",
+    "flags": [],
+    "home": "利物浦",
+    "home_key": "eng-liverpool",
+    "home_load": {
+     "long_break": false,
+     "matches_14d": 3,
+     "next_days": null,
+     "rest_days": 4
+    },
+    "key": "26146-1",
+    "kickoff": "2026-10-21T03:00:00+08:00",
+    "load_diff_14": 0,
+    "match_id": "match-c0fd93f332aa44f1b5fe831783f6592e",
+    "rest_diff": 0
+   },
+   "titan007_id": "3073118",
+   "twin_keys": [
+    "2026-10-20-周二007"
+   ]
   },
   "d9f5fd0a1c2cad43": {
    "actual": "3",
@@ -136889,6 +143998,411 @@
    },
    "titan007_id": "2995369"
   },
+  "eae12b64ce0f012b": {
+   "actual": "0",
+   "belief": {
+    "away": 0.129,
+    "draw": 0.2195,
+    "home": 0.6515000000000001
+   },
+   "belief_moved": true,
+   "call": null,
+   "closing": {
+    "all_books": 321,
+    "all_fair": {
+     "away": 0.203823,
+     "draw": 0.218392,
+     "home": 0.577785
+    },
+    "book_count": 322,
+    "fetched_at": "2026-10-19T02:45:24+00:00",
+    "sharp_books": 15,
+    "sharp_fair": {
+     "away": 0.200784,
+     "draw": 0.220219,
+     "home": 0.578997
+    },
+    "sharp_odds": {
+     "away": 4.6753,
+     "draw": 4.2627,
+     "home": 1.6213
+    },
+    "sharp_opening_odds": {
+     "away": 4.2373,
+     "draw": 3.9213,
+     "home": 1.7227
+    },
+    "source": "titan007_history",
+    "updated_at_max": "2026-10-19T02:40:00",
+    "updated_at_min": "2026-10-15T03:45:00"
+   },
+   "conf": 3,
+   "date": "2026-10-21",
+   "fair": {
+    "away": 0.129,
+    "draw": 0.2195,
+    "home": 0.6515000000000001
+   },
+   "fair_kind": "read_time",
+   "fair_source": "legs-base",
+   "intl_drift_pp": {
+    "away": -5.34,
+    "draw": -2.85,
+    "home": 8.19
+   },
+   "issue": "26146",
+   "jczq_no": "周二010",
+   "judged_at_source": "legs-base.legs[n].judged_at",
+   "kernel": {
+    "actor_id": "judge:owner",
+    "commitment_tier": "commit",
+    "evidence_coverage": null,
+    "evidence_quality": null,
+    "falsifier": "若 PSV 在无 Pepi/Lammers/Pléa 的情况下 90 分钟内进 2 球以上、或波尔图全场射正 ≤3，则「PSV 破门端残缺 + 波尔图休整完整」的判断作废。",
+    "forecast_revision_id": "fr-585765c75a8b411897535589aa5a40ef",
+    "information_cutoff_at": null,
+    "made_at": "2026-10-20T10:30:13+00:00",
+    "match_id": "match-7168982ebbb744ed9f60b23410b82588",
+    "model_name": null,
+    "outcome_source": "official-results",
+    "providers": [
+     "zucai-canonical"
+    ],
+    "revision_no": 5,
+    "scheduled_at": "2026-10-21"
+   },
+   "kernel_belief": {
+    "away": 0.129,
+    "draw": 0.2195,
+    "home": 0.6515000000000001
+   },
+   "kernel_provably_prospective": true,
+   "key": "26146-4",
+   "labels": {
+    "anchor_integrity": "pass",
+    "anchor_side": "home",
+    "crash_markers": [],
+    "death_three_proofs": {
+     "away": {
+      "a": false,
+      "b": true,
+      "c": true,
+      "proof_count": "2/3",
+      "verdict": "alive"
+     }
+    },
+    "directional_flags": [],
+    "hole_location_priced_in": true,
+    "hole_location_side": "away",
+    "hole_location_unit": "both",
+    "label_source": "legs+research",
+    "license_questions": {
+     "q1_spine": true,
+     "q2_route": true,
+     "q3a_opponent_scores": true,
+     "q3b_opponent_takes_points": true,
+     "q4_no_context_flag": true
+    },
+    "nondirectional_flags": [],
+    "override_reason": null,
+    "precedents": [
+     [
+      "3",
+      "none"
+     ]
+    ],
+    "researched_at": null,
+    "rest_days": null,
+    "rotation_risk": null,
+    "rubric": {
+     "F_absence_away": {
+      "answer": "yes",
+      "p": 0.95,
+      "source_tier": "press"
+     },
+     "F_absence_home": {
+      "answer": "no",
+      "p": 0.05,
+      "source_tier": "press"
+     },
+     "F_goalkeeper": {
+      "answer": "none",
+      "p": 0.85,
+      "source_tier": "press"
+     },
+     "F_suspension": {
+      "answer": "none",
+      "p": 0.9,
+      "source_tier": "press"
+     },
+     "F_venue": {
+      "answer": "none",
+      "p": 0.95,
+      "source_tier": "league_official"
+     },
+     "M_facts_priced": {
+      "answer": "yes",
+      "p": 0.6,
+      "source_tier": "unknown"
+     },
+     "M_market_read": {
+      "answer": "underpriced_fav",
+      "p": 0.5,
+      "source_tier": "unknown"
+     },
+     "O_other_event": {
+      "answer": "away",
+      "p": 0.7,
+      "source_tier": "press"
+     },
+     "S_anchor_side": {
+      "answer": "home",
+      "p": 0.8,
+      "source_tier": "unknown"
+     },
+     "S_crash_candidate": {
+      "answer": "no",
+      "p": 0.3,
+      "source_tier": "unknown"
+     },
+     "S_dead_face": {
+      "answer": "none",
+      "p": 0.9,
+      "source_tier": "unknown"
+     },
+     "S_draw_mode": {
+      "answer": "no",
+      "p": 0.25,
+      "source_tier": "unknown"
+     },
+     "S_spine_intact": {
+      "answer": "yes",
+      "p": 0.85,
+      "source_tier": "press"
+     },
+     "S_underdog_path": {
+      "answer": "no",
+      "p": 0.3,
+      "source_tier": "unknown"
+     }
+    },
+    "rubric_b": {
+     "at": "2026-10-18T21:52:59+08:00",
+     "belief": {
+      "0": 0.2,
+      "1": 0.25,
+      "3": 0.55
+     },
+     "items": {
+      "F_absence_away": {
+       "answer": "yes",
+       "p": 0.95,
+       "source_tier": "press"
+      },
+      "F_absence_home": {
+       "answer": "no",
+       "p": 0.0,
+       "source_tier": "unknown"
+      },
+      "M_market_read": {
+       "answer": "agree",
+       "p": 0.8,
+       "source_tier": "unknown"
+      },
+      "O_other_event": {
+       "answer": "away",
+       "p": 0.8,
+       "source_tier": "press"
+      },
+      "S_anchor_side": {
+       "answer": "home",
+       "p": 0.85,
+       "source_tier": "unknown"
+      },
+      "S_crash_candidate": {
+       "answer": "no",
+       "p": 0.1,
+       "source_tier": "unknown"
+      },
+      "S_dead_face": {
+       "answer": "none",
+       "p": 0.8,
+       "source_tier": "unknown"
+      },
+      "S_draw_mode": {
+       "answer": "no",
+       "p": 0.3,
+       "source_tier": "unknown"
+      },
+      "S_spine_intact": {
+       "answer": "yes",
+       "p": 0.85,
+       "source_tier": "press"
+      },
+      "S_underdog_path": {
+       "answer": "yes",
+       "p": 0.75,
+       "source_tier": "unknown"
+      }
+     },
+     "kappa": {
+      "agree": 0.8,
+      "items": {
+       "F_absence_away": true,
+       "F_absence_home": true,
+       "F_goalkeeper": null,
+       "F_rotation": null,
+       "F_suspension": null,
+       "F_venue": null,
+       "M_facts_priced": null,
+       "M_market_read": false,
+       "O_other_event": true,
+       "S_anchor_side": true,
+       "S_crash_candidate": true,
+       "S_dead_face": true,
+       "S_draw_mode": true,
+       "S_spine_intact": true,
+       "S_underdog_path": false
+      },
+      "kappa": 0.747,
+      "n": 10
+     },
+     "model": "haiku",
+     "prospective": true,
+     "version": "r1"
+    },
+    "rubric_belief": {
+     "0": 0.16,
+     "1": 0.22,
+     "3": 0.62
+    },
+    "rubric_overridden": false,
+    "rubric_version": "r1",
+    "stance_cover": "1",
+    "stance_face": "3",
+    "stance_structure": "double",
+    "team_tags": {},
+    "tracking_tags": [],
+    "underdog_side": "away",
+    "underdog_strength": "weak"
+   },
+   "match_no": 4,
+   "name": "波尔图-埃因霍·31",
+   "note": "",
+   "polymarket": {
+    "event_id": "1149369",
+    "faces": {
+     "away": {
+      "ask": 0.17,
+      "bid": 0.16,
+      "condition_id": "0x835f5208d6decb6f5c0375481f42b5acd8e3150eb481164c9085fe37c143969a",
+      "last_trade": 0.17,
+      "mid": 0.165,
+      "token": "70153444999699177588565046672477386831786342895372298564062600330661527716859",
+      "volume": 2875.156397,
+      "volume24hr": 2414.7779010000004
+     },
+     "draw": {
+      "ask": 0.21,
+      "bid": 0.2,
+      "condition_id": "0xf89aa51c355d8cbecddfb152300a67d30e04163094053fe43bb35eb0ac8473a0",
+      "last_trade": 0.21,
+      "mid": 0.20500000000000002,
+      "token": "38693869251645955838250927720378518593059015089805879603137830021526438443596",
+      "volume": 1448.369025,
+      "volume24hr": 1120.864883
+     },
+     "home": {
+      "ask": 0.64,
+      "bid": 0.63,
+      "condition_id": "0xffa5cbf520d1d628696210c14a20c437b0616e95ab7b06425d2179496dd0fbb4",
+      "last_trade": 0.64,
+      "mid": 0.635,
+      "token": "36786502607049232469798803298214334206868514721248522102054168595927516062191",
+      "volume": 19322.080227,
+      "volume24hr": 8466.209878999998
+     }
+    },
+    "fetched_at": "2026-10-20T18:31:30+08:00",
+    "kickoff": "2026-10-21T03:00:00+08:00",
+    "liquidity": 943248.3965,
+    "lopsided": false,
+    "probs": {
+     "away": 0.16417910447761194,
+     "draw": 0.20398009950248755,
+     "home": 0.6318407960199004
+    },
+    "rank": 6,
+    "title": "FC Porto vs. PSV",
+    "trend_pp": {
+     "away": -19.5,
+     "draw": -3.0,
+     "home": 14.5
+    },
+    "volume": 23645.605649,
+    "volume24hr": 12001.852663,
+    "vs_market_pp": {
+     "away": -0.5,
+     "draw": -0.6,
+     "home": 1.0
+    }
+   },
+   "provably_prospective": true,
+   "quotes": {
+    "intl": {
+     "closing": {
+      "away": 5.9172,
+      "captured_at": "2026-10-20T10:30:04+00:00",
+      "draw": 4.7733,
+      "home": 1.609
+     },
+     "n_snapshots": 4,
+     "opening": {
+      "away": 4.9358,
+      "captured_at": "2026-10-18T13:31:37+00:00",
+      "draw": 4.531,
+      "home": 1.734
+     },
+     "span_hours": 44.97
+    }
+   },
+   "src": "zucai",
+   "team_load": {
+    "absences": {
+     "away": [
+      "缺阵"
+     ],
+     "home": []
+    },
+    "away": "埃因霍",
+    "away_key": "ned-psv",
+    "away_load": {
+     "long_break": false,
+     "matches_14d": 2,
+     "next_days": null,
+     "rest_days": 7
+    },
+    "captured_at": "2026-10-20T18:45:04+08:00",
+    "flags": [],
+    "home": "波尔图",
+    "home_key": "por-porto",
+    "home_load": {
+     "long_break": false,
+     "matches_14d": 2,
+     "next_days": null,
+     "rest_days": 6
+    },
+    "key": "26146-4",
+    "kickoff": "2026-10-21T03:00:00+08:00",
+    "load_diff_14": 0,
+    "match_id": "match-7168982ebbb744ed9f60b23410b82588",
+    "rest_diff": -1
+   },
+   "titan007_id": "3073139",
+   "twin_keys": [
+    "2026-10-20-周二010"
+   ]
+  },
   "eb3d71a8287a6cbe": {
    "actual": "3",
    "belief": {
@@ -145925,6 +153439,392 @@
     "rest_diff": 13
    },
    "titan007_id": "3000485"
+  },
+  "fcec27b1696b165a": {
+   "actual": "3",
+   "belief": {
+    "away": 0.1012,
+    "draw": 0.1376,
+    "home": 0.7612
+   },
+   "belief_moved": false,
+   "call": null,
+   "closing": {
+    "all_books": 359,
+    "all_fair": {
+     "away": 0.097812,
+     "draw": 0.134046,
+     "home": 0.768142
+    },
+    "book_count": 362,
+    "fetched_at": "2026-10-21T02:45:09+00:00",
+    "sharp_books": 15,
+    "sharp_fair": {
+     "away": 0.097877,
+     "draw": 0.131917,
+     "home": 0.770206
+    },
+    "sharp_odds": {
+     "away": 9.642,
+     "draw": 7.154,
+     "home": 1.2253
+    },
+    "sharp_opening_odds": {
+     "away": 8.0893,
+     "draw": 5.7147,
+     "home": 1.2953
+    },
+    "source": "titan007_history",
+    "updated_at_max": "2026-10-21T02:45:00",
+    "updated_at_min": "2026-10-15T03:47:00"
+   },
+   "conf": 4,
+   "date": "2026-10-22",
+   "fair": {
+    "away": 0.1012,
+    "draw": 0.1376,
+    "home": 0.7612
+   },
+   "fair_kind": "read_time",
+   "fair_source": "legs-base",
+   "intl_drift_pp": {
+    "away": -1.2,
+    "draw": -2.64,
+    "home": 3.84
+   },
+   "issue": "26146",
+   "jczq_no": "周三007",
+   "judged_at_source": "legs-base.legs[n].judged_at",
+   "kernel": {
+    "actor_id": "judge:owner",
+    "commitment_tier": "commit",
+    "evidence_coverage": null,
+    "evidence_quality": null,
+    "falsifier": "90分钟皇马未取胜（平或负）即作废。",
+    "forecast_revision_id": "fr-57d8f33c88b04246b7cff9914a1ca34d",
+    "information_cutoff_at": null,
+    "made_at": "2026-10-20T10:30:13+00:00",
+    "match_id": "match-b7754844ed20417fb396645daeb4cbe1",
+    "model_name": null,
+    "outcome_source": "official-results",
+    "providers": [
+     "zucai-canonical"
+    ],
+    "revision_no": 4,
+    "scheduled_at": "2026-10-22"
+   },
+   "kernel_belief": {
+    "away": 0.1012,
+    "draw": 0.1376,
+    "home": 0.7612
+   },
+   "kernel_provably_prospective": true,
+   "key": "26146-14",
+   "labels": {
+    "anchor_integrity": "pass",
+    "anchor_side": "home",
+    "crash_markers": [],
+    "death_three_proofs": {
+     "away": {
+      "a": false,
+      "b": false,
+      "c": true,
+      "proof_count": "1/3",
+      "verdict": "alive"
+     },
+     "draw": {
+      "a": false,
+      "b": false,
+      "c": true,
+      "proof_count": "1/3",
+      "verdict": "alive"
+     }
+    },
+    "directional_flags": [],
+    "hole_location_priced_in": true,
+    "hole_location_side": "none",
+    "hole_location_unit": "none",
+    "label_source": "legs+research",
+    "license_questions": {
+     "q1_spine": true,
+     "q2_route": true,
+     "q3a_opponent_scores": true,
+     "q3b_opponent_takes_points": false,
+     "q4_no_context_flag": true
+    },
+    "nondirectional_flags": [],
+    "override_reason": null,
+    "precedents": [
+     [
+      "0",
+      "alive"
+     ],
+     [
+      "1",
+      "alive"
+     ]
+    ],
+    "researched_at": null,
+    "rest_days": null,
+    "rotation_risk": null,
+    "rubric": {
+     "F_absence_away": {
+      "answer": "yes",
+      "p": 0.8,
+      "source_tier": "press"
+     },
+     "F_absence_home": {
+      "answer": "no",
+      "p": 0.15,
+      "source_tier": "press"
+     },
+     "F_goalkeeper": {
+      "answer": "none",
+      "p": 0.85,
+      "source_tier": "press"
+     },
+     "F_rotation": {
+      "answer": "none",
+      "p": 0.7,
+      "source_tier": "club_official"
+     },
+     "F_suspension": {
+      "answer": "none",
+      "p": 0.85,
+      "source_tier": "press"
+     },
+     "F_venue": {
+      "answer": "none",
+      "p": 0.95,
+      "source_tier": "press"
+     },
+     "M_facts_priced": {
+      "answer": "yes",
+      "p": 0.7,
+      "source_tier": "unknown"
+     },
+     "M_market_read": {
+      "answer": "agree",
+      "p": 0.6,
+      "source_tier": "unknown"
+     },
+     "O_other_event": {
+      "answer": "none",
+      "p": 0.6,
+      "source_tier": "press"
+     },
+     "S_anchor_side": {
+      "answer": "home",
+      "p": 0.9,
+      "source_tier": "unknown"
+     },
+     "S_crash_candidate": {
+      "answer": "no",
+      "p": 0.12,
+      "source_tier": "unknown"
+     },
+     "S_dead_face": {
+      "answer": "none",
+      "p": 0.9,
+      "source_tier": "unknown"
+     },
+     "S_draw_mode": {
+      "answer": "no",
+      "p": 0.07,
+      "source_tier": "unknown"
+     },
+     "S_spine_intact": {
+      "answer": "yes",
+      "p": 0.88,
+      "source_tier": "press"
+     },
+     "S_underdog_path": {
+      "answer": "no",
+      "p": 0.3,
+      "source_tier": "unknown"
+     }
+    },
+    "rubric_b": {
+     "at": "2026-10-18T21:52:51+08:00",
+     "belief": {
+      "0": 0.14,
+      "1": 0.18,
+      "3": 0.68
+     },
+     "items": {
+      "S_anchor_side": {
+       "answer": "home",
+       "p": 0.75,
+       "source_tier": "unknown"
+      },
+      "S_crash_candidate": {
+       "answer": "yes",
+       "p": 0.6,
+       "source_tier": "unknown"
+      },
+      "S_dead_face": {
+       "answer": "none",
+       "p": 0.8,
+       "source_tier": "unknown"
+      },
+      "S_underdog_path": {
+       "answer": "no",
+       "p": 0.4,
+       "source_tier": "unknown"
+      }
+     },
+     "kappa": {
+      "agree": 0.75,
+      "items": {
+       "F_absence_away": null,
+       "F_absence_home": null,
+       "F_goalkeeper": null,
+       "F_rotation": null,
+       "F_suspension": null,
+       "F_venue": null,
+       "M_facts_priced": null,
+       "M_market_read": null,
+       "O_other_event": null,
+       "S_anchor_side": true,
+       "S_crash_candidate": false,
+       "S_dead_face": true,
+       "S_draw_mode": null,
+       "S_spine_intact": null,
+       "S_underdog_path": true
+      },
+      "kappa": 0.667,
+      "n": 4
+     },
+     "model": "haiku",
+     "prospective": true,
+     "version": "r1"
+    },
+    "rubric_belief": {
+     "0": 0.1,
+     "1": 0.13,
+     "3": 0.77
+    },
+    "rubric_overridden": false,
+    "rubric_version": "r3",
+    "stance_cover": null,
+    "stance_face": "3",
+    "stance_structure": "single",
+    "team_tags": {},
+    "tracking_tags": [],
+    "underdog_side": "away",
+    "underdog_strength": "real"
+   },
+   "match_no": 14,
+   "name": "皇马-莱比锡红牛·3",
+   "note": "",
+   "polymarket": {
+    "event_id": "1154823",
+    "faces": {
+     "away": {
+      "ask": 0.1,
+      "bid": 0.08,
+      "condition_id": "0xb6415a728ed243a34b153643c30a877056ccb08702ab4a1140a476b4d07771b7",
+      "last_trade": 0.1,
+      "mid": 0.09,
+      "token": "63254047641534267563152650080414457952376530011441502677822848952272639492055",
+      "volume": 2613.136121,
+      "volume24hr": 662.445043
+     },
+     "draw": {
+      "ask": 0.13,
+      "bid": 0.12,
+      "condition_id": "0xb3059d1004491e29e00abd06939fc8c2bfd5d71364ac3416b53bea0f535f01f9",
+      "last_trade": 0.13,
+      "mid": 0.125,
+      "token": "54084464675000603923798167821003132201023475977360684325966220390524486128316",
+      "volume": 655.681189,
+      "volume24hr": 480.5252
+     },
+     "home": {
+      "ask": 0.79,
+      "bid": 0.78,
+      "condition_id": "0x1644efa8f27cc1ccfc7ab097031a22f24ccaf3d244a188484e5473bc7524bf8b",
+      "last_trade": 0.79,
+      "mid": 0.785,
+      "token": "15885560241097622535264338144890047731133154375347138376456109346405645834931",
+      "volume": 16326.781566999998,
+      "volume24hr": 5411.916271
+     }
+    },
+    "fetched_at": "2026-10-20T18:31:30+08:00",
+    "kickoff": "2026-10-22T03:00:00+08:00",
+    "liquidity": 550837.0411,
+    "lopsided": false,
+    "probs": {
+     "away": 0.09,
+     "draw": 0.125,
+     "home": 0.785
+    },
+    "rank": 7,
+    "title": "Real Madrid CF vs. RB Leipzig",
+    "volume": 19595.598876999997,
+    "volume24hr": 6554.886514000001,
+    "vs_market_pp": {
+     "away": -1.1,
+     "draw": -1.3,
+     "home": 2.4
+    }
+   },
+   "provably_prospective": true,
+   "quotes": {
+    "intl": {
+     "closing": {
+      "away": 9.8814,
+      "captured_at": "2026-10-20T10:30:04+00:00",
+      "draw": 7.2674,
+      "home": 1.3137
+     },
+     "n_snapshots": 4,
+     "opening": {
+      "away": 9.4877,
+      "captured_at": "2026-10-18T13:31:37+00:00",
+      "draw": 6.8306,
+      "home": 1.3365
+     },
+     "span_hours": 44.97
+    }
+   },
+   "src": "zucai",
+   "team_load": {
+    "absences": {
+     "away": [
+      "缺阵"
+     ],
+     "home": []
+    },
+    "away": "莱比锡红牛",
+    "away_key": "ger-rb-leipzig",
+    "away_load": {
+     "long_break": false,
+     "matches_14d": 3,
+     "next_days": null,
+     "rest_days": 4
+    },
+    "captured_at": "2026-10-20T18:45:04+08:00",
+    "flags": [],
+    "home": "皇马",
+    "home_key": "esp-real-madrid",
+    "home_load": {
+     "long_break": false,
+     "matches_14d": 3,
+     "next_days": null,
+     "rest_days": 3
+    },
+    "key": "26146-14",
+    "kickoff": "2026-10-22T03:00:00+08:00",
+    "load_diff_14": 0,
+    "match_id": "match-b7754844ed20417fb396645daeb4cbe1",
+    "rest_diff": -1
+   },
+   "titan007_id": "3073082",
+   "twin_keys": [
+    "2026-10-21-周三007"
+   ]
   },
   "fd7e2b47d4cb1bfa": {
    "actual": "1",
