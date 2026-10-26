@@ -73,16 +73,62 @@ def run_claude(system_prompt: str, stdin: str, *, model: str | None, allowed_too
 
     研究（`research_runner`）、读者 B（`rubric_reader`）、逻辑层（`brief_writer`）共用的唯一实现
     （2026-10-08 B5，此前三份）。"""
+    proc = _run_claude_proc(system_prompt, stdin, model=model, allowed_tools=allowed_tools,
+                            max_turns=max_turns, timeout=timeout, output_format="text")
+    return proc.returncode, proc.stdout
+
+
+def run_claude_json(system_prompt: str, stdin: str, *, model: str | None,
+                    allowed_tools: str = "", max_turns: str = "1",
+                    timeout: int = 300) -> tuple[int, str, dict]:
+    """同 `run_claude`，但以 `--output-format json` 跑 → (退出码, 结果文本, 遥测)。
+
+    遥测（2026-10-26 Tier 1 #4：研究层此前零遥测）：`model / duration_s / input_tokens /
+    cache_read_input_tokens / cache_creation_input_tokens / output_tokens / cost_usd`。
+    外层 JSON 解析不出来 → 结果文本退回原 stdout、遥测 {}，不影响调用方照旧处理。"""
+    proc = _run_claude_proc(system_prompt, stdin, model=model, allowed_tools=allowed_tools,
+                            max_turns=max_turns, timeout=timeout, output_format="json")
+    text, meta = parse_claude_json_output(proc.stdout)
+    return proc.returncode, text, meta
+
+
+def parse_claude_json_output(stdout: str) -> tuple[str, dict]:
+    """`claude -p --output-format json` 的 stdout → (result 文本, 遥测 dict)；
+    解析失败 → (原文, {})。"""
+    import json
+
+    try:
+        doc = json.loads(stdout)
+    except (ValueError, TypeError):
+        return stdout, {}
+    if not isinstance(doc, dict) or "result" not in doc:
+        return stdout, {}
+    usage = doc.get("usage") if isinstance(doc.get("usage"), dict) else {}
+    model_usage = doc.get("modelUsage") if isinstance(doc.get("modelUsage"), dict) else {}
+    duration_ms = doc.get("duration_ms")
+    meta = {
+        "model": next(iter(model_usage), None),
+        "duration_s": round(float(duration_ms) / 1000, 1) if duration_ms is not None else None,
+        "input_tokens": usage.get("input_tokens"),
+        "cache_read_input_tokens": usage.get("cache_read_input_tokens"),
+        "cache_creation_input_tokens": usage.get("cache_creation_input_tokens"),
+        "output_tokens": usage.get("output_tokens"),
+        "cost_usd": doc.get("total_cost_usd"),
+    }
+    return str(doc.get("result") or ""), meta
+
+
+def _run_claude_proc(system_prompt: str, stdin: str, *, model: str | None, allowed_tools: str,
+                     max_turns: str, timeout: int, output_format: str):
     import subprocess
     import tempfile
 
     argv = [claude_bin(), "-p", *model_argv(model), "--system-prompt", system_prompt,
             "--allowedTools", allowed_tools, "--max-turns", str(max_turns),
-            "--output-format", "text"]
+            "--output-format", output_format]
     with tempfile.TemporaryDirectory() as neutral:
-        proc = subprocess.run(argv, input=stdin, capture_output=True, text=True,
+        return subprocess.run(argv, input=stdin, capture_output=True, text=True,
                               timeout=timeout, cwd=neutral, env=claude_env(), check=False)
-    return proc.returncode, proc.stdout
 
 
 def model_argv(name: str | None) -> list[str]:

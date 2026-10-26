@@ -68,21 +68,41 @@ def _month_slips(data_dir: Path, month: str) -> list:
     return [s for s in load_slips(data_dir) if s.purchased and str(s.placed_at)[:7] == month]
 
 
+def _slip_stake(slip, row: dict | None) -> float:
+    if row is not None and row.get("stake") is not None:
+        return float(row["stake"])            # 已结算：以记分牌的注金为准（与账房同口径）
+    try:
+        return float(slip.stake_yuan)
+    except Exception:  # noqa: BLE001 —— 旧票缺过关方式
+        return 0.0
+
+
+def _is_pending(row: dict | None) -> bool:
+    """记分牌还没给这张票派奖＝待结。"""
+    return row is None or row.get("payout") is None
+
+
 def _add(bucket: dict, slip, settled: dict[str, dict]) -> None:
     bucket["n"] += 1
     row = settled.get(slip.slip_id)
-    if row is not None and row.get("stake") is not None:
-        stake = float(row["stake"])            # 已结算：以记分牌的注金为准（与账房同口径）
-    else:
-        try:
-            stake = float(slip.stake_yuan)
-        except Exception:  # noqa: BLE001 —— 旧票缺过关方式
-            stake = 0.0
-    bucket["stake"] += stake
-    if row is None or row.get("payout") is None:
+    bucket["stake"] += _slip_stake(slip, row)
+    if _is_pending(row):
         bucket["pending"] += 1
     else:
         bucket["payout"] += float(row["payout"])
+
+
+def pending_ledger(data_dir: Path, month: str) -> dict:
+    """本月实购、记分牌尚无派奖的票（待结）：{n, stake, slips:[{slip_id, issue, stake}]}。
+
+    「实质余量」把它们按注金全损计（2026-10-26 Tier 1 #6）：26149 两张 8/9 还没官方派奖时
+    账房报「余 ¥766」、实际只剩 ¥78；26150 三张 ¥768 同样在账外。余量先算待结票，不再两套数。"""
+    settled = _settled_rows(Path(data_dir))
+    rows = [{"slip_id": slip.slip_id, "issue": getattr(slip, "issue", None),
+             "stake": _slip_stake(slip, settled.get(slip.slip_id))}
+            for slip in _month_slips(Path(data_dir), month)
+            if _is_pending(settled.get(slip.slip_id))]
+    return {"n": len(rows), "stake": round(sum(r["stake"] for r in rows), 2), "slips": rows}
 
 
 def _close(bucket: dict) -> dict:
@@ -243,8 +263,11 @@ def month_report(data_dir: Path, month: str) -> dict:
     try:
         deviations = deviation_ledger(data_dir, month)
         vetoed = vetoed_ledger(data_dir, month)
+        pending = pending_ledger(data_dir, month)
     except Exception as exc:  # noqa: BLE001 —— 两张账缺席要写明，不能读成「0 张」
         deviations = vetoed = {"_error": repr(exc)[:200]}
+        pending = {"n": 0, "stake": 0.0, "slips": [], "_error": repr(exc)[:200]}
+    effective_net = round(net["net"] - pending["stake"], 2)
     board = experiment_board(data_dir)
     verdicts: dict[str, int] = {}
     for exp, row in board.items():
@@ -258,6 +281,10 @@ def month_report(data_dir: Path, month: str) -> dict:
         "by_channel": {k: round(v, 2) for k, v in by_channel.items()},
         "stop_loss": MONTHLY_STOP_LOSS_YUAN,
         "tripped": net["net"] <= -MONTHLY_STOP_LOSS_YUAN,
+        # 实质余量（2026-10-26）：待结票按注金全损计；报余量看这一组，不看上面那组
+        "pending": pending, "effective_net": effective_net,
+        "effective_room": round(MONTHLY_STOP_LOSS_YUAN + effective_net, 2),
+        "effective_tripped": effective_net <= -MONTHLY_STOP_LOSS_YUAN,
         "exploration": spend, "deviations": deviations, "vetoed": vetoed, "experiments": board,
         "verdicts": verdicts, "rule_v3": rule_v3_board(data_dir, month),
         "draft": draft_board(data_dir, month),
@@ -272,6 +299,17 @@ def render_month(report: dict) -> str:
              f"**净值 vs 空仓**：{report['net']:+,.0f}（投入 {report['stake']:,.0f}，"
              f"{report['entries']} 条入账；竞彩 {ch['jczq']:+,.0f} / 足彩 {ch['zucai']:+,.0f}）"
              f"｜止损线 −{report['stop_loss']:,}{brake}"]
+    pend = report.get("pending") or {"n": 0, "stake": 0.0}
+    if pend.get("_error"):
+        lines.append(f"**实质余量（含待结票）**：登记簿读不出，待结票未知——{pend['_error']}")
+    elif pend["n"]:
+        ids = "、".join(str(r["slip_id"]) for r in pend["slips"][:6])
+        tail = (f"⛔越线 ¥{-report['effective_room']:,.0f}" if report["effective_tripped"]
+                else f"余 ¥{report['effective_room']:,.0f}")
+        lines.append(f"**实质余量（含待结票）**：待结 {pend['n']} 张 ¥{pend['stake']:,.0f} "
+                     f"按全损计（{ids}）→ {report['effective_net']:+,.0f}｜{tail}")
+    else:
+        lines.append("**实质余量**：无待结票，同上")
     if report["unknown"]:
         shown = ", ".join(report["unknown"][:6])
         lines.append(f"（{len(report['unknown'])} 条无法归月未计：{shown}）")

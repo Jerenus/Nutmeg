@@ -34,7 +34,7 @@ import sys
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess]
@@ -479,7 +479,11 @@ def run_loop(ctx: LoopContext, *, force: bool = False) -> LoopReport | None:
         verdicts=collected.verdicts, human_actions=actions, failed_steps=failed,
         quiet_factors=collected.quiet, inbox=inbox, notes=collected.notes,
     )
-    write_report(report, ctx.out_dir)
+    from nutmeg.decision.research_runner import research_telemetry_summary
+
+    yesterday = (date.fromisoformat(report.date) - timedelta(days=1)).isoformat()
+    write_report(report, ctx.out_dir, telemetry={
+        d: research_telemetry_summary(ctx.data_dir, d) for d in (yesterday, report.date)})
     return report
 
 
@@ -496,22 +500,55 @@ def _grade_exp(grade: dict) -> str:
     return parts[parts.index("--exp") + 1] if "--exp" in parts else ""
 
 
-def render_markdown(report: LoopReport) -> str:
+def previous_quiet_factors(out_dir: Path, date: str) -> set[str] | None:
+    """前一日报告里 propose_zero 且现值已为 0 的因子；没有前一日报告 → None（全列）。"""
+    prev = out_dir / f"{(datetime.fromisoformat(date) - timedelta(days=1)).date()}.json"
+    if not prev.exists():
+        return None
+    try:
+        return set(json.loads(prev.read_text(encoding="utf-8")).get("quiet_factors") or [])
+    except (OSError, ValueError):
+        return None
+
+
+def render_markdown(report: LoopReport, *, prev_quiet: set[str] | None = None,
+                    telemetry: dict | None = None) -> str:
+    """prev_quiet（2026-10-26）：与前一日相同的「propose_zero 且现值 0」因子折成一行，
+    只有新进/退出这一类的因子才逐个列——21 个不变的零曾占日报七成篇幅。"""
     lines = [f"# RSI 闭环 · {report.date}", "",
              f"开始 {report.started_at} · 结束 {report.finished_at} · "
              f"失败步骤 {len(report.failed_steps)}", "", "## 待人决定", ""]
     lines += [f"- {a}" for a in report.human_actions] or [
         "- 无。所有提案为 hold / 只记录；判决未到期。"
     ]
-    if report.quiet_factors:
-        lines.append(
-            f"- （另有 {len(report.quiet_factors)} 个因子 propose_zero 且现值已为 0，不需动作："
-            f"{', '.join(report.quiet_factors)}）"
-        )
+    quiet = set(report.quiet_factors)
+    unchanged = quiet & prev_quiet if prev_quiet is not None else set()
+    if quiet:
+        if prev_quiet is None:
+            lines.append(
+                f"- （另有 {len(quiet)} 个因子 propose_zero 且现值已为 0，不需动作："
+                f"{', '.join(report.quiet_factors)}）"
+            )
+        else:
+            parts = [f"{len(unchanged)} 个因子维持 propose_zero（现值 0），与昨日相同"]
+            if quiet - unchanged:
+                parts.append(f"新进 {', '.join(sorted(quiet - unchanged))}")
+            if prev_quiet - quiet:
+                parts.append(f"退出 {', '.join(sorted(prev_quiet - quiet))}")
+            lines.append(f"- （{'；'.join(parts)}；不需动作）")
     if report.notes:
         lines += ["", "## 自动生效 / 只记账", ""] + [f"- {n}" for n in report.notes]
     lines += ["", "## 步骤", "", "| 步 | 状态 | 秒 | 摘要 |", "| --- | --- | --- | --- |"]
     lines += [f"| {s.name} | {s.status} | {s.seconds} | {s.summary[:160]} |" for s in report.steps]
+    if telemetry:
+        lines += ["", "## 研究成本（2026-10-26 起遥测）", ""]
+        for day, t in sorted(telemetry.items()):
+            if not t.get("matches"):
+                lines.append(f"- {day}：无遥测行（研究在遥测接入前跑完，或当日无研究）")
+                continue
+            models = "/".join(f"{m} {b['matches']}" for m, b in t["by_model"].items())
+            lines.append(f"- {day}：{t['matches']} 场 ${t['total_cost_usd']:.2f}，"
+                         f"{t['total_duration_s']:.0f} s，{models}")
     if report.grades:
         primary = [g for g in report.grades if _grade_exp(g) in PRIMARY_EXPERIMENTS]
         secondary = [g for g in report.grades if _grade_exp(g) not in PRIMARY_EXPERIMENTS]
@@ -526,17 +563,22 @@ def render_markdown(report: LoopReport) -> str:
         lines += [
             f"| {p['factor_id']} | {p['layer']} | {p['strict_n']} | {p['verdict']} | "
             f"{p['decision']} | {p['proposed_weight_pp']} |"
-            for p in report.proposals
+            for p in report.proposals if p["factor_id"] not in unchanged
         ]
+        folded = sum(p["factor_id"] in unchanged for p in report.proposals)
+        if folded:
+            lines.append(f"| （{folded} 个因子维持 propose_zero，现值 0，与昨日相同） | — | — | — "
+                         "| propose_zero | 0.0 |")
     lines += ["", "⛔本报告只列事实与提案；改权重、改规则、登记实验、部署全部由人执行。", ""]
     return "\n".join(lines)
 
 
-def write_report(report: LoopReport, out_dir: Path) -> Path:
+def write_report(report: LoopReport, out_dir: Path, *, telemetry: dict | None = None) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{report.date}.json"
     path.write_text(json.dumps(report.to_dict(), ensure_ascii=False, indent=1), encoding="utf-8")
-    md = render_markdown(report)
+    md = render_markdown(report, prev_quiet=previous_quiet_factors(out_dir, report.date),
+                         telemetry=telemetry)
     (out_dir / f"{report.date}.md").write_text(md, encoding="utf-8")
     (out_dir / "latest.md").write_text(md, encoding="utf-8")
     return path

@@ -15,7 +15,7 @@ from nutmeg.decision.claude_models import (
     is_auth_failure,
     model_label,
     research_model,
-    run_claude,
+    run_claude_json,
 )
 from nutmeg.decision.research_ledger import ResearchRunLedger
 from nutmeg.decision.research_prompt import render_brief, system_prompt
@@ -36,7 +36,11 @@ RETRY_NOTE = (
     "查不到的字段写「未证实」，不要继续搜。"
 )
 
-Claude = Callable[[str, str], tuple[int, str]]
+# (退出码, 文本) 或 (退出码, 文本, 遥测 dict)——真 CLI 走 `run_claude_json` 带遥测，
+# 测试里的假回调仍可只回两元（2026-10-26 Tier 1 #4）
+Claude = Callable[[str, str], tuple]
+TELEMETRY_KEYS = ("model", "duration_s", "input_tokens", "cache_read_input_tokens",
+                  "cache_creation_input_tokens", "output_tokens", "cost_usd")
 
 # claude CLI 没登录/登录过期：环境问题，不是这场比赛的问题（2026-10-06 launchd 下 OAuth
 # 过期，12 场各试 2 次、各记一份「永久拒绝」，烧掉 24 次预算）。撞到即停整轮，
@@ -61,10 +65,63 @@ _REQUIRED = (
 )
 
 
-def _claude_cli(prompt: str, brief: str) -> tuple[int, str]:
-    return run_claude(prompt, brief, model=research_model(), allowed_tools="WebSearch,WebFetch",
-                      max_turns=RETRY_MAX_TURNS if RETRY_MARKER in brief else FIRST_MAX_TURNS,
-                      timeout=900)
+def _claude_cli(prompt: str, brief: str) -> tuple[int, str, dict]:
+    return run_claude_json(prompt, brief, model=research_model(),
+                           allowed_tools="WebSearch,WebFetch",
+                           max_turns=RETRY_MAX_TURNS if RETRY_MARKER in brief else FIRST_MAX_TURNS,
+                           timeout=900)
+
+
+def _merge_telemetry(total: dict, meta: dict) -> dict:
+    """多次尝试的遥测合一：数值相加、model 取最后一个非空。"""
+    if not meta:
+        return total
+    out = dict(total)
+    for key in TELEMETRY_KEYS:
+        value = meta.get(key)
+        if key == "model":
+            out["model"] = value or out.get("model")
+        elif isinstance(value, int | float):
+            out[key] = round((out.get(key) or 0) + value, 4)
+    return out
+
+
+def _telemetry_from_matches(matches: list[dict]) -> dict:
+    """一天所有 research-run 行 → 汇总 {matches, total_*, by_model}（只数带 cost_usd 的行）。"""
+    rows = [m for m in matches if isinstance(m, dict) and m.get("cost_usd") is not None]
+    by_model: dict[str, dict] = {}
+    for row in rows:
+        bucket = by_model.setdefault(str(row.get("model") or "?"),
+                                     {"matches": 0, "cost_usd": 0.0, "duration_s": 0.0})
+        bucket["matches"] += 1
+        bucket["cost_usd"] = round(bucket["cost_usd"] + float(row["cost_usd"]), 4)
+        bucket["duration_s"] = round(bucket["duration_s"] + float(row.get("duration_s") or 0), 1)
+    return {
+        "matches": len(rows),
+        "total_cost_usd": round(sum(float(r["cost_usd"]) for r in rows), 4),
+        "total_duration_s": round(sum(float(r.get("duration_s") or 0) for r in rows), 1),
+        "total_input_tokens": sum(int(r.get("input_tokens") or 0) for r in rows),
+        "total_output_tokens": sum(int(r.get("output_tokens") or 0) for r in rows),
+        "by_model": by_model,
+    }
+
+
+def research_telemetry_summary(data_dir: Path, day: str, *, jczq_dir: Path | None = None) -> dict:
+    """某日研究层成本一览（给日报用）：读 `research-run-<day>.json` 的 matches 汇总。
+    文件不存在 → 全 0。"""
+    path = Path(jczq_dir or Path(data_dir) / "jczq") / "daily" / day / f"research-run-{day}.json"
+    if not path.exists():
+        return _telemetry_from_matches([])
+    document = json.loads(path.read_text(encoding="utf-8"))
+    return _telemetry_from_matches(document.get("matches") or [])
+
+
+def _attach_telemetry(projection_path: Path) -> None:
+    """给 ledger 写出的日投影补 `telemetry` 顶层字段（每次 run 追加时重算）。"""
+    document = json.loads(projection_path.read_text(encoding="utf-8"))
+    document["telemetry"] = _telemetry_from_matches(document.get("matches") or [])
+    projection_path.write_text(json.dumps(document, ensure_ascii=False, indent=1),
+                               encoding="utf-8")
 
 
 def _empty_profile(_match_id: str) -> dict:
@@ -143,12 +200,14 @@ def _research_one(
     attempts = 0
     error_signatures: list[str] = []
     permanent = False
+    telemetry: dict = {}
     for _attempt in range(1, max_attempts + 1):
         if not claim_attempt():
             break
         attempts += 1
         try:
-            return_code, text = claude(prompt, brief)
+            return_code, text, *rest = claude(prompt, brief)
+            telemetry = _merge_telemetry(telemetry, rest[0] if rest else {})
             last_text = text
             if return_code != 0 and _is_auth_failure(text):
                 return {
@@ -157,6 +216,7 @@ def _research_one(
                     "error": f"claude 退出码 {return_code}",
                     "seconds": round(time.monotonic() - started, 1),
                     "attempts": attempts,
+                    "telemetry": telemetry,
                 }
             if return_code != 0:
                 raise ValueError(f"claude 退出码 {return_code}")
@@ -185,9 +245,10 @@ def _research_one(
             "research": research,
             "seconds": round(time.monotonic() - started, 1),
             "attempts": attempts,
+            "telemetry": telemetry,
         }
     if attempts == 0:
-        return {"status": "skipped_budget", "seconds": 0.0, "attempts": 0}
+        return {"status": "skipped_budget", "seconds": 0.0, "attempts": 0, "telemetry": {}}
     return {
         "status": "rejected",
         "raw_output": last_text,
@@ -196,6 +257,7 @@ def _research_one(
         "attempts": attempts,
         "permanent": permanent,
         "attempt_errors": error_signatures,
+        "telemetry": telemetry,
     }
 
 
@@ -374,11 +436,12 @@ def run_day(
     attempt_lock = Lock()
     auth_down = Event()
 
-    def watched_claude(system: str, brief: str) -> tuple[int, str]:
-        return_code, text = claude(system, brief)
+    def watched_claude(system: str, brief: str) -> tuple:
+        reply = claude(system, brief)
+        return_code, text = reply[0], reply[1]
         if return_code != 0 and _is_auth_failure(text):
             auth_down.set()
-        return return_code, text
+        return reply
 
     def claim_extra_attempt() -> bool:
         nonlocal extra_attempts_used, used_attempts
@@ -577,12 +640,15 @@ def run_day(
             rejected_path.write_text(
                 json.dumps(rejected, ensure_ascii=False, indent=1), encoding="utf-8"
             )
+        telemetry = result.get("telemetry") or {}
         rows_by_code[board_code] = {
             "code": board_code,
             "status": result["status"],
             "seconds": result["seconds"],
             "attempts": result["attempts"],
-            "model": model_used,
+            "model": telemetry.get("model") or model_used,
+            # 研究遥测（2026-10-26）：真 CLI 走 json 输出才有；假回调为 None
+            **{key: telemetry.get(key) for key in TELEMETRY_KEYS if key != "model"},
         }
 
     if board is not None:
@@ -603,6 +669,8 @@ def run_day(
         "matches": [rows_by_code[entry["key"]] for entry in entries],
     }
     ledger.append(report)
-    ledger.write_daily_projection(day_dir / f"research-run-{day}.json")
+    projection = day_dir / f"research-run-{day}.json"
+    ledger.write_daily_projection(projection)
+    _attach_telemetry(projection)
     day_lock.close()
     return report

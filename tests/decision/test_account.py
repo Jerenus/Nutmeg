@@ -239,3 +239,54 @@ def test_unreadable_ledger_is_reported_absent_not_zero(tmp_path: Path, monkeypat
     text = render_month(month_report(data, "2026-10"))
     assert "两张账缺席" in text and "bad line 7" in text
     assert "本月 0 张带理由" not in text and "**审票否决仍买**：本月" not in text
+
+
+def test_pending_tickets_are_charged_against_the_effective_room(tmp_path: Path,
+                                                                 monkeypatch) -> None:
+    """2026-10-26 Tier 1 #6：26150 三张 ¥768 没派奖时账房报「余 ¥78」，实质已越线 ¥690。
+    待结票按注金全损计进「实质余量」，与已入账那行并排。"""
+    from nutmeg.decision.account import pending_ledger
+
+    data = _data(tmp_path)
+    (data / "zucai" / "26150-issue.json").write_text(
+        json.dumps({"issue_id": "26150", "sale_deadline": "2026-10-25 21:30"}), encoding="utf-8")
+    (data / "scoreboard.json").write_text(json.dumps({"tickets": {
+        "26135": {"net": -7922, "stake": 8810, "slips": [{"id": "S1", "stake": 64, "payout": 0.0}]},
+    }}), encoding="utf-8")
+    nine = {str(i): "3" for i in range(1, 10)}
+    (data / "betslips.jsonl").write_text("\n".join(json.dumps(r) for r in [
+        # 注金由票面推（notes × ¥2 × 倍数），不读 stake_yuan 字段：九单 ×倍数凑出实票金额
+        {"slip_id": "S1", "channel": "renjiu", "placed_at": "2026-10-03", "purchased": True,
+         "issue": "26135", "faces": nine, "multiplier": 32, "legs": []},
+        {"slip_id": "26150-T1", "channel": "renjiu", "placed_at": "2026-10-25", "purchased": True,
+         "issue": "26150", "faces": nine, "multiplier": 192, "legs": []},
+        {"slip_id": "26150-T2", "channel": "renjiu", "placed_at": "2026-10-25", "purchased": True,
+         "issue": "26150", "faces": nine, "multiplier": 144, "legs": []},
+        {"slip_id": "26150-T3", "channel": "renjiu", "placed_at": "2026-10-25",
+         "purchased": True, "issue": "26150", "faces": nine, "multiplier": 48, "legs": []},
+        {"slip_id": "26150-B1", "channel": "renjiu", "placed_at": "2026-10-25", "purchased": False,
+         "issue": "26150", "faces": nine, "multiplier": 256, "legs": []},
+        {"slip_id": "N1", "channel": "jczq", "placed_at": "2026-11-01", "purchased": True,
+         "stake_yuan": 50, "legs": []},
+    ]) + "\n", encoding="utf-8")
+    pend = pending_ledger(data, "2026-10")
+    assert pend["n"] == 3 and pend["stake"] == 768.0
+    assert [r["slip_id"] for r in pend["slips"]] == ["26150-T1", "26150-T2", "26150-T3"]
+    monkeypatch.setattr("nutmeg.decision.account.experiment_board", lambda _d: {})
+    report = month_report(data, "2026-10")
+    assert report["net"] == -7922.0 and report["tripped"] is False
+    assert report["effective_net"] == -8690.0 and report["effective_room"] == -690.0
+    assert report["effective_tripped"] is True
+    text = render_month(report)
+    assert "止损线 −8,000｜余 ¥78" in text
+    assert "**实质余量（含待结票）**：待结 3 张 ¥768 按全损计" in text
+    assert "→ -8,690｜⛔越线 ¥690" in text
+
+
+def test_no_pending_tickets_says_so(tmp_path: Path, monkeypatch) -> None:
+    data = _data(tmp_path)
+    (data / "betslips.jsonl").write_text("", encoding="utf-8")
+    monkeypatch.setattr("nutmeg.decision.account.experiment_board", lambda _d: {})
+    report = month_report(data, "2026-10")
+    assert report["pending"]["n"] == 0 and report["effective_room"] == report["stop_loss"] + 180
+    assert "**实质余量**：无待结票，同上" in render_month(report)

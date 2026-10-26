@@ -180,7 +180,8 @@ def test_invalid_json_is_rejected_once_and_leg_stays_price_only(tmp_path):
 def test_intake_error_is_rejected_before_fulfill(tmp_path):
     root = _board(tmp_path, n=1)
     invalid = json.loads(GOOD)
-    invalid["crash_markers"] = [["标签位", "写进了嵌套结构"]]
+    # 2026-10-26 起嵌套标签只是 WARN 入库；拒收只剩缺核心——用非法的表态结构触发
+    invalid["stance"] = {**invalid["stance"], "structure": "triple"}
     fulfills = []
 
     report = run_day(
@@ -913,3 +914,58 @@ def test_board_match_that_is_also_a_zucai_match_jumps_the_queue(tmp_path):
 
     status = {row["code"]: row["status"] for row in report["matches"]}
     assert status == {"周五001": "skipped_budget", "周五002": "done"}
+
+
+def test_research_telemetry_is_recorded_per_match_and_summarised(tmp_path):
+    """2026-10-26 Tier 1 #4：研究层此前零遥测。真 CLI 回三元 (rc, text, meta)，每场落
+    model/duration_s/tokens/cost_usd；日投影顶层加 telemetry 汇总；旧式二元回调照样能跑。"""
+    from nutmeg.decision.research_runner import research_telemetry_summary
+
+    root = _board(tmp_path, n=2)
+    meta = {"model": "claude-opus-5-5", "duration_s": 42.5, "input_tokens": 1200,
+            "cache_read_input_tokens": 300, "cache_creation_input_tokens": 0,
+            "output_tokens": 800, "cost_usd": 0.1234}
+    calls = {"n": 0}
+
+    def claude(system, brief):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return 0, GOOD, meta            # 三元：带遥测
+        return 0, GOOD                      # 二元：假回调仍兼容
+
+    report = run_day(day="2026-09-19", jczq_dir=root, data_dir=tmp_path / "d", claude=claude,
+                     fulfill=lambda argv: (0, ""), profile=lambda match_id: {}, budget=10,
+                     concurrency=1)
+    rows = {m["code"]: m for m in report["matches"]}
+    assert rows["周五001"]["status"] == rows["周五002"]["status"] == "done"
+    with_meta = rows["周五001"] if rows["周五001"]["cost_usd"] is not None else rows["周五002"]
+    without = rows["周五002"] if with_meta is rows["周五001"] else rows["周五001"]
+    assert with_meta["model"] == "claude-opus-5-5" and with_meta["cost_usd"] == 0.1234
+    assert with_meta["duration_s"] == 42.5 and with_meta["input_tokens"] == 1200
+    assert with_meta["output_tokens"] == 800
+    assert without["cost_usd"] is None and without["model"] == "default"
+    projection = json.loads(
+        (root / "daily" / "2026-09-19" / "research-run-2026-09-19.json").read_text())
+    tele = projection["telemetry"]
+    assert tele["matches"] == 1 and tele["total_cost_usd"] == 0.1234
+    assert tele["by_model"] == {"claude-opus-5-5": {"matches": 1, "cost_usd": 0.1234,
+                                                    "duration_s": 42.5}}
+    assert research_telemetry_summary(tmp_path / "d", "2026-09-19", jczq_dir=root) == tele
+    assert research_telemetry_summary(tmp_path / "d", "2026-01-01")["matches"] == 0
+
+
+def test_telemetry_accumulates_across_attempts(tmp_path):
+    """首轮撞 max turns、重试成功 → 两次 tokens/成本相加，model 取最后一个。"""
+    root = _board(tmp_path, n=1)
+    replies = iter([
+        (0, "Reached max turns", {"model": "m1", "cost_usd": 0.1, "output_tokens": 10,
+                                  "duration_s": 5}),
+        (0, GOOD, {"model": "m2", "cost_usd": 0.2, "output_tokens": 20, "duration_s": 7}),
+    ])
+    report = run_day(day="2026-09-19", jczq_dir=root, data_dir=tmp_path / "d",
+                     claude=lambda s, b: next(replies), fulfill=lambda argv: (0, ""),
+                     profile=lambda match_id: {}, budget=10)
+    row = report["matches"][0]
+    assert row["status"] == "done" and row["attempts"] == 2
+    assert row["model"] == "m2" and row["cost_usd"] == 0.3 and row["output_tokens"] == 30
+    assert row["duration_s"] == 12

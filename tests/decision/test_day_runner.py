@@ -138,16 +138,18 @@ def test_brief_refresh_without_logic_carries_the_previous_explanation(tmp_path: 
     assert "fair 定面。" in (out / "brief.md").read_text(encoding="utf-8")
 
 
-def test_results_job_fails_loudly_when_yesterdays_board_is_unsealed(tmp_path: Path):
+def test_results_job_marks_waiting_backfill_when_yesterdays_board_is_unsealed(tmp_path: Path):
     """2026-09-27 出生事故：9/26 板 25 场缺 1 场，回填不封存 → results 报 written=0 missing=0
-    且退出 0，状态页一片绿，而 9/26 三张竞彩票和改判账全都没结。"""
+    且状态页一片绿，而 9/26 三张竞彩票和改判账全都没结——所以行上必须带标记。
+    2026-10-26：但 09:45 这步天然跑在 15:30 回填之前，有晚场的日子必然未封存，exit 1 是
+    结构性假红（两周 7 次）→ 退出 0，`waiting_backfill` 标记留在行上。"""
     ctx = _ctx(tmp_path, [])
     (ctx.data_dir / "jczq" / "jc-results.json").write_text("{}", encoding="utf-8")
     board = ctx.data_dir / "jczq" / "daily" / "2026-09-22"
     board.mkdir(parents=True)
     (board / "sporttery_markets.json").write_text("{}", encoding="utf-8")
     rec = run_job(ctx, "results")
-    assert rec.exit == 1 and "未封存" in rec.summary
+    assert rec.exit == 0 and "waiting_backfill" in rec.summary and "未封存" in rec.summary
 
 
 def test_settle_job_encodes_yesterdays_board_into_the_scoreboard(tmp_path: Path):

@@ -519,6 +519,26 @@ def _duty_ledger(kernel, day: str):
     return duties, instances
 
 
+def _concluded_experiments(kernel) -> set[str]:
+    """已结账（协议 v2 单次判决）或已退役的实验——与 `rsi status` 同一口径。
+
+    它们的义务若仍 active，是 `--keep-duties` 留下的观察仪（F5 价格带 / F9 位移账 / F16 损耗
+    台账：day_brief 与分析包在读产物），sweep 照跑；但实验不再有前瞻资格要守，产物落了
+    却没登记到某条实例（该场 reads 未到、台账行缺 kickoff、排程占位将被清理）不再算失败。
+    2026-10-12→26 巡检 33 次红灯里 22 次是这一类 DUTY_NOT_FULFILLED / DUTY_EXPIRED。"""
+    from nutmeg.ontology.rsi.models import VERDICT_PROTOCOL
+
+    out: set[str] = set()
+    with OntologyUnitOfWork(kernel.engine) as uow:
+        for e in uow.rsi.experiments():
+            v = uow.rsi.latest_verdict(e.exp_id)
+            d = uow.rsi.latest_deployment(e.exp_id)
+            settled = v is not None and v.criterion_snapshot.get("protocol") == VERDICT_PROTOCOL
+            if settled or (d is not None and d.decision == "retire"):
+                out.add(e.exp_id)
+    return out
+
+
 def _is_balance_instrument(argv: list[str]) -> bool:
     return argv[:5] == ["uv", "run", "nutmeg", "rsi", "balance"]
 
@@ -573,10 +593,12 @@ def sweep(
         "skipped_pending": 0,
         "skipped_not_ready": 0,
         "skipped_manual": 0,
+        "observer_unregistered": 0,
         "expired": 0,
         "failed": 0,
     }
     duties, day_instances = _duty_ledger(k, resolved_day)
+    concluded = _concluded_experiments(k)
     instances = {
         duty_id: [row for row in day_instances if row.duty_id == duty_id]
         for duty_id in duties
@@ -591,6 +613,8 @@ def sweep(
             # 实验已废止：义务不再跑（2026-10-05：F4 退役后 sweep 每小时跑已删除的 `nutmeg plan`，
             # 退出码 1 把状态页染红）
             continue
+        # 已结账/已退役实验留下的观察仪：照跑、不守前瞻资格（见 _concluded_experiments）
+        observer = duty.exp_id in concluded
         rows = instances[duty.duty_id]
         fulfilled = [row for row in rows if row.fulfilled_at is not None]
         open_rows = [row for row in rows if row.fulfilled_at is None]
@@ -610,7 +634,7 @@ def sweep(
         counts["expired"] += len(expired)
         # 只在过期后的第一次巡检告警（巡检每小时一次）：2026-10-19 前同一批过期实例每小时刷一遍
         fresh = [row for row in expired if row.due_at > warn_after]
-        if fresh:
+        if fresh and not observer:
             _err(
                 f"⚠️DUTY_EXPIRED: {duty.duty_id} {len(fresh)} 条已过开球"
                 "（前瞻资格已失）")
@@ -674,7 +698,9 @@ def sweep(
         if deferred:
             counts["skipped_not_ready"] += deferred
             not_fulfilled -= deferred
-        if not_fulfilled:
+        if not_fulfilled and observer:
+            counts["observer_unregistered"] += not_fulfilled
+        elif not_fulfilled:
             counts["failed"] += not_fulfilled
             _err(
                 f"DUTY_NOT_FULFILLED: {duty.duty_id} {not_fulfilled} 条命令成功但未登记")
@@ -1148,8 +1174,24 @@ def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR,
             inputs_hash=g.inputs_hash,
             idempotency_key=f"rsi-grade:{exp}:{mode}:{g.inputs_hash[:16]}:{now.isoformat()}",
             requested_at=now, **_SYSTEM))
+    with OntologyUnitOfWork(k.engine) as uow:
+        floor_note = _n0_floor_note(uow, exp) if mode == "prospective" else ""
     typer.echo(f"{exp} [{mode}] n={g.n_cum}  残差 {g.metric_value_pp:+.2f}pp  "
-               f"CI[{g.ci_low_pp:+.2f}, {g.ci_high_pp:+.2f}]  距 n_min {max(0, f.n_min - g.n_cum)}")
+               f"CI[{g.ci_low_pp:+.2f}, {g.ci_high_pp:+.2f}]  距 n_min {max(0, f.n_min - g.n_cum)}"
+               + floor_note)
+
+
+def _n0_floor_note(uow, exp: str) -> str:
+    """F14b 的结账文本并排 N0 噪音地板（2026-10-26）：N0 与 F14b 同窗同入选行，
+    metric = 观测 − 地板 p97.5，>0 才算过地板。只对 F14b 生效；N0 还没 grade 时不加。"""
+    if exp != "F14b":
+        return ""
+    n0 = uow.rsi.latest_grade("N0", mode="prospective", stratum="pooled")
+    if n0 is None:
+        return ""
+    passed = n0.metric_value_pp > 0
+    return (f"  ‖ N0 地板 CI[{n0.ci_low_pp:+.1f},{n0.ci_high_pp:+.1f}] "
+            f"{'过' if passed else '不过'}地板（n={n0.n_cum} 同窗）")
 
 
 def _same_grade(row, g) -> bool:
@@ -1206,8 +1248,9 @@ def verdict(exp: str = _EXP, data_dir: Path = _DATA_DIR) -> None:
     with OntologyUnitOfWork(k.engine) as uow:
         v = uow.rsi.latest_verdict(exp)
         g = uow.rsi.grade(v.grade_id)
+        floor_note = _n0_floor_note(uow, exp)
     typer.echo(f"{exp} → {v.verdict}（结算 n={g.n_cum} CI[{g.ci_low_pp:+.2f},{g.ci_high_pp:+.2f}]"
-               f" @ {g.graded_at[:10]}；判据快照 {v.criterion_snapshot}）")
+               f" @ {g.graded_at[:10]}；判据快照 {v.criterion_snapshot}）" + floor_note)
 
 
 _KEEP_DUTIES = typer.Option(False, "--keep-duties",
@@ -1457,6 +1500,8 @@ def status(exp: str | None = _EXP_OPT, data_dir: Path = _DATA_DIR) -> None:
                          f"CI[{sg.ci_low_pp:+.1f},{sg.ci_high_pp:+.1f}] @ {sg.graded_at[:10]}")
             if e.exp_id in UNGRADED:
                 line += f"  ‖ 不结账：{UNGRADED[e.exp_id]}"
+            if g:
+                line += _n0_floor_note(uow, e.exp_id)
             if gaps:
                 line += f"  gaps={gaps}"
             typer.echo(line)

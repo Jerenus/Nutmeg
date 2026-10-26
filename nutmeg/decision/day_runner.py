@@ -173,8 +173,10 @@ def run_job(ctx: DayContext, job: str, *, force: bool = False,
                     f"missing={len(report['missing'])}")
             if report.get("unsealed"):
                 # 回填要整板踢完才封存；缺一场这一天就进不了 results-90（2026-09-27 静默 0 场）。
-                line += "｜⚠️源日有板但赛果未封存（jc-results 无此日），票与改判账未结"
-                exit_code = 1
+                # 09:45 这步跑在 15:30/15:45 results-backfill 之前，有晚场的日子必然未封存：
+                # 这是等待不是故障（2026-10-26：两周 7 次假红把真错淹掉），exit 0、行上带标记。
+                line += ("｜waiting_backfill：源日有板但赛果未封存（jc-results 无此日），"
+                         "票与改判账待回填后结")
             if report["written"]:
                 line += _encode_retro(ctx, report["source_day"])
                 if back == 1:

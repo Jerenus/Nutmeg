@@ -262,3 +262,60 @@ def test_a_failed_corpus_build_skips_the_steps_that_would_read_a_stale_corpus(tm
     assert not any("rsi grade" in c or "rsi verdict" in c for c in calls)
     assert report.failed_steps == ["corpus_build"]
     assert run_loop(ctx) is not None                       # 有失败步骤：再触发就重跑
+
+
+def test_unchanged_propose_zero_factors_fold_into_one_line_against_yesterday(tmp_path: Path):
+    """2026-10-26：21 个不变的「propose_zero 且现值 0」因子曾占日报七成；与前一日相同的折成
+    一行，只有新进/退出的因子逐个列；没有前一日报告时全列。"""
+    from nutmeg.decision.rsi_loop import (
+        LoopReport,
+        previous_quiet_factors,
+        render_markdown,
+        write_report,
+    )
+
+    def _report(date: str, quiet: list[str]) -> LoopReport:
+        return LoopReport(
+            date=date, started_at=f"{date}T10:45:00", finished_at=f"{date}T10:45:20",
+            steps=[], human_actions=[], failed_steps=[], verdicts=[], grades=[],
+            quiet_factors=quiet,
+            proposals=[{"factor_id": f, "layer": "probability", "strict_n": 300,
+                        "verdict": "indistinguishable", "decision": "propose_zero",
+                        "proposed_weight_pp": 0.0, "current_weight_pp": 0.0} for f in quiet],
+        )
+
+    out = tmp_path / "rsi-loop"
+    assert previous_quiet_factors(out, "2026-10-26") is None
+    write_report(_report("2026-10-25", ["a_factor", "b_factor", "gone_factor"]), out)
+    first = (out / "2026-10-25.md").read_text(encoding="utf-8")
+    assert "另有 3 个因子 propose_zero" in first and first.count("| propose_zero |") == 3
+
+    assert previous_quiet_factors(out, "2026-10-26") == {"a_factor", "b_factor", "gone_factor"}
+    md = render_markdown(_report("2026-10-26", ["a_factor", "b_factor", "new_factor"]),
+                         prev_quiet=previous_quiet_factors(out, "2026-10-26"))
+    assert "2 个因子维持 propose_zero（现值 0），与昨日相同" in md
+    assert "新进 new_factor" in md and "退出 gone_factor" in md
+    assert "| new_factor |" in md and "| a_factor |" not in md
+    assert "| （2 个因子维持 propose_zero，现值 0，与昨日相同） |" in md
+
+
+def test_render_markdown_lists_research_cost_per_day():
+    from nutmeg.decision.rsi_loop import LoopReport, render_markdown
+
+    report = LoopReport(
+        date="2026-10-26", started_at="2026-10-26T10:45:00", finished_at="2026-10-26T10:45:20",
+        steps=[], human_actions=[], failed_steps=[], verdicts=[], grades=[],
+        quiet_factors=[], proposals=[],
+    )
+    md = render_markdown(
+        report,
+        telemetry={
+            "2026-10-25": {"matches": 29, "total_cost_usd": 7.25, "total_duration_s": 3100.0,
+                           "by_model": {"claude-opus-5-5": {"matches": 29}}},
+            "2026-10-26": {"matches": 0, "total_cost_usd": 0.0, "total_duration_s": 0.0,
+                           "by_model": {}},
+        },
+    )
+    assert "## 研究成本" in md
+    assert "2026-10-25：29 场 $7.25，3100 s，claude-opus-5-5 29" in md
+    assert "2026-10-26：无遥测行" in md

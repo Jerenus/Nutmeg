@@ -458,3 +458,25 @@ def test_sweep_treats_research_backoff_as_deferred_not_failed(
     assert "skipped_backoff" in result.output
     assert "skipped_not_ready=1" in result.output
     assert "failed=0" in result.output
+
+
+def test_kept_observer_of_retired_experiment_runs_but_never_fails(tmp_path: Path):
+    """已退役/已结账实验用 --keep-duties 留下的观察仪（F5/F9/F16）：产物另有读者所以照跑，
+    但「命令成功但未登记」不再是失败（2026-10-12→26 巡检 22/33 次红灯全是这一类）。"""
+    data_dir, day, runner = _prepare_duty(
+        tmp_path, instrument=["uv", "run", "true", "--day", "{day}"]
+    )
+    retired = runner.invoke(app, ["rsi", "deploy", "--exp", "S1", "--retire", "--keep-duties",
+                                  "--reason", "观察仪另有读者", "--by", "Jun",
+                                  "--data-dir", str(data_dir)])
+    assert retired.exit_code == 0, retired.output
+
+    result = runner.invoke(
+        app,
+        ["rsi", "sweep", "--day", day, "--issue", "99199",
+         "--now", "2099-09-19T12:00:00+08:00", "--data-dir", str(data_dir)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "DUTY_NOT_FULFILLED" not in result.output
+    assert "observer_unregistered=1" in result.output and "failed=0" in result.output
