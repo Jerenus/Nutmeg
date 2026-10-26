@@ -1111,7 +1111,8 @@ def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR,
         if mode not in ("replay", "prospective"):
             _fail(f"{exp} 只支持 --mode replay|prospective")
         g = grade_crowd(doc, Path(data_dir) / "zucai", mode=mode)
-    elif exp in PROSPECTIVE_ADAPTERS and exp != "G1" and mode == "prospective":
+    elif exp in PROSPECTIVE_ADAPTERS and exp not in ("G1", "N0") and mode == "prospective":
+        # N0 是 F14b 的噪音地板，沿用 F14b 的入选行，不另立样本账（2026-10-25）
         from nutmeg.decision import rsi_samples
 
         with rsi_samples.locked(samples):

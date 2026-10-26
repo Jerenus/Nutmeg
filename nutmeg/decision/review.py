@@ -33,6 +33,9 @@ WARN_MULTIPLIER = 10
 WARN_STAKE_SHARE = 0.5          # 单票 > 日帽一半
 BOARD_MATCHES = 14
 ZUCAI = ("renjiu", "shengfucai")
+PACK_MIN_FACE = 0.25            # 包只给三面都 ≥25% 的硬币场（票形字典 2026-10-12）
+BOLD_MODAL = 0.55               # 排掉 ≥55% 模态面＝博胆（§3a 第 3 条；26137–26147 n=5 全死）
+_CN = {"home": "3", "draw": "1", "away": "0"}
 
 
 def prize_medians(data_dir: Path) -> dict[str, float | None]:
@@ -167,6 +170,37 @@ def _v1_text(ratio: float, detail: dict | None) -> str:
     return text
 
 
+def structure_notes(slip: BetSlip) -> list[dict]:
+    """V5 结构警告（2026-10-23 26147 复盘，只展示不否决）：
+    包放在第三面 <25% 的场（26136–26147 实票 18 处包里 7 处）；
+    一张票博胆 >1（排掉 ≥55% 模态面的单/双，26137–26147 n=5 全死、期望死 3.2）。"""
+    if slip.channel not in ZUCAI:
+        return []
+    packs, bold = [], []
+    for leg in slip.legs:
+        if leg.market != "had" or not leg.fair:
+            continue
+        keys = {normalize_selection("had", s) for s in leg.selections} - {None}
+        probs = {f: float(leg.fair.get(f, 0.0)) for f in FACES}
+        modal = max(probs, key=probs.get)
+        if len(keys) == 3:
+            low = min(probs, key=probs.get)
+            if probs[low] < PACK_MIN_FACE:
+                packs.append(f"{leg.key}（{_CN[low]} 只有 {probs[low] * 100:.0f}%）")
+        elif modal not in keys and probs[modal] >= BOLD_MODAL:
+            bold.append(f"{leg.key}排{_CN[modal]} {probs[modal] * 100:.0f}%")
+    out = []
+    if packs:
+        out.append({"code": "V5", "level": "warn",
+                    "text": "包放在非硬币场 " + "、".join(packs)
+                            + "：3 倍注买一个 <25% 的面（票形字典：包只给三面 ≥25% 的场）"})
+    if len(bold) > 1:
+        out.append({"code": "V5", "level": "warn",
+                    "text": f"博胆 {len(bold)} 条（" + "、".join(bold)
+                            + "）：每票博胆 ≤1（§3a 第 3 条；26137–26147 n=5 全死）"})
+    return out
+
+
 def review(slip: BetSlip, diagnosis: dict, *, prize_model: dict[str, dict],
            cap_day: int = 400, market: dict[str, dict] | None = None) -> dict:
     """→ {ratio, detail, verdicts: [{code, level, text}], vetoed: bool, lines: [str]}。"""
@@ -225,6 +259,7 @@ def review(slip: BetSlip, diagnosis: dict, *, prize_model: dict[str, dict],
         verdicts.append({"code": "V4", "level": "veto",
                          "text": f"任九选了 {n_matches} 场：>9 场的容错复式渠道不可购"
                                  "（2026-10-12）——改成 9 场"})
+    verdicts.extend(structure_notes(slip))
     vetoed = any(v["level"] == "veto" for v in verdicts)
     mark = {"veto": "⛔", "warn": "⚠️", "info": "ℹ️"}
     lines = [f"{mark[v['level']]}{v['code']} {v['text']}" for v in verdicts]

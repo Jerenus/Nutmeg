@@ -88,7 +88,8 @@ def build_verdict(*, day: str, data_dir: Path, now: datetime, invoke=None) -> di
     zucai_rows = [r for r in rows if r["key"].startswith("足彩")]
     try:
         legs = judgment_legs(day=day, jczq_dir=data_dir / "jczq", now=now.isoformat())
-        combos = enumerate_combos(legs, top=5)
+        # 周末 23 场板全枚举会被 SIGKILL（10-25）→ 裁腿
+        combos = enumerate_combos(legs, top=5, max_pool=12)
     except (OSError, ValueError, KeyError):
         legs, combos = [], []
     for c in combos:

@@ -15,7 +15,8 @@ RESEARCH_JSON_CONTRACT = """
  "hole_location": {"unit": "attack|creation|spine|defense|goalkeeper|both|none",
      "side": "home|away|both|none", "priced_in": bool, "detail": str},
  "license_questions": {"q1_spine": bool, "q2_route": bool, "q3a_opponent_scores": bool,
-                       "q3b_opponent_takes_points": bool, "q4_no_context_flag": bool},
+                       "q3b_opponent_takes_points": bool, "q4_no_context_flag": bool,
+                       "q5_no_rotation_window": bool|null},
  "death_three_proofs": {"home"|"draw"|"away": {"a_no_scoring_mechanism": bool,
      "b_precedent_carrier_gone": bool, "c_anchor_pass": bool, "proof_count": "n/3",
      "verdict": "alive|dead", "detail": str}},
@@ -36,6 +37,9 @@ RESEARCH_JSON_CONTRACT = """
 stance.confidence 必须等于顶层 confidence。
 宣告 dead 必须三证 3/3；查无先例记 none，不得当 dead。
 旗、crash_markers、先例状态只写封闭词典里的短名；叙述写进 summary，不写进标签位。
+license_questions.q5_no_rotation_window（2026-10-24，26148 斯图加特欧冠后 3 天六换）：
+锚方上一场是**欧战或杯赛**且距本场 ≤4 天、而本场名单在足彩停售前看不到 → false（轮换窗开着）；
+锚方近 4 天无欧战/杯赛，或名单已官宣且主力齐 → true；拿不准写 null。只答事实，不推概率。
 hole_location 语义绑定：attack = 破门端（中锋/射手）缺；creation = 组织端（前腰/组织核）缺；
 spine = 后腰屏障格缺；defense = 中卫对缺；goalkeeper = 门将缺；
 both = 攻防两端同时缺（对称崩塌）；none = 无结构性洞。

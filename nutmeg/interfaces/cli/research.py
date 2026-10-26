@@ -265,6 +265,9 @@ def jczq_combos(
     max_legs: int = typer.Option(4, "--max-legs", min=2),
     max_notes: int = typer.Option(4, "--max-notes", min=1),
     top: int = typer.Option(10, "--top", min=1),
+    max_pool: int = typer.Option(
+        12, "--max-pool", min=2,
+        help="只在判断概率最高的 N 条腿里枚举（周末 23 场板全枚举要几小时）"),
 ) -> None:
     """竞彩只放判断腿（Jun 2026-09-27）：深研过的未开球场次，按判断概率排序，不设赔率目标。"""
     from nutmeg.decision.jczq_combos import enumerate_combos, judgment_legs
@@ -277,7 +280,8 @@ def jczq_combos(
         moved = max(abs(b[k] - p[k]) for k in b) * 100
         typer.echo(f"  {leg['code']} {leg['name']} 判断 主{b['home']*100:.1f}/平{b['draw']*100:.1f}"
                    f"/客{b['away']*100:.1f}（偏离市场 {moved:.1f}pp）")
-    for combo in enumerate_combos(legs, max_legs=max_legs, max_notes=max_notes, top=top):
+    for combo in enumerate_combos(legs, max_legs=max_legs, max_notes=max_notes, top=top,
+                                  max_pool=max_pool):
         text = " + ".join(
             f"{leg['code']}{'让' + leg['line'] if leg['market'] == 'hhad' else ''}:{leg['faces']}"
             for leg in combo["legs"])

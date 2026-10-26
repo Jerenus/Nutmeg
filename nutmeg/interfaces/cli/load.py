@@ -60,3 +60,28 @@ def ledger(
             for path in [out["jczq"], *out["zucai"].values()]:
                 if path:
                     typer.echo(f"→ {path}")
+
+
+@load_app.command("fetch-schedule")
+def fetch_schedule_cmd(
+    day: str | None = typer.Option(None, "--day", help="UTC 日期 YYYY-MM-DD，默认今天"),
+    back: int = typer.Option(1, "--back", help="往前几天（免费档只到 today-1）"),
+    ahead: int = typer.Option(1, "--ahead", help="往后几天（免费档只到 today+1）"),
+    data_dir: Path = _DATA_DIR,
+) -> None:
+    """API-Football 全联赛日程按日落盘 `schedule/apifootball/<日>.json`，
+    补台账覆盖（2026-10-24）。"""
+    from datetime import date, timedelta
+
+    from nutmeg.decision.team_load import fetch_schedule
+
+    base = date.fromisoformat(day) if day else date.today()
+    days = [base + timedelta(days=i) for i in range(-back, ahead + 1)]
+    out = fetch_schedule(data_dir, days)
+    if out.get("skipped"):
+        typer.echo(f"跳过：{out['skipped']}")
+        raise typer.Exit(0)
+    for d, (path, n) in out["written"].items():
+        typer.echo(f"{d}: {n} 场 → {path}")
+    for d, err in (out.get("errors") or {}).items():
+        typer.echo(f"{d}: ✗ {err}")

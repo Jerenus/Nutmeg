@@ -149,7 +149,7 @@ def test_budget_and_past_kickoff_are_recorded_not_faked(tmp_path):
         budget=10,
     )
     assert late["matches"][0]["status"] == "skipped_past_kickoff"
-    assert RESEARCH_DAILY_BUDGET == 40
+    assert RESEARCH_DAILY_BUDGET == 10000  # 2026-10-25 Jun：40 → 10000，预算不再是进样瓶颈
 
 
 def test_invalid_json_is_rejected_once_and_leg_stays_price_only(tmp_path):

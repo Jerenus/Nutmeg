@@ -55,8 +55,9 @@ def test_adapter_registry_names_match_experiments():
     # 2026-10-14：F18（单关许可证，26140 §10b）登记并接入
     # 2026-10-19：F14b（表态 vs 市场 top-k 逐场配对）、K2（逐项 κ）登记并接入
     # 2026-10-20：F19（真实＝已定价，10-16 登记）判据对象化后接入
+    # 2026-10-25：N0（噪音地板，挂主指标 F14b；不进样本账）登记并接入
     assert set(PROSPECTIVE_ADAPTERS) == {"F5", "F9", "F10", "F11", "F13", "F14", "F14b", "F15",
-                                         "F16", "F17", "F18", "F19", "G1", "K1", "K2"}
+                                         "F16", "F17", "F18", "F19", "G1", "K1", "K2", "N0"}
 
 
 def test_k1_pools_item_pairs_and_scores_full_agreement_as_100():

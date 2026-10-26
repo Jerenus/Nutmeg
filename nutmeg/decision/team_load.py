@@ -19,9 +19,11 @@ from nutmeg.decision.bj_time import bj_iso, parse_bj
 from nutmeg.decision.files import read_json
 from nutmeg.decision.identity import norm_team
 
-COVERAGE = ("只含竞彩/足彩开售场次（jc-history + 体彩板面 + 足彩期次）："
-            "没上板的国内杯赛与部分联赛缺失，休息天数可能偏长；国家队出场分钟数没有；"
+COVERAGE = ("竞彩/足彩开售场次（jc-history + 体彩板面 + 足彩期次）+ API-Football 全联赛日程"
+            "（`schedule/apifootball/<日>.json`，2026-10-24 起按日累计；免费档只到 today±1，"
+            "累计满 14 天前低级别联赛的休息天数仍可能偏长）；国家队出场分钟数没有；"
             "各源深夜场归日不一，误差 ±1 天")
+SCHEDULE_DIR = Path("schedule") / "apifootball"
 WINDOW_DAYS = 14
 LOOKAHEAD_DAYS = 10
 LONG_BREAK_DAYS = 12
@@ -114,7 +116,61 @@ def build_index(data_dir: Path, resolve: Resolve | None = None) -> LoadIndex:
             for side in ("home_team", "away_team"):
                 if match.get(side):
                     idx.add(match[side], when)
+    # 2026-10-24（26148 复盘结论 2）：全联赛日程补覆盖——没上板的场次也算出场。
+    for path in sorted(glob.glob(str(data_dir / SCHEDULE_DIR / "*.json"))):
+        for fx in (read_json(path, []) or []):
+            when = _date_of(fx.get("date"))
+            if when is None or not isinstance(fx, dict):
+                continue
+            for side in ("home", "away"):
+                if fx.get(side):
+                    idx.add(fx[side], when)
     return idx
+
+
+def store_fixtures(data_dir: Path, day: date, fixtures: list, *,
+                   source: str = "api-football") -> Path:
+    """把一天的全联赛日程落成 `schedule/apifootball/<日>.json`（只存 日期/主/客/联赛；已完赛与
+    未赛都算出场，取消/延期不算）。幂等：同日重跑整文件覆盖。"""
+    rows = []
+    for fx in fixtures:
+        status = str(getattr(fx, "status", "") or "")
+        if any(x in status.lower() for x in ("cancel", "postpone", "abandon")):
+            continue
+        rows.append({"date": day.isoformat(), "home": fx.home_team, "away": fx.away_team,
+                     "league": getattr(fx, "league_code", None), "source": source})
+    path = Path(data_dir) / SCHEDULE_DIR / f"{day.isoformat()}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(rows, ensure_ascii=False, indent=0), encoding="utf-8")
+    return path
+
+
+def fetch_schedule(data_dir: Path, days: list[date]) -> dict:
+    """API-Football `fixtures?date=` 逐日拉取并落盘；无 key 优雅降级（与 alias_propose 同契约）。"""
+    from nutmeg.config.settings import get_settings
+    from nutmeg.data.api_football import ApiFootballClient
+
+    settings = get_settings()
+    key = (settings.api_football_key or "").strip()
+    if not key:
+        return {"written": {}, "skipped": "no api_football_key"}
+    client = ApiFootballClient(base_url=settings.api_football_base_url, api_key=key)
+    written: dict = {}
+    errors: dict = {}
+    try:
+        for day in days:
+            try:
+                batch = client.fetch_fixtures_by_date(day)
+            except Exception as exc:          # 免费档窗口外（today±1）等：记错继续，不整轮失败
+                errors[day.isoformat()] = str(exc).splitlines()[0][:160]
+                continue
+            written[day.isoformat()] = (str(store_fixtures(data_dir, day, batch.fixtures)),
+                                        len(batch.fixtures))
+    finally:
+        close = getattr(client, "close", None)
+        if callable(close):
+            close()
+    return {"written": written, "errors": errors}
 
 
 def absences(rubric: dict | None) -> dict:

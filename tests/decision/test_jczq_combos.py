@@ -57,3 +57,30 @@ def test_combos_rank_by_judgment_probability_and_report_return_per_yuan(tmp_path
     assert best["p"] >= combos[1]["p"] >= combos[2]["p"]
     assert best["notes"] <= 2
     assert round(best["return_per_yuan"], 6) == round(best["odds"] / best["notes"], 6)
+
+
+def _leg(code: str, p_single: float) -> dict:
+    # 一条腿：单选 p_single / 双选 p_single+0.2；赔率随意
+    return {"code": code, "name": code, "kickoff": "", "belief": {}, "prior": {},
+            "options": [{"market": "had", "faces": "3", "p": p_single, "odds": [1.5],
+                         "modal_odds": 1.5},
+                        {"market": "had", "faces": "31", "p": min(p_single + 0.2, 0.99),
+                         "odds": [1.5, 4.0], "modal_odds": 1.5}]}
+
+
+def test_max_pool_prunes_to_strongest_legs_and_keeps_top_order():
+    # 2026-10-25：周末 23 场板 5,900 万候选把 research verdict 卡死/被杀；裁腿后结果仍按 P 降序
+    legs = [_leg(f"L{i:02d}", 0.30 + i * 0.02) for i in range(20)]  # L19 最强
+    full = enumerate_combos(legs, max_legs=2, max_notes=4, top=5)
+    pruned = enumerate_combos(legs, max_legs=2, max_notes=4, top=5, max_pool=6)
+    assert [c["p"] for c in pruned] == [c["p"] for c in full]
+    assert all(c["p"] >= n["p"] for c, n in zip(pruned, pruned[1:], strict=False))
+    used = {leg["code"] for c in pruned for leg in c["legs"]}
+    assert used <= {f"L{i:02d}" for i in range(14, 20)}
+
+
+def test_top_is_bounded_without_keeping_every_candidate():
+    legs = [_leg(f"L{i:02d}", 0.40 + i * 0.01) for i in range(8)]
+    combos = enumerate_combos(legs, max_legs=3, max_notes=4, top=3)
+    assert len(combos) == 3
+    assert combos[0]["p"] >= combos[1]["p"] >= combos[2]["p"]

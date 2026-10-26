@@ -69,8 +69,22 @@ def judgment_legs(*, day: str, jczq_dir: Path, now: str) -> list[dict]:
 
 
 def enumerate_combos(legs: list[dict], *, max_legs: int = 4, max_notes: int = 4,
-                     top: int = 10) -> list[dict]:
-    out: list[dict] = []
+                     top: int = 10, max_pool: int | None = None) -> list[dict]:
+    """按判断概率 P 降序列前 `top` 个组合。
+
+    `max_pool`：只在判断概率最高的 `max_pool` 条腿里枚举（按每条腿最优选项的 p 排）。
+    2026-10-25：周末 23 场板 9 选项/腿 → 5,900 万候选，`research verdict` 把它们全部建成
+    dict 留在内存里排序——10-17 跑了 19 小时、10-24 两次吃光内存被 SIGKILL（exit 137）；
+    周中 11 场只有 230 万。候选数 ~ C(n,4)×9⁴，裁腿是唯一有效的刀；结果只留 `top` 个用堆维护，
+    不再把全部候选留在内存。`None`＝不裁（gym 回放保持原语义）。
+    """
+    import heapq
+
+    if max_pool is not None and len(legs) > max_pool:
+        legs = heapq.nlargest(max_pool, legs,
+                              key=lambda leg: max(o["p"] for o in leg["options"]))
+    heap: list[tuple[float, int, dict]] = []
+    seq = 0
     for k in range(2, min(max_legs, len(legs)) + 1):
         for group in itertools.combinations(legs, k):
             for choice in itertools.product(*(leg["options"] for leg in group)):
@@ -83,10 +97,16 @@ def enumerate_combos(legs: list[dict], *, max_legs: int = 4, max_notes: int = 4,
                     odds *= option["modal_odds"]
                 if notes > max_notes:
                     continue
-                out.append({
+                if len(heap) >= top and p <= heap[0][0]:
+                    continue
+                combo = {
                     "legs": [{"code": leg["code"], "name": leg["name"], **option}
                              for leg, option in zip(group, choice, strict=True)],
                     "p": p, "notes": notes, "odds": odds, "return_per_yuan": odds / notes,
-                })
-    out.sort(key=lambda combo: -combo["p"])
-    return out[:top]
+                }
+                seq -= 1  # 同 P 时先枚举到的排前，与原 sort 的稳定序一致
+                if len(heap) < top:
+                    heapq.heappush(heap, (p, seq, combo))
+                else:
+                    heapq.heapreplace(heap, (p, seq, combo))
+    return [item[2] for item in sorted(heap, key=lambda item: (-item[0], -item[1]))]

@@ -373,6 +373,43 @@ def grade_f14b_prospective(rows: Sequence[dict], *, window: dict, seed: int = 7,
 PROSPECTIVE_ADAPTERS["F14b"] = grade_f14b_prospective     # 2026-10-19 登记
 PROOF_GATED = PROOF_GATED | {"F14b"}
 
+
+def grade_n0_prospective(rows: Sequence[dict], *, window: dict, n_perm: int = 200,
+                         seed: int = 20260920, boots: int = 60) -> GradeResult:
+    """N0 噪音地板（2026-10-25 登记）：主指标 F14b 的观测残差 vs 固定 seed 标签置换零分布。
+
+    只打乱 F14b 入选行的 `actual`（价格、表态、分日聚类都不动），每次用 F14b 适配器重算点估计；
+    metric = 观测 − 地板 p97.5（pp），>0 才算可区分；ci = [观测 − p97.5, 观测 − p2.5]。
+    n_cum 与 selected_keys 沿用 F14b（同窗同 n_min），不另立样本账。"""
+    import random
+
+    base = grade_f14b_prospective(rows, window=window, boots=boots)
+    keys = set(base.selected_keys)
+    selected = [dict(r) for r in rows if r.get("key") in keys]
+    kwargs = dict(stratum="pooled", cost_axis_pp=None, as_of_policy=base.as_of_policy,
+                  inputs_hash=base.inputs_hash, selected_keys=base.selected_keys,
+                  computed_by="nutmeg.decision.rsi_grading.grade_n0_prospective")
+    if len(selected) < 2:
+        return GradeResult(n_cum=len(selected), metric_value_pp=0.0, ci_low_pp=0.0,
+                           ci_high_pp=0.0, **kwargs)
+    rng = random.Random(seed)
+    actuals = [r["actual"] for r in selected]
+    floor: list[float] = []
+    for _ in range(n_perm):
+        rng.shuffle(actuals)
+        for r, a in zip(selected, actuals, strict=True):
+            r["actual"] = a
+        floor.append(grade_f14b_prospective(selected, window=window, boots=boots).metric_value_pp)
+    floor.sort()
+    p2 = floor[int(0.025 * (len(floor) - 1))]
+    p97 = floor[int(0.975 * (len(floor) - 1))]
+    obs = base.metric_value_pp
+    return GradeResult(n_cum=base.n_cum, metric_value_pp=obs - p97, ci_low_pp=obs - p97,
+                       ci_high_pp=obs - p2, **kwargs)
+
+
+PROSPECTIVE_ADAPTERS["N0"] = grade_n0_prospective         # 2026-10-25 登记（不进样本账）
+
 def grade_f16_prospective(rows: Sequence[dict], *, window: dict) -> GradeResult:
     """F16 赛程负荷（2026-10-09 登记稿 experiments/registry/_draft_F16.json）。
 

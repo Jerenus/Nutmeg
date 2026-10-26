@@ -108,10 +108,16 @@ def test_load_board_prefers_prescription_then_faces_then_judgment(tmp_path: Path
 def test_build_draft_writes_files_reviews_and_registers_candidates_once(tmp_path: Path) -> None:
     data = _data(tmp_path)
     doc = build_draft(data, ISSUE, cap_yuan=400)
-    labels = [(c["channel"], c["label"]) for c in doc["candidates"]]
+    drop_c = [c for c in doc["candidates"] if c["label"] == "参考·丢光C档形"]
+    labels = [(c["channel"], c["label"]) for c in doc["candidates"] if c not in drop_c]
     assert labels == [("renjiu", "初稿"), ("renjiu", "刹车档"), ("renjiu", "参考·帽内max-P"),
                       ("shengfucai", "初稿"), ("shengfucai", "刹车档"),
                       ("shengfucai", "参考·帽内max-P")]
+    # 丢光 C 档形（2026-10-25）：只出任九、帽内、A/B/b 全单 + D 全包，有则带审票
+    for c in drop_c:
+        assert c["channel"] == "renjiu" and c["stake_yuan"] <= 400 and len(c["faces"]) == 9
+        assert all(len(fs) in (1, 2, 3) for fs in c["faces"].values())   # 双＝帽压包或 C 档补位
+        assert "review" in c
     draft = doc["candidates"][0]
     assert draft["stake_yuan"] == 256 and draft["review"]["detail"]["basis"] == "model"
     assert draft["review"]["detail"]["premium"] > 1.0          # 判断偏向所选面 → 溢价 > 1
@@ -125,11 +131,11 @@ def test_build_draft_writes_files_reviews_and_registers_candidates_once(tmp_path
     assert len(json.loads((zdir / f"{ISSUE}-legs-draft-shengfucai.json")
                           .read_text("utf-8"))["legs"]) == 14
     events = [e for e in read_events(data / "jczq", "2026-10-04") if e.get("kind") == "candidate"]
-    assert len(events) == 6 and all(
+    assert len(events) == 7 and all(      # 2026-10-25：+「参考·丢光C档形」（只出任九）
         e["payload"]["version"].startswith("draft:") for e in events)
     build_draft(data, ISSUE, cap_yuan=400)                      # 幂等：同 hash 不重复登记
     events = [e for e in read_events(data / "jczq", "2026-10-04") if e.get("kind") == "candidate"]
-    assert len(events) == 6
+    assert len(events) == 7                      # 幂等：第二次 build 不再追加（含丢光C档形）
     text = render_draft(doc)
     assert "# 足彩初稿 · 26135（帽 ¥400，规则：处方忠实）" in text
     assert "## 初稿·任九：¥256（128 注，帽 ¥400）" in text and "丢场：" in text

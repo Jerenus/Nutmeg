@@ -211,3 +211,21 @@ def test_ledger_rows_carry_the_kernel_match_id_for_duty_fulfilment(tmp_path: Pat
     assert jczq_ledger_rows(tmp_path, "2026-10-09", now=now, index=_index())["周五001"][
         "match_id"] == "M-1"
     assert zucai_ledger_rows(tmp_path, "26136", now=now, index=_index())["3"]["match_id"] == "m3"
+
+
+def test_schedule_store_counts_fixtures_that_never_reached_the_board(tmp_path):
+    """2026-10-24：API-Football 日程落盘后，没上竞彩板的场也算出场（修波鸿 56 天假长歇）。"""
+    from types import SimpleNamespace
+
+    from nutmeg.decision.team_load import store_fixtures
+
+    fx = [SimpleNamespace(home_team="VfL Bochum", away_team="SC Paderborn 07", status="finished",
+                          league_code="2. Bundesliga"),
+          SimpleNamespace(home_team="X", away_team="Y", status="postponed", league_code="L")]
+    path = store_fixtures(tmp_path, date(2026, 10, 17), fx)
+    rows = json.loads(path.read_text("utf-8"))
+    assert [r["home"] for r in rows] == ["VfL Bochum"]            # 延期不算出场
+    (tmp_path / "jczq").mkdir()
+    idx = build_index(tmp_path, resolve=lambda n: {"VfL Bochum": "ger-vfl-bochum"}.get(n))
+    f = idx.features("VfL Bochum", date(2026, 10, 24))
+    assert f["rest_days"] == 7 and f["matches_14d"] == 1

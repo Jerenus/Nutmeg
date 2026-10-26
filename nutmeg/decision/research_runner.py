@@ -22,7 +22,8 @@ from nutmeg.decision.research_prompt import render_brief, system_prompt
 from nutmeg.decision.rsi_wiring import _cli_invoke
 from nutmeg.decision.stance import validate_stance
 
-RESEARCH_DAILY_BUDGET = 40
+# 2026-10-25 Jun：40 → 10000（预算不再是进样瓶颈；只剩开球前能否研完）
+RESEARCH_DAILY_BUDGET = 10000
 MAX_ATTEMPTS = 2
 RETRY_MARKER = "⚠️RETRY-AFTER-MAX-TURNS"
 # 首轮轮数（2026-10-07）：10-06 起 18/18 场首轮都撞 12 轮上限、24 轮重试才成，

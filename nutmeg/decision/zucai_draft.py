@@ -126,6 +126,57 @@ def maxp_reference(legs_raw: dict[str, dict], *, channel: str, cap_yuan: int) ->
             "p_all": round(pt["p_all"], 6)}
 
 
+DROP_C_SINGLE_MIN = 0.57      # A/B/b 档下限（b 57–64）
+DROP_C_PACK_MIN = 0.25        # 包位：三面都 ≥25%（票形字典 V5 口径）
+
+
+def drop_c_reference(legs: dict[str, dict], *, channel: str, cap_yuan: int) -> dict | None:
+    """丢光 C 档形（2026-10-25 Jun 批：与字典形并排计数 10 期，只作对照）。
+
+    26149 四场 C 档双选全开排除面、两张 9/9 都是这个形。规则：A/B/b 档（最大面 ≥57%）全单，
+    D 档（三面 ≥25%）全包，C 档全丢；任九凑 9 场：单全留（多于 9 留最强 9 条），包按第三面
+    从大到小补；帽放不下先把最弱的包降成双；仍不够 9 场才拿 C 档 top-2 双补入（记进 note）。
+    只算术，不产生判断。"""
+    if channel != "renjiu":
+        return None
+    code_of = {v: k for k, v in FACE_OF.items()}
+    cap_notes = cap_yuan // PRICE_PER_NOTE
+
+    def top2(no: str) -> str:
+        order = sorted(FACES, key=lambda f: -legs[no]["belief"][f])[:2]
+        return "".join(d for d in "310" if d in {code_of[f] for f in order})
+
+    top = {no: max(legs[no]["belief"].values()) for no in legs}
+    singles = sorted((no for no in legs if top[no] >= DROP_C_SINGLE_MIN), key=lambda no: -top[no])
+    packs = sorted((no for no in legs if no not in singles
+                    and min(legs[no]["belief"].values()) >= DROP_C_PACK_MIN),
+                   key=lambda no: -min(legs[no]["belief"].values()))
+    c_tier = sorted((no for no in legs if no not in singles and no not in packs),
+                    key=lambda no: -sum(legs[no]["belief"][f] for f in
+                                        sorted(FACES, key=lambda f: -legs[no]["belief"][f])[:2]))
+    singles = singles[:RENJIU_PICK]
+    packs = packs[:RENJIU_PICK - len(singles)]
+    doubles: list[str] = []
+    note = ""
+    while len(singles) + len(packs) + len(doubles) < RENJIU_PICK and c_tier:
+        doubles.append(c_tier.pop(0))
+        note = f"C 档不够丢：补 {len(doubles)} 场双"
+    if len(singles) + len(packs) + len(doubles) < RENJIU_PICK:
+        return None
+    while 3 ** len(packs) * 2 ** len(doubles) > cap_notes and packs:
+        doubles.append(packs.pop())            # 最弱的包降成双
+    if 3 ** len(packs) * 2 ** len(doubles) > cap_notes:
+        return None
+    faces = {no: code_of[max(FACES, key=lambda f: legs[no]["belief"][f])] for no in singles}
+    faces.update({no: "310" for no in packs})
+    faces.update({no: top2(no) for no in doubles})
+    faces = dict(sorted(faces.items(), key=lambda kv: int(kv[0])))
+    notes = _notes(faces)
+    return {"faces": faces, "notes": notes, "stake_yuan": notes * PRICE_PER_NOTE,
+            "p_all": round(_p_all(legs, faces), 6),
+            "dropped": [no for no in legs if no not in faces], "note": note}
+
+
 def to_slip(issue: str, legs: dict[str, dict], faces: dict[str, str], *, channel: str,
             slip_id: str, placed_at: str = "") -> BetSlip:
     slip_legs = [SlipLeg(key=no, name=legs[no]["name"], market="had",
@@ -180,6 +231,10 @@ def build_draft(data_dir: Path, issue: str, *, cap_yuan: int = DEFAULT_CAP,
                                "cap_yuan": cap_yuan, **ref, "rule": "max_p",
                                "dropped": [no for no in legs if no not in ref["faces"]],
                                "downgrades": []})
+        dc = drop_c_reference(legs, channel=channel, cap_yuan=cap_yuan)
+        if dc:
+            candidates.append({"label": "参考·丢光C档形", "channel": channel,
+                               "cap_yuan": cap_yuan, **dc, "rule": "drop_c", "downgrades": []})
     for i, cand in enumerate(candidates):
         if not cand.get("faces"):
             continue
@@ -314,8 +369,12 @@ def render_draft(doc: dict) -> str:
             steps = "、".join(f"{s['no']} 砍{s['dropped']}({s['p'] * 100:.0f}%)→{s['to']}"
                              for s in c["downgrades"])
             lines.append(f"降档 {len(c['downgrades'])} 步：{steps}")
-        if c["label"].startswith("参考"):
+        if c["label"] == "参考·帽内max-P":
             lines.append("（帽内 max-P 形状 403 天回放 −58%，只作对照，不是建议）")
+        elif c["label"] == "参考·丢光C档形":
+            lines.append("（丢光 C 档形：A/B/b 全单 + D 全包 + C 全丢；2026-10-25 起与字典形并排"
+                         "计数 10 期，只作对照，不是建议"
+                         + (f"；{c['note']}" if c.get("note") else "") + "）")
         for line in (c.get("review") or {}).get("lines") or []:
             lines.append(f"审票 {line}")
     lines += ["", "> 读法：初稿 = 处方面集合装进帽（只丢场不降档）；市场口径下任何形状的期望回报都"

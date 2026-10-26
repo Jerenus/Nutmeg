@@ -109,11 +109,14 @@ def test_all_registry_docs_load_and_keep_their_original_registration_dates():
     # 2026-10-14：F18（单关许可证）登记
     # 2026-10-16：F19（「真实＝已定价」）登记（f2fdab8c 漏改本断言）
     # 2026-10-19：F14b（接替 v2 证伪的 F14）、K2（接替 K1）登记，带 date_to 与出口
+    # 2026-10-25：N0（噪音地板，挂 F14b，同窗同 n_min）登记
     assert set(docs) == {"CR2", "F1c", "F10", "F11", "F13", "F14", "F14b", "F15", "F16", "F17",
                          "F18", "F19", "F2", "F3", "F4", "F5", "F8", "F9", "G1", "K1", "K2",
-                         "R0", "R1"}
+                         "N0", "R0", "R1"}
     assert (docs["F14b"]["registered_at"], docs["F14b"]["window"]) == (
         "2026-10-19", {"date_from": "2026-10-20", "n_min": 120, "date_to": "2026-12-31"})
+    assert (docs["N0"]["registered_at"], docs["N0"]["window"]) == (
+        "2026-10-25", {"date_from": "2026-10-20", "n_min": 120, "date_to": "2026-12-31"})
     assert docs["K2"]["window"]["date_to"] == "2026-11-30" and docs["K2"]["exits"]
     assert (docs["F18"]["registered_at"], docs["F18"]["window"]) == (
         "2026-10-14", {"date_from": "2026-10-15", "n_min": 60})

@@ -56,7 +56,7 @@ def test_exploration_spend_ignores_other_months_and_trials(tmp_path: Path) -> No
 def test_month_report_marks_tripped_brake(tmp_path: Path, monkeypatch) -> None:
     data = _data(tmp_path)
     (data / "scoreboard.json").write_text(json.dumps({"tickets": {
-        "jczq-20261002": {"net": -6200, "stake": 6300}}}), encoding="utf-8")  # 止损线 6000
+        "jczq-20261002": {"net": -8200, "stake": 8300}}}), encoding="utf-8")  # 止损线 8000
     monkeypatch.setattr("nutmeg.decision.account.experiment_board", lambda _d: {})
     report = month_report(data, "2026-10")
     assert report["tripped"] is True and "⛔已触发" in render_month(report)

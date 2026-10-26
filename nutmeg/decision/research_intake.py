@@ -44,6 +44,7 @@ LICENSE_KEYS = (
     "q3a_opponent_scores",
     "q3b_opponent_takes_points",
     "q4_no_context_flag",
+    "q5_no_rotation_window",   # 2026-10-24 选填：欧战/杯赛后 ≤4 天且停售前无名单 → false
 )
 PROOF_KEYS = ("a", "b", "c")
 HOLE_LOCATION_UNITS = frozenset(

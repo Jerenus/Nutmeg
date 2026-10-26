@@ -103,7 +103,7 @@ def test_tripped_stop_loss_vetoes_the_preview_but_never_the_registration(tmp_pat
     data = tmp_path / "data"
     data.mkdir()
     (data / "scoreboard.json").write_text(json.dumps({"tickets": {
-        "jczq-20261003": {"net": -6200, "stake": 6200}}}), encoding="utf-8")   # 止损线 6,000
+        "jczq-20261003": {"net": -8200, "stake": 8200}}}), encoding="utf-8")   # 止损线 8,000
     legs = _legs(tmp_path, "j.json", [
         {"key": "周六001", "market": "had", "selections": ["home"], "odds": [1.5],
          "fair": {"home": 0.62, "draw": 0.22, "away": 0.16}},
@@ -209,3 +209,22 @@ def test_complement_searches_a_ticket_that_maximises_coverage_with_the_base(tmp_
                    (x.split(":") for x in MAIN.split()) if len(f) == 1)   # 不与主单共享裸单
     assert "合起来至少中一张" in out.output and "与 主 同死" in out.output
     assert not (data / "betslips.jsonl").exists()
+
+
+def test_v5_warns_on_pack_in_non_coin_match_and_two_bold_picks(tmp_path: Path):
+    """2026-10-23（26147 复盘）：包放在第三面 <25% 的场、一张票博胆 >1 → V5 只警告，不否决。"""
+    data = tmp_path / "data"
+    (data / "zucai").mkdir(parents=True)
+    fair = {str(n): {"home": 0.62, "draw": 0.21, "away": 0.17} for n in range(1, 15)}
+    fair["9"] = {"home": 0.35, "draw": 0.27, "away": 0.38}
+    (tmp_path / "fair.json").write_text(json.dumps(fair), encoding="utf-8")
+    # 1 包在 62/21/17 的场；2、3 排掉 62% 的主胜＝两条博胆；9 包在硬币场不警告
+    faces = "310 10 10 3 3 3 3 3 310 * * * * *"
+    pre = runner.invoke(app, ["betslip", "preview", "--channel", "renjiu", "--placed-at",
+                              "2026-10-22", "--issue", "26147", "--faces", faces,
+                              "--fair-file", str(tmp_path / "fair.json"),
+                              "--data-dir", str(data)])
+    assert pre.exit_code == 0, pre.output
+    assert "⚠️V5 包放在非硬币场 1（0 只有 17%）" in pre.output
+    assert "⚠️V5 博胆 2 条（2排3 62%、3排3 62%）" in pre.output
+    assert "审票结论：可出" in pre.output
