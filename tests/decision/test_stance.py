@@ -194,3 +194,23 @@ def test_research_belief_zeroes_dead_faces_after_the_tilt():
         assert "活面" in str(exc)
     else:
         raise AssertionError("no alive face must raise")
+
+
+def test_market_read_out_of_enum_is_normalised_not_rejected():
+    """2026-10-26：枚举外值整份拒收丢了 4 份研究（10-17 周六013 `overpriced_fav`）；
+    现归一到最近合法值、原值留 market_read_raw、normalized 留痕。"""
+    norm, issues = validate_stance(_stance(market_read="overpriced_fav"), confidence=3,
+                                   death_three_proofs={})
+    assert issues == []
+    assert norm["market_read"] == "overpriced" and norm["market_read_raw"] == "overpriced_fav"
+    assert any(n.startswith("market_read_normalized") for n in norm["normalized"])
+    norm, _ = validate_stance(_stance(market_read="Underpriced away"), confidence=3,
+                              death_three_proofs={})
+    assert norm["market_read"] == "underpriced"
+    norm, _ = validate_stance(_stance(market_read="fair_price"), confidence=3,
+                              death_three_proofs={})
+    assert norm["market_read"] == "agree"
+    norm, _ = validate_stance(_stance(market_read="???"), confidence=3, death_three_proofs={})
+    assert norm["market_read"] is None and norm["market_read_raw"] == "???"
+    norm, _ = validate_stance(_stance(market_read="agree"), confidence=3, death_three_proofs={})
+    assert "market_read_raw" not in norm and norm["normalized"] == []

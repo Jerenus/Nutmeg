@@ -6,7 +6,7 @@ description: 足彩分析包——三屏一桥：屏 1 决策表（14 行）/ �
 
 **2026-10-14 改版（26140 §11 SOP 审计，Jun 同日批「修复完善已知问题，迭代系统」）**：旧版 §0–§10 把同一场写 13 次、「能不能单」答四次、死法清单写四次、§7+§8c 出 22 个票面版本——Jun 的六次追问全是构票问题（放哪个平、两张票同向、为什么双在 6/8、在我基础上怎么改），版本表是枚举不是回答。判断链上真正起作用的只有四件：①每场的许可证（锚方中轴 / 洞在谁 / 六条件 k/n）②丢哪几场 ③双选盖谁 ④一张票 + 它的死法清单。本版按这四件排，章节数 10→5。旧版全文在 git 历史（2026-10-13 之前的本文件）；26138–26140 三期的追问链见记忆 `jun-zucai-reading-questions`。
 
-输入（全在 `.nutmeg-data/zucai/`）：`<期>-judgment-brief.md`（初判包 + 机器初稿）、`<期>-research-m<N>.json` 与并集池里对应日的竞彩研究、`<期>-legs-base.json`（判断 fair / 处方 / 表态 / rubric / `_hole` / `license_questions`）、`<期>-closing-odds.json`、`<期>-polymarket.json`（出包前跑 `uv run nutmeg crowd polymarket --issue <期> --flow`，行上才有 `flow`/`money_to`/`lopsided`）、`<期>-clues.jsonl`、`<期>-team-load.json`、`<期>-issue.json`；账房行用 `uv run nutmeg betslip preview … --issue <期>` 末尾那行或 `account month`。缺哪份就在该格写「缺」，不补算。
+输入（全在 `.nutmeg-data/zucai/`）：`<期>-judgment-brief.md`（初判包 + 机器初稿）、`<期>-research-m<N>.json` 与并集池里对应日的竞彩研究、`<期>-legs-base.json`（判断 fair / 处方 / 表态 / rubric / `_hole` / `license_questions`）、`<期>-closing-odds.json`、`<期>-polymarket.json`（出包前跑 `uv run nutmeg crowd polymarket --issue <期> --flow`，行上才有 `flow`/`money_to`/`lopsided`）、`<期>-clues.jsonl`、`<期>-team-load.json`、`<期>-issue.json`；账房行只读 `uv run nutmeg account month` **第二行「实质余量（含待结票）」**（2026-10-26 起；26149/26150 两期 01:45 报 ¥766 实 ¥78 都是只看了第一行）。缺哪份就在该格写「缺」，不补算。
 
 ## 三屏一桥
 

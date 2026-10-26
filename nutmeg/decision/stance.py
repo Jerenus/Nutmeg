@@ -207,16 +207,41 @@ def validate_stance(stance, *, confidence, death_three_proofs) -> tuple[dict, li
     alt = stance.get("alt_face")
     if alt not in (None, *FACES):
         _add_error(issues, "alt_face", f"alt_face `{alt}` 不是 3/1/0")
-    mr = stance.get("market_read")
-    if mr not in (None, "agree", "overpriced", "underpriced"):
-        _add_error(issues, "market_read", f"market_read `{mr}` 不合法")
+    mr_raw = stance.get("market_read")
+    mr = normalize_market_read(mr_raw)
+    if mr != mr_raw:
+        normalized.append(f"market_read_normalized `{mr_raw}`→{mr}")
     norm = {
         "face": face, "structure": structure, "cover": str(cover) if cover is not None else None,
         "confidence": conf, "falsifier": falsifier, "why_not_market": why,
         "tilt": tilt if isinstance(tilt, dict) else None, "alt_face": alt, "market_read": mr,
         "faces": faces, "tiers": tiers, "normalized": normalized,
     }
+    if mr != mr_raw:
+        norm["market_read_raw"] = mr_raw
     return norm, issues
+
+
+MARKET_READ = (None, "agree", "overpriced", "underpriced")
+
+
+def normalize_market_read(raw) -> str | None:
+    """`stance.market_read` 枚举外值归一到最近的合法值（2026-10-26，Jun：更多样本是每期的财富）。
+
+    此前枚举外值整份拒收（10-17 周六013 `overpriced_fav` 等 4 份研究因此丢）。规则只在这一处：
+    合法值原样；字符串含 `over` → overpriced、含 `under` → underpriced（agent 常写
+    `overpriced_fav` / `underpriced_away` 之类带面后缀的变体）；含 `agree`/`fair`/`market`
+    → agree；其余认不出 → None（未填），原值由调用方记 `market_read_raw`。"""
+    if raw in MARKET_READ:
+        return raw
+    text = str(raw).strip().lower()
+    if "over" in text:
+        return "overpriced"
+    if "under" in text:
+        return "underpriced"
+    if any(word in text for word in ("agree", "fair", "market")):
+        return "agree"
+    return None
 
 
 def apply_tilt(prior: dict, tilt: dict | None, *, kickoff: str | None = None) -> TiltResult:

@@ -145,8 +145,9 @@ def _validate(text: str, leg: dict) -> dict:
         raise ValueError(f"缺字段 {missing}")
     if not 1 <= int(doc["confidence"]) <= 5:
         raise ValueError("confidence 不在 1-5")
+    stance_notes: list[str] = []
     for face, proofs in (doc.get("death_three_proofs") or {}).items():
-        if str(proofs.get("verdict", "alive")).lower() != "dead":
+        if not isinstance(proofs, dict) or str(proofs.get("verdict", "alive")).lower() != "dead":
             continue
         count = sum(
             bool(proofs.get(key))
@@ -157,7 +158,11 @@ def _validate(text: str, leg: dict) -> dict:
             )
         )
         if count < 3:
-            raise ValueError(f"{face} 宣告 dead 但三证 {count}/3")
+            # 2026-10-26：与 intake `core_proofs_incomplete`（WARN）同口径——不再整份拒收；
+            # 宪法口径三证 3/3 才判死，所以未证的 dead 按 alive 读，原件留痕
+            proofs["verdict"] = "alive"
+            proofs["verdict_raw"] = "dead"
+            stance_notes.append(f"{face} 宣告 dead 但三证 {count}/3 → 按 alive（不拒收）")
     # 判断 rubric r1（2026-10-02）：逐项校验（无来源的"是"强制弃权）→ 从答案派生 stance.tilt
     from nutmeg.decision.rubric import derive_stance, soften, validate_rubric
 
@@ -171,13 +176,21 @@ def _validate(text: str, leg: dict) -> dict:
     doc["rubric_missing"] = not isinstance(doc.get("rubric"), dict)
     doc["rubric"] = norm_rubric
     doc["stance"] = derive_stance(doc.get("stance"), norm_rubric, leg.get("fair"))
-    _norm, stance_issues = validate_stance(
+    norm, stance_issues = validate_stance(
         doc.get("stance"),
         confidence=doc.get("confidence"),
         death_three_proofs=doc.get("death_three_proofs") or {},
     )
     if stance_issues:
         raise ValueError("stance: " + "; ".join(i.message for i in stance_issues))
+    # 归一后的 market_read 写回原件（枚举外值 → 最近合法值，原值留 market_read_raw）；
+    # 校验层留痕的 normalized 一并落成 stance_notes，入库时可见
+    doc["stance"]["market_read"] = norm["market_read"]
+    if "market_read_raw" in norm:
+        doc["stance"]["market_read_raw"] = norm["market_read_raw"]
+    stance_notes.extend(norm.get("normalized") or [])
+    if stance_notes:
+        doc["stance_notes"] = stance_notes
     intake_result = intake(doc, dict(leg))
     errors = [issue.message for issue in intake_result.issues if issue.level == "ERROR"]
     if errors:

@@ -149,10 +149,14 @@ def test_every_registered_experiment_is_graded_or_explained():
     每个登记原件必须落在 结账 / 不结账（有原因）/ 已关闭 三处之一，结账的必须有适配器。"""
     from nutmeg.decision.rsi_grading import PROSPECTIVE_ADAPTERS
     from nutmeg.decision.rsi_loop import CLOSED, GRADED_EXPERIMENTS, MONITORS, UNGRADED
+    from nutmeg.decision.rsi_prereg import base_exp_id, registry_role
 
     root = Path(__file__).resolve().parents[2]
-    registered = {p.stem for p in (root / "experiments" / "registry").glob("*.json")
-                  if not p.stem.startswith("_")}
+    # 2026-10-26 两段式：epoch 副本 `<exp>.vN` 按底 exp 落位；role=display_only 只展示不结账
+    reg_dir = root / "experiments" / "registry"
+    registered = {base_exp_id(p.stem) for p in reg_dir.glob("*.json")
+                  if not p.stem.startswith("_")
+                  and registry_role(reg_dir, p.stem) != "display_only"}
     crowd = {e for e in registered if e.startswith("CR")}
     placed = set(GRADED_EXPERIMENTS) | set(UNGRADED) | set(CLOSED) | crowd
     assert registered - placed == set(), f"未落位的登记实验：{sorted(registered - placed)}"

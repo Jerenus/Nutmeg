@@ -21,6 +21,11 @@ _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _CR_REQUIRED = ("label_cn", "trigger", "crowd_bias", "replay_window")
 EXIT_KEYS = ("on_survived", "on_falsified", "on_expired")
 _EXIT_ACTION = re.compile(r"^((rubric_cap|rule|retire_rule|packet_column):\S+|display_only|none)$")
+# 指标两段式（2026-10-26 RULEBOOK「〇」）：登记原件顶层可选 `role`
+#   display_only：过了回溯预筛但 |效应| <10pp → 只做分析包展示列，不 grade / 不 verdict
+#   monitor     ：只 grade 不 verdict（K2 n_min 1,500；F9 有害监测另在 rsi_loop.MONITORS）
+ROLES = ("display_only", "monitor")
+PRESCREEN_N_MIN = 60
 
 
 def load_registry_doc(path: Path) -> dict:
@@ -58,7 +63,57 @@ def load_registry_doc(path: Path) -> dict:
     if str(doc["exp_id"]).startswith("CR"):
         _validate_crowd(doc)
     validate_exits(doc.get("exits"))
+    if doc.get("role") is not None and doc["role"] not in ROLES:
+        raise ValueError(f"role 只许 {ROLES}")
     return doc
+
+
+def apply_prescreen(doc: dict, prescreen: dict, *, n_min: int | None = None) -> dict:
+    """两段式第二段的入口（`rsi register --prescreen`）：按 `structure_align.py --indicator`
+    的输出改写登记原件——不过地板拒登记；过地板但 suggested_n_min 为空 → role=display_only
+    （n_min 不动，只展示）；否则 window/falsifier 的 n_min 取 60（--n-min 可覆盖但 ≥60）。
+    预筛原件整份存进 doc["prescreen"]，进冻结指纹。"""
+    for key in ("id", "n", "residual_pp", "passes_floor", "suggested_n_min"):
+        if key not in prescreen:
+            raise ValueError(f"预筛结果缺字段 {key}（要 structure_align.py --indicator 的输出）")
+    if not prescreen["passes_floor"]:
+        raise ValueError(
+            f"预筛不过地板：{prescreen['id']} n={prescreen['n']} 残差 "
+            f"{prescreen['residual_pp']:+.1f}pp 落在选择置换地板 "
+            f"[{prescreen.get('floor_low_pp')},{prescreen.get('floor_pp')}] 内——不登记")
+    out = json.loads(json.dumps(doc, ensure_ascii=False))
+    out["prescreen"] = prescreen
+    if prescreen["suggested_n_min"] is None:
+        out["role"] = "display_only"
+        return out
+    chosen = PRESCREEN_N_MIN if n_min is None else int(n_min)
+    if chosen < PRESCREEN_N_MIN:
+        raise ValueError(f"--n-min 必须 ≥{PRESCREEN_N_MIN}（两段式前瞻确认的下限）")
+    out["window"] = {**out["window"], "n_min": chosen}
+    out["falsifier"] = {**out["falsifier"], "n_min": chosen}
+    out.pop("role", None)
+    return out
+
+
+def registry_role(registry_dir: Path, exp_id: str) -> str | None:
+    """登记原件顶层 `role`（内核不存它；原件是登记时的文本，这里只读不写）。"""
+    path = Path(registry_dir) / f"{exp_id}.json"
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8")).get("role")
+    except (OSError, ValueError):
+        return None
+
+
+def base_exp_id(exp_id: str) -> str:
+    """`F19.v2` → `F19`：epoch 副本沿用原实验的结账适配器与清单位置。"""
+    return re.sub(r"\.v\d+$", "", str(exp_id))
+
+
+def next_epoch_id(exp_id: str) -> str:
+    m = re.search(r"\.v(\d+)$", str(exp_id))
+    return f"{base_exp_id(exp_id)}.v{int(m.group(1)) + 1 if m else 2}"
 
 
 def validate_exits(exits) -> None:

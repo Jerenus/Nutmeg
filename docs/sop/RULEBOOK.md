@@ -40,10 +40,10 @@
 **事前登记待检验（不影响票面）**：F10 热门低估（历史 60–80% 模态面 n=378 实开 74.9% vs 市场 68.1%，单次扫描，需前瞻复现）；F14b 表态偏离市场排序时是否比市场准；F17 名气热门被高估；F18 单关许可证（许可证已作胆的门槛——在 F18 结账前它是纪律，不是有实证的预测主张）。~~F11~~（2026-10-17 证伪）、~~F16~~（2026-10-19 退役：有效样本 1%，台账照常只展示）。
 
 **指标两段式（2026-10-26 Jun 定「RSI 验证完直接进 SOP、新指标要能马上用」；设计见 `docs/superpowers/plans/2026-10-26-iteration-design.md` Tier 3）**：
-① **回溯预筛（当天）**：新指标先在 `experiments/decision-samples-v1.jsonl` 前瞻有赛果行上跑同口径残差与 N0 地板，过不了地板不登记（`experiments/structure_align.py --indicator`，待落）。
-② **展示中（登记当天可用）**：过预筛即进分析包 §1 决策表一列，本表记「展示中·前瞻 n=0」；只展示，不拨 belief、不拦票。
-③ **前瞻确认**：n_min 按预筛效应量定——|效应| ≥10pp 登记 n_min=60（每日 15–30 场约 3–6 周到期），<10pp 不登记拦截候选、永久只展示；判决仍按 v2 单次结账，survived 才接 `betslip preview` V 系列。
-④ **口径变更＝新 epoch**：SOP 改动涉及指标输入时自动开 `<指标>.v2`，旧 epoch 冻结结账，展示列不中断。
+① **回溯预筛（当天）**：新指标先在 `experiments/decision-samples-v1.jsonl` 前瞻有赛果行上跑同口径残差与地板，过不了地板不登记。工具：`uv run python experiments/structure_align.py --indicator-json '{"id":…,"select":{"field":…,"equals":…},"face":"underdog|modal|home|draw|away"}' --json-out pre.json`（残差 CI 按日簇 bootstrap 与 rsi_grading 同口径；地板＝同池随机抽同 n 行 200 次的选择置换带，因为打乱赛果对简单残差无效）。**首跑 10-26**：F19 真实·未价 28 行 −10.9pp CI[−23.8,+4.8] 地板 [−16.1,+11.8] 不过；F10 b 档热门 85 行 +13.6pp 地板 [−6.0,+14.9] 不过——两条现役展示列按本口径都只是展示。
+② **展示中（登记当天可用）**：过预筛即进分析包 §1 决策表一列，本表记「展示中·前瞻 n=0」；只展示，不拨 belief、不拦票。登记：`rsi register --by Jun <原件> --prescreen pre.json [--n-min ≥60] [--dry-run]`——不过地板 exit 1 拒登记；|效应| <10pp 写 `role: display_only`（status 列「展示中」，不 grade 不判决）。
+③ **前瞻确认**：n_min 按预筛效应量定——|效应| ≥10pp 登记 n_min=60（每日 15–30 场约 3–6 周到期），<10pp 不登记拦截候选、永久只展示；判决仍按 v2 单次结账，survived 才接 `betslip preview` V 系列。 K2 10-26 起 `role: monitor`（只 grade 不判决，与 F9 同）。
+④ **口径变更＝新 epoch**：SOP 改动涉及指标输入时开 `<指标>.v2`，旧 epoch 冻结结账，展示列不中断。命令：`rsi epoch --exp <id> --reason "<口径变更>" --by Jun [--dry-run]`（旧 epoch 先试 v2 结账再 retire 标 epoch_closed；副本 `experiments/registry/<id>.v2.json` 沿用 spec/duties、n 从 0；只许人跑，不自动触发）。
 再快只能降 N0 地板＝用假阳性换速度，不做。现役展示中：F19 价内/未价、F18 许可证、人群列（PM 钱向/CR2）。
 
 **退休（沿用 2026-09-26）**：l-归零；死亡三证作排面前提；B5c 矩阵作出票前提；**「弱势方路径 real/strong → 至少双选」**（2026-09-27 退休：弱方路径的强度改为拨 belief，结构交给 P）；**胜负彩大胆单选渠道规则**（2026-09-27 退休：C1/C19 在所有渠道都已不拦截，渠道差异不再需要）。

@@ -3,6 +3,7 @@
  "claim": "判断 rubric 的问题表逐项可读：分析员（读者 A）与系统一读者（读者 B，只读分析员写下的证据）逐项 Cohen's kappa、按项次加权的均值 ≥ 0.40（每项至少 20 个两读都作答的项次才计入）。",
  "mechanism": "K1 于 2026-10-08 以合并 κ survived（CI[84.3,93.0]），但合并 κ 跨词表异质的 15 项一起算，期望一致率被压到约 0.2、κ 被抬高；审计复算逐项 κ 按 n 加权约 0.43，6 项低于 0.4（S_dead_face≈0、S_draw_mode 0.09、S_underdog_path 0.12、M_facts_priced 0.12、O_other_event 0.17、S_crash_candidate 0.32）。读者 B 读的是 A 写下的证据，两读不独立——κ 量的是「能否从证据复原答案」，不是两个独立评估者的信度；10-18 已测 κ 与赛果相关≈0。",
  "tier": "observation",
+ "role": "monitor",
  "layer": "judgment",
  "population": "both",
  "min_tier": "deep_research",

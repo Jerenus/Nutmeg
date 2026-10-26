@@ -151,3 +151,50 @@ def test_all_registry_docs_load_and_keep_their_original_registration_dates():
     assert [(x["name"], x["scope"], x["deadline_rule"]) for x in docs["F5"]["duties"]] == [
         ("price-band-observation", "match", "match_kickoff")
     ]
+
+
+# ── 指标两段式（2026-10-26）──────────────────────────────────────────────
+
+def _prescreen(**over):
+    base = {"id": "F20_x", "n": 48, "residual_pp": 12.3, "ci": [3.0, 21.0], "floor_pp": 9.8,
+            "floor_low_pp": -9.5, "passes_floor": True, "effect_abs_pp": 12.3,
+            "suggested_n_min": 60}
+    return {**base, **over}
+
+
+def test_apply_prescreen_sets_n_min_60_and_keeps_the_prescreen_doc():
+    from nutmeg.decision.rsi_prereg import apply_prescreen
+
+    doc = deepcopy(GOOD)
+    out = apply_prescreen(doc, _prescreen())
+    assert out["window"]["n_min"] == 60 and out["falsifier"]["n_min"] == 60
+    assert out["prescreen"]["id"] == "F20_x" and "role" not in out
+    assert GOOD["falsifier"]["n_min"] == 140          # 原 doc 不被改
+    assert apply_prescreen(doc, _prescreen(), n_min=90)["window"]["n_min"] == 90
+
+
+def test_apply_prescreen_display_only_when_effect_small_and_refuses_below_floor():
+    from nutmeg.decision.rsi_prereg import apply_prescreen
+
+    out = apply_prescreen(deepcopy(GOOD), _prescreen(suggested_n_min=None, effect_abs_pp=4.0))
+    assert out["role"] == "display_only" and out["falsifier"]["n_min"] == 140
+    with pytest.raises(ValueError, match="不过地板"):
+        apply_prescreen(deepcopy(GOOD), _prescreen(passes_floor=False))
+    with pytest.raises(ValueError, match="≥60"):
+        apply_prescreen(deepcopy(GOOD), _prescreen(), n_min=30)
+    with pytest.raises(ValueError, match="缺字段"):
+        apply_prescreen(deepcopy(GOOD), {"id": "x"})
+
+
+def test_role_is_validated_and_epoch_ids_derive(tmp_path):
+    from nutmeg.decision.rsi_prereg import base_exp_id, next_epoch_id, registry_role
+
+    p = tmp_path / "F2.json"
+    p.write_text(json.dumps({**GOOD, "role": "monitor"}), encoding="utf-8")
+    assert load_registry_doc(p)["role"] == "monitor"
+    assert registry_role(tmp_path, "F2") == "monitor" and registry_role(tmp_path, "F9") is None
+    p.write_text(json.dumps({**GOOD, "role": "boss"}), encoding="utf-8")
+    with pytest.raises(ValueError, match="role"):
+        load_registry_doc(p)
+    assert base_exp_id("F19.v2") == "F19" and base_exp_id("F19") == "F19"
+    assert next_epoch_id("F19") == "F19.v2" and next_epoch_id("F19.v2") == "F19.v3"

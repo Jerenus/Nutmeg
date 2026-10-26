@@ -62,6 +62,10 @@ _BY = typer.Option(..., "--by")
 _FORK_FROM = typer.Option(None, "--fork-from")
 _POPULATION = typer.Option(None, "--population")
 _WINDOW_FROM = typer.Option(None, "--window-from")
+_PRESCREEN = typer.Option(None, "--prescreen",
+                          help="两段式：structure_align.py --indicator 的预筛 JSON；不过地板拒登记")
+_N_MIN_OVERRIDE = typer.Option(None, "--n-min", help="与 --prescreen 同用，覆盖 n_min（≥60）")
+_DRY_RUN_REG = typer.Option(False, "--dry-run", help="只打印改写后的原件 / 将发生的动作，不登记")
 _REGISTER_WINNER = typer.Option(
     False, "--register-winner", help="write a candidate registry draft for the winner"
 )
@@ -344,23 +348,34 @@ def _fork_registry_doc(
         raise ValueError("--window-from 必须是 YYYY-MM-DD") from exc
     falsifier = {**source.falsifier}
     falsifier["stratum"] = "pooled" if population == "both" else population
+    doc = _doc_from_source(
+        source, duties, exp_id=target_path.stem, population=population,
+        window={"date_from": window_from, "n_min": falsifier["n_min"]}, falsifier=falsifier,
+        registered_at=source.registered_at, forked_from=fork_from)
+    _write_registry_doc(target_path, doc)
+    return doc
+
+
+def _doc_from_source(source, duties, *, exp_id: str, population: str, window: dict,
+                     falsifier: dict, registered_at: str, **extra) -> dict:
+    """内核里的实验 + 义务 → 一份登记原件（fork 与 epoch 共用；spec 字段原样复制）。"""
     doc = {
-        "exp_id": target_path.stem,
+        "exp_id": exp_id,
         "claim": source.claim,
         "mechanism": source.mechanism,
         "tier": source.tier,
         "layer": source.layer,
         "population": population,
         "min_tier": source.min_tier,
-        "window": {"date_from": window_from, "n_min": falsifier["n_min"]},
+        "window": window,
         "falsifier": falsifier,
         "stop_rule": source.stop_rule,
         "quota_slot": source.quota_slot,
         "buckets": source.buckets,
         "rule_ids": source.rule_ids,
         "source_doc": source.source_doc,
-        "registered_at": source.registered_at,
-        "forked_from": fork_from,
+        "registered_at": registered_at,
+        **extra,
         "duties": [
             {
                 "name": duty.duty_id.split(":", 1)[1],
@@ -373,17 +388,17 @@ def _fork_registry_doc(
             for duty in duties
         ],
     }
-    if source.replay_spec is not None:
-        doc["replay_spec"] = source.replay_spec
-    if source.dream_ref is not None:
-        doc["dream_ref"] = source.dream_ref
-    if source.variants_tried is not None:
-        doc["variants_tried"] = source.variants_tried
+    for key in ("replay_spec", "dream_ref", "variants_tried"):
+        if getattr(source, key) is not None:
+            doc[key] = getattr(source, key)
+    return doc
+
+
+def _write_registry_doc(target_path: Path, doc: dict) -> None:
     target_path.parent.mkdir(parents=True, exist_ok=True)
     target_path.write_text(
         json.dumps(doc, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
-    return doc
 
 
 @rsi_app.command("register")
@@ -394,9 +409,15 @@ def register(
     fork_from: str | None = _FORK_FROM,
     population: str | None = _POPULATION,
     window_from: str | None = _WINDOW_FROM,
+    prescreen: Path | None = _PRESCREEN,
+    n_min: int | None = _N_MIN_OVERRIDE,
+    dry_run: bool = _DRY_RUN_REG,
 ) -> None:
-    """摄入登记原件（人）。同一 exp_id 二次登记拒绝。"""
-    from nutmeg.decision.rsi_prereg import load_registry_doc
+    """摄入登记原件（人）。同一 exp_id 二次登记拒绝。
+
+    --prescreen（两段式 2026-10-26）：读回溯预筛结果——不过地板拒登记；过地板但 |效应| <10pp
+    → role=display_only 只做展示列；否则 n_min=60（--n-min 可抬高）。改写后的原件回写文件。"""
+    from nutmeg.decision.rsi_prereg import apply_prescreen, load_registry_doc
 
     k = _kernel(data_dir)
     try:
@@ -414,8 +435,20 @@ def register(
                 window_from=str(window_from),
             )
         doc = load_registry_doc(doc_path)
+        if prescreen is not None:
+            doc = apply_prescreen(doc, json.loads(prescreen.read_text(encoding="utf-8")),
+                                  n_min=n_min)
+            if not dry_run:
+                _write_registry_doc(doc_path, doc)
+        elif n_min is not None:
+            raise ValueError("--n-min 只配 --prescreen")
     except ValueError as exc:
         _fail(str(exc))
+    if dry_run:
+        typer.echo(json.dumps({k_: v for k_, v in doc.items() if k_ != "prescreen"},
+                              ensure_ascii=False, indent=1))
+        typer.echo(f"[dry-run] 未登记；role={doc.get('role')} n_min={doc['window'].get('n_min')}")
+        return
     # 键上调用时刻而非文件 mtime：同一原件二次登记必须落到 handler 的「已登记」拒绝，
     # 不能被幂等重放吞成成功。
     now = _now()
@@ -433,6 +466,85 @@ def register(
         typer.echo("  观察型：没写出口（exits），照样登记、作为正样本积累；判决不改任何开关")
     else:
         typer.echo("  出口：" + "；".join(f"{k}={v}" for k, v in doc["exits"].items()))
+    if doc.get("role") == "display_only":
+        typer.echo("  展示中：预筛过地板但 |效应| <10pp，只做分析包列，不 grade / 不 verdict")
+    elif doc.get("prescreen"):
+        ps = doc["prescreen"]
+        typer.echo(f"  两段式：预筛 {ps['id']} 残差 {ps['residual_pp']:+.1f}pp 过地板 → "
+                   f"前瞻 n_min={doc['window']['n_min']}")
+
+
+_EPOCH_REASON = typer.Option(..., "--reason", help="口径变更是什么（SOP 哪条、哪天）")
+
+
+@rsi_app.command("epoch")
+def epoch(exp: str = _EXP, reason: str = _EPOCH_REASON, by: str = _BY,
+          data_dir: Path = _DATA_DIR, registry_dir: Path = _REGISTRY_DIR,
+          dry_run: bool = _DRY_RUN_REG) -> None:
+    """口径变更＝新 epoch（2026-10-26 RULEBOOK「〇」④）：现 epoch 按 v2 结一次账（未到期则只记
+    最新 grade）、退役并标 epoch_closed；复制登记为 `<exp>.v2`（registered_at=今天、窗口从今天、
+    spec 不变、epoch_of/reason），status 两行并列。不自动触发，只做命令。"""
+    from nutmeg.decision.rsi_prereg import load_registry_doc, next_epoch_id
+
+    k = _kernel(data_dir)
+    now = _now()
+    today = now.date().isoformat()
+    new_id = next_epoch_id(exp)
+    target = Path(registry_dir) / f"{new_id}.json"
+    with OntologyUnitOfWork(k.engine) as uow:
+        source = uow.rsi.experiment(exp)
+        if source is None:
+            _fail(f"{exp} 未登记")
+        if uow.rsi.experiment(new_id) is not None or target.exists():
+            _fail(f"{new_id} 已存在（登记或原件）")
+        duties = uow.rsi.duties(exp)
+        deployment = uow.rsi.latest_deployment(exp)
+        latest = uow.rsi.latest_grade(exp, mode="prospective",
+                                      stratum=Falsifier.from_dict(source.falsifier).stratum)
+    if deployment is not None and deployment.decision == "retire":
+        _fail(f"{exp} 已退役，没有可关的 epoch")
+    doc = _doc_from_source(
+        source, duties, exp_id=new_id, population=source.population,
+        window={**(source.window or {}), "date_from": today},
+        falsifier=dict(source.falsifier), registered_at=today,
+        epoch_of=exp, epoch_reason=reason)
+    doc["window"].pop("date_to", None)
+    close_note = (f"最新 grade n={latest.n_cum} "
+                  f"CI[{latest.ci_low_pp:+.1f},{latest.ci_high_pp:+.1f}]" if latest else "无 grade")
+    if dry_run:
+        typer.echo(f"[dry-run] {exp} → epoch_closed（{close_note}；先试 v2 结账，未到期则只记）")
+        typer.echo(f"[dry-run] 将写 {target} 并登记 {new_id}：")
+        typer.echo(json.dumps(doc, ensure_ascii=False, indent=1))
+        return
+    # 1) 现 epoch 结一次账：到期就按 v2 判，未到期只记最新 grade（不改判决语义）
+    settled = _run_quiet(k.rsi_actions.record_verdict, RecordVerdictRequest(
+        exp_id=exp, idempotency_key=f"rsi-verdict-v2:{exp}:{now.isoformat()}",
+        requested_at=now, **_SYSTEM))
+    # 2) 退役并标 epoch_closed（status 显示为 epoch_closed）
+    _run(k.rsi_actions.approve_deployment, ApproveDeploymentRequest(
+        exp_id=exp, decision="retire", rule_id=None, adjudication_ref=None, extend_to_exp_id=None,
+        reason=f"epoch_closed → {new_id}：{reason}（{close_note}）", acted_by=by,
+        keep_duties=False, idempotency_key=f"rsi-epoch-close:{exp}:{now.isoformat()}",
+        requested_at=now, **_HUMAN))
+    # 3) 新 epoch：写原件 + 登记
+    _write_registry_doc(target, doc)
+    load_registry_doc(target)
+    _run(k.rsi_actions.register_experiment, RegisterExperimentRequest(
+        doc=doc, acted_by=by, idempotency_key=f"rsi-reg:{new_id}:{now.isoformat()}",
+        requested_at=now, **_HUMAN))
+    typer.echo(f"{exp} → epoch_closed（{'v2 已结账' if settled else '未到期，只记'}："
+               f"{close_note}）")
+    typer.echo(f"{new_id} 已登记  window.date_from={today}  n_min={doc['window'].get('n_min')}"
+               f"  duties={len(doc['duties'])}  原件 {target}")
+
+
+def _run_quiet(fn, request) -> bool:
+    """同 _run，但「未到期 / 已结账」类 ValueError 不算失败（epoch 关账时的预期分支）。"""
+    try:
+        outcome = fn(request)
+    except ValueError:
+        return False
+    return outcome.status is not ActionStatus.REJECTED
 
 
 @rsi_app.command("schedule")
@@ -1105,8 +1217,14 @@ def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR,
     """Run an experiment's deterministic grading adapter."""
     from nutmeg.decision.rsi_grading import PROSPECTIVE_ADAPTERS
     from nutmeg.decision.rsi_loop import MONITORS
+    from nutmeg.decision.rsi_prereg import base_exp_id, registry_role
     from nutmeg.ontology.rsi.models import VERDICT_PROTOCOL
 
+    role = registry_role(registry_dir, exp)
+    if role == "display_only":
+        typer.echo(f"{exp} 展示中（预筛过地板但 |效应| <10pp）：只做分析包列，不结账")
+        return
+    base = base_exp_id(exp)          # epoch 副本沿用原实验的适配器
     k = _kernel(data_dir)
     with OntologyUnitOfWork(k.engine) as uow:
         e = uow.rsi.experiment(exp)
@@ -1118,7 +1236,7 @@ def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR,
     if deployment is not None and deployment.decision == "retire":
         typer.echo(f"{exp} 已退役（{deployment.decided_at[:10]}），不再结账")
         return
-    if settled and exp not in MONITORS:
+    if settled and exp not in MONITORS and role != "monitor":
         last = settled[-1]
         typer.echo(f"{exp} 已结账（{VERDICT_PROTOCOL}）→ {last.verdict} @ {last.decided_at[:10]}，"
                    "不再结账（非监测实验）")
@@ -1137,13 +1255,13 @@ def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR,
         if mode not in ("replay", "prospective"):
             _fail(f"{exp} 只支持 --mode replay|prospective")
         g = grade_crowd(doc, Path(data_dir) / "zucai", mode=mode)
-    elif exp in PROSPECTIVE_ADAPTERS and exp not in ("G1", "N0") and mode == "prospective":
+    elif base in PROSPECTIVE_ADAPTERS and base not in ("G1", "N0") and mode == "prospective":
         # N0 是 F14b 的噪音地板，沿用 F14b 的入选行，不另立样本账（2026-10-25）
         from nutmeg.decision import rsi_samples
 
         with rsi_samples.locked(samples):
             ledger = rsi_samples.load(samples)
-            g, events = rsi_samples.grade(ledger, exp, _corpus_rows(), PROSPECTIVE_ADAPTERS[exp],
+            g, events = rsi_samples.grade(ledger, exp, _corpus_rows(), PROSPECTIVE_ADAPTERS[base],
                                           window=e.window,
                                           at=_now().isoformat(timespec="seconds"))
             if events:
@@ -1153,9 +1271,9 @@ def grade(exp: str = _EXP, mode: str = _MODE, data_dir: Path = _DATA_DIR,
             for event in events:
                 kinds[event["kind"]] = kinds.get(event["kind"], 0) + 1
             typer.echo(f"{exp} 样本账：" + "、".join(f"{k} {v}" for k, v in sorted(kinds.items())))
-    elif exp in PROSPECTIVE_ADAPTERS:
+    elif base in PROSPECTIVE_ADAPTERS:
         rows = _corpus_rows()
-        g = PROSPECTIVE_ADAPTERS[exp](rows, window=e.window)
+        g = PROSPECTIVE_ADAPTERS[base](rows, window=e.window)
     else:
         _fail(f"{exp} 的结账适配器尚未接入（replay_spec.harness={e.replay_spec})")
     f = Falsifier.from_dict(e.falsifier)
@@ -1236,10 +1354,18 @@ def samples_cmd(exp: str | None = _EXP_OPT, retract: str | None = _RETRACT,
 
 
 @rsi_app.command("verdict")
-def verdict(exp: str = _EXP, data_dir: Path = _DATA_DIR) -> None:
+def verdict(exp: str = _EXP, data_dir: Path = _DATA_DIR,
+            registry_dir: Path = _REGISTRY_DIR) -> None:
     """按冻结判据判 falsified / survived / inconclusive（系统身份；未到期拒绝）。
 
-    协议 v2（2026-10-19）：在首次 n ≥ n_min 的结算 grade 上判一次；已结账再调 → 拒绝。"""
+    协议 v2（2026-10-19）：在首次 n ≥ n_min 的结算 grade 上判一次；已结账再调 → 拒绝。
+    role=display_only / monitor（2026-10-26）不判决。"""
+    from nutmeg.decision.rsi_prereg import registry_role
+
+    role = registry_role(registry_dir, exp)
+    if role in ("display_only", "monitor"):
+        why = "展示中不结账" if role == "display_only" else "监测只 grade 不判决"
+        _fail(f"{exp} role={role}：{why}")
     k = _kernel(data_dir)
     now = _now()
     _run(k.rsi_actions.record_verdict, RecordVerdictRequest(
@@ -1456,9 +1582,11 @@ def columns(data_dir: Path = _DATA_DIR, registry_dir: Path = _REGISTRY_DIR) -> N
 
 
 @rsi_app.command("status")
-def status(exp: str | None = _EXP_OPT, data_dir: Path = _DATA_DIR) -> None:
+def status(exp: str | None = _EXP_OPT, data_dir: Path = _DATA_DIR,
+           registry_dir: Path = _REGISTRY_DIR) -> None:
     """一屏：状态 / n_cum / CI / 距 falsifier / gaps / 下一期义务。"""
     from nutmeg.decision.rsi_loop import GRADED_EXPERIMENTS, UNGRADED
+    from nutmeg.decision.rsi_prereg import base_exp_id, registry_role
     from nutmeg.ontology.rsi.models import VERDICT_PROTOCOL
 
     k = _kernel(data_dir)
@@ -1475,13 +1603,18 @@ def status(exp: str | None = _EXP_OPT, data_dir: Path = _DATA_DIR) -> None:
             d = uow.rsi.latest_deployment(e.exp_id)
             settled = v is not None and v.criterion_snapshot.get("protocol") == VERDICT_PROTOCOL
             retired = d is not None and d.decision == "retire"
-            if not (settled or retired or e.exp_id.startswith("CR")
-                    or e.exp_id in GRADED_EXPERIMENTS or e.exp_id in UNGRADED):
+            role = registry_role(registry_dir, e.exp_id)
+            if not (settled or retired or e.exp_id.startswith("CR") or role == "display_only"
+                    or base_exp_id(e.exp_id) in GRADED_EXPERIMENTS or e.exp_id in UNGRADED):
                 unplaced.append(e.exp_id)
             st = project_status(n_observations=uow.rsi.count_observations(e.exp_id),
                                 latest_prospective_n=g.n_cum if g else 0, n_min=f.n_min,
                                 latest_verdict=v.verdict if v else None,
                                 latest_deployment=d.decision if d else None)
+            if retired and str(d.reason or "").startswith("epoch_closed"):
+                st = "epoch_closed"
+            elif role == "display_only" and st == "registered":
+                st = "展示中"
             gaps = uow.rsi.gaps(e.exp_id, now=now_iso)
             # n 与判决同源：有 grade 就显示 grade 的 n_cum（判决只认它）。2026-10-03 前
             # F5/F9 显示的是观测行数——F5 显示 148/120 像已到期，判决却按 n_cum=37 拒绝。
@@ -1500,6 +1633,12 @@ def status(exp: str | None = _EXP_OPT, data_dir: Path = _DATA_DIR) -> None:
                          f"CI[{sg.ci_low_pp:+.1f},{sg.ci_high_pp:+.1f}] @ {sg.graded_at[:10]}")
             if e.exp_id in UNGRADED:
                 line += f"  ‖ 不结账：{UNGRADED[e.exp_id]}"
+            if role == "monitor":
+                line += "  ‖ 监测：只 grade 不判决"
+            elif role == "display_only":
+                line += "  ‖ 展示中：预筛过地板、|效应| <10pp，只做分析包列"
+            if retired and st == "epoch_closed":
+                line += f"  ‖ {d.reason}"
             if g:
                 line += _n0_floor_note(uow, e.exp_id)
             if gaps:

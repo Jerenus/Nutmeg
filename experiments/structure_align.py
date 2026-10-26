@@ -4,6 +4,9 @@
     uv run python experiments/structure_align.py --issue 26150          # 足彩期（14 场）
     uv run python experiments/structure_align.py --day 2026-10-25        # 竞彩日板
     …  [--samples experiments/decision-samples-v1.jsonl] [--n-min 20] [--out 路径.md]
+    uv run python experiments/structure_align.py --indicator-json '{"id":"F19_unpriced",
+        "select":{"field":"research.hole.priced_in","equals":false},"face":"underdog"}'
+    uv run python experiments/structure_align.py --indicator 指标.json [--json-out 预筛.json]
 
 做什么：把本期每一场按五个结构维度定位，在决策样本表（只用 `research.prospective=True`
 且有赛果的行）里**从最深一层往上找第一格 n≥n_min**，读该格的 热门/平/冷门 开出分布，
@@ -16,6 +19,12 @@
   价态 priced    价内 / 未价 / ?（hole_location.priced_in）
   标签 label     none / weak / real / strong（strength_balance.underdog_path.strength）
   单位 unit      球员 {spine, goalkeeper} / 结构 {attack, creation, defense, both} / 无
+
+指标两段式第一段（2026-10-26 RULEBOOK「〇」）：`--indicator` 回溯预筛——在同一批前瞻行上选出
+指标命中行，算「指标面实开 − 市场该面 P」残差（按日整簇 bootstrap，与 rsi_grading 新实验默认
+一致）和选择置换地板（固定 seed、随机抽同样 n 行、200 次；简单残差对 actual 置换不变）；
+过地板且 |效应| ≥10pp 才给 suggested_n_min=60，否则只做展示列。
+输出给 `nutmeg rsi register --prescreen`。
 """
 from __future__ import annotations
 
@@ -36,6 +45,10 @@ band_of, fav_of, tri, hole_from_research = (
 )
 
 FACES = ("3", "1", "0")
+FACE_WORDS = {"home": "3", "draw": "1", "away": "0", "3": "3", "1": "1", "0": "0"}
+PRESCREEN_EFFECT_PP = 10.0      # |效应| ≥ 这个值才登记为拦截候选
+PRESCREEN_N_MIN = 60            # 两段式前瞻确认的 n_min
+N0_SEED, N0_PERMS = 20260920, 200   # 与 rsi_grading.grade_n0_prospective 同一地板构造
 LAYERS = (
     ("档×洞位×价态×标签×单位", 5),
     ("档×洞位×价态×标签", 4),
@@ -135,6 +148,108 @@ def locate(grid: dict, key: tuple, n_min: int) -> tuple[str, int, tuple, Counter
     return None
 
 
+# ---------------- 指标回溯预筛（两段式第一段）----------------
+
+def _get(row: dict, path: str):
+    cur = row
+    for part in path.split("."):
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(part)
+    return cur
+
+
+def _selected(row: dict, select: dict) -> bool:
+    value = _get(row, select["field"])
+    if "equals" in select:
+        return value == select["equals"]
+    if "in" in select:
+        return value in select["in"]
+    if "not_equals" in select:
+        return value != select["not_equals"]
+    raise ValueError("select 需要 equals / in / not_equals 之一")
+
+
+def indicator_face(row: dict, face) -> str | None:
+    """指标面 → 3/1/0。fav|modal＝市场热门；underdog|dog＝热门对面的那一边（不含平）；
+    home/draw/away 字面；{"field": 路径} 从行里读（值可为 3/1/0 或 home/draw/away）。"""
+    if isinstance(face, dict):
+        return FACE_WORDS.get(str(_get(row, face["field"])))
+    fav = (row.get("derived") or {}).get("fav")
+    if face in ("fav", "modal"):
+        return fav if fav in FACES else None
+    if face in ("underdog", "dog"):
+        return {"3": "0", "0": "3"}.get(fav)
+    return FACE_WORDS.get(str(face))
+
+
+def prescreen_indicator(rows: list[dict], spec: dict, *, n_perm: int = N0_PERMS,
+                        seed: int = N0_SEED) -> dict:
+    """回溯预筛：命中行的「指标面实开 − 市场 P」残差（pp，按日簇 bootstrap）与选择置换地板。
+
+    地板：N0 打乱的是 actual；简单残差 mean(hit − p) 对 actual 置换不变（mean(hit) 不动），
+    所以这里置换的是**选择**——从同一池子随机抽同样 n 行、算同一面的残差，重复 n_perm 次；
+    指标残差落在该分布 2.5–97.5 之外才算「比随机选 n 行有区分」。"""
+    import random
+    import statistics
+
+    from nutmeg.decision.rsi_grading import _cluster_boot_ci
+
+    pool: list[tuple[str, float, float, bool]] = []     # (date, hit, market_p, selected)
+    for row in rows:
+        face = indicator_face(row, spec["face"])
+        market = (row.get("belief") or {}).get("market") or {}
+        if face is None or face not in market:
+            continue
+        actual = (row.get("result") or {}).get("face")
+        pool.append((str(row.get("date")), 1.0 if actual == face else 0.0,
+                     float(market[face]), _selected(row, spec["select"])))
+    hits = [h for h in pool if h[3]]
+    out = {"id": spec["id"], "select": spec["select"], "face": spec["face"], "n": len(hits),
+           "pool": len(pool), "days": len({d for d, *_ in hits}),
+           "effect_pp_threshold": PRESCREEN_EFFECT_PP}
+    if len(hits) < 2 or len(pool) <= len(hits):
+        out.update(residual_pp=0.0, ci=[0.0, 0.0], floor_pp=0.0, floor_low_pp=0.0,
+                   passes_floor=False, effect_abs_pp=0.0, suggested_n_min=None,
+                   note="命中行不足 2 或命中＝全池，无法预筛")
+        return out
+    groups: dict[str, list[float]] = {}
+    for day, hit, p, _ in hits:
+        groups.setdefault(day, []).append(hit - p)
+    point, lo, hi = _cluster_boot_ci(groups, seed=7)
+    rng = random.Random(seed)
+    floor = []
+    for _ in range(n_perm):
+        picked = rng.sample(pool, len(hits))
+        floor.append(statistics.fmean(h - p for _, h, p, _ in picked) * 100)
+    floor.sort()
+    p2 = floor[int(0.025 * (len(floor) - 1))]
+    p97 = floor[int(0.975 * (len(floor) - 1))]
+    residual_pp = point * 100
+    passes = residual_pp > p97 or residual_pp < p2
+    effect = abs(residual_pp)
+    out.update(residual_pp=round(residual_pp, 2), ci=[round(lo * 100, 2), round(hi * 100, 2)],
+               floor_pp=round(p97, 2), floor_low_pp=round(p2, 2), passes_floor=passes,
+               effect_abs_pp=round(effect, 2),
+               suggested_n_min=(PRESCREEN_N_MIN if passes and effect >= PRESCREEN_EFFECT_PP
+                                else None))
+    return out
+
+
+def render_prescreen(r: dict) -> str:
+    if r["n"] < 2:
+        return f"**{r['id']}**：命中 {r['n']} 行，无法预筛。\n"
+    verdict = "过地板" if r["passes_floor"] else "不过地板（与随机选同样 n 行分不开）"
+    nxt = (f"登记拦截候选，n_min={r['suggested_n_min']}" if r["suggested_n_min"]
+           else "只做展示列（不登记拦截候选）")
+    return (
+        f"**{r['id']}** 回溯预筛：命中 {r['n']}/{r['pool']} 行 · {r['days']} 日，"
+        f"残差 {r['residual_pp']:+.1f}pp CI[{r['ci'][0]:+.1f},{r['ci'][1]:+.1f}]，"
+        f"选择置换地板 [{r['floor_low_pp']:+.1f},{r['floor_pp']:+.1f}] → {verdict}；"
+        f"|效应| {r['effect_abs_pp']:.1f}pp（阈 {r['effect_pp_threshold']:.0f}）→ {nxt}。\n"
+    )
+
+
 # ---------------- 本期场次 ----------------
 
 def legs_of_issue(data_dir: Path, issue: str) -> list[tuple[str, dict]]:
@@ -219,9 +334,22 @@ def main() -> None:
     ap.add_argument("--data-dir", default=str(_HERE.parent / ".nutmeg-data"))
     ap.add_argument("--n-min", type=int, default=20)
     ap.add_argument("--out")
+    ap.add_argument("--indicator", help="指标定义 JSON 文件（两段式第一段：回溯预筛）")
+    ap.add_argument("--indicator-json", help="内联指标定义 JSON")
+    ap.add_argument("--json-out", help="预筛结果 JSON 落盘路径（喂 rsi register --prescreen）")
     a = ap.parse_args()
+    if a.indicator or a.indicator_json:
+        spec = json.loads(Path(a.indicator).read_text(encoding="utf-8") if a.indicator
+                          else a.indicator_json)
+        result = prescreen_indicator(load_samples(Path(a.samples)), spec)
+        if a.json_out:
+            Path(a.json_out).write_text(json.dumps(result, ensure_ascii=False, indent=1),
+                                        encoding="utf-8")
+        print(render_prescreen(result))
+        print(json.dumps(result, ensure_ascii=False))
+        return
     if bool(a.issue) == bool(a.day):
-        ap.error("--issue 与 --day 二选一")
+        ap.error("--issue 与 --day 二选一（或给 --indicator）")
     data_dir = Path(a.data_dir)
     legs = legs_of_issue(data_dir, a.issue) if a.issue else legs_of_day(data_dir, a.day)
     rows = load_samples(Path(a.samples))

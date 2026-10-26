@@ -499,3 +499,22 @@ def test_match_no_falls_back_to_the_file_key_when_research_omits_it():
     research.pop("match_no")
     assert intake(research, _leg(), match_no=8).match_no == 8
     assert intake(_research(), _leg(), match_no=8).match_no == 7   # 研究自带的优先
+
+
+def test_normalized_market_read_and_downgraded_dead_face_leave_warn_codes():
+    """10-26：stance.py 归一 market_read、runner 把三证不足的判死面改 alive，都只打 WARN 码入库。"""
+    from nutmeg.decision.research_intake import INTAKE_CODES, _check_core
+
+    research = {
+        "stance": {"face": "3", "market_read": "overpriced_fav", "market_read_raw": "over-priced"},
+        "strength_balance": {"verdict": "home_edge"},
+        "death_three_proofs": {
+            "home": {"verdict": "alive"}, "draw": {"verdict": "alive"},
+            "away": {"verdict": "alive", "verdict_raw": "dead"},
+        },
+    }
+    issues: list = []
+    _check_core(research, match_no=7, issues=issues)
+    codes = {i.code for i in issues}
+    assert {"market_read_normalized", "dead_face_downgraded"} <= codes
+    assert all(INTAKE_CODES[c] == "WARN" for c in codes)

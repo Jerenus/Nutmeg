@@ -66,3 +66,62 @@ def test_prospective_filter_and_market_requirement(tmp_path: Path):
     p = tmp_path / "s.jsonl"
     p.write_text("\n".join(json.dumps(r) for r in (good, bad)) + "\n", encoding="utf-8")
     assert len(sa.load_samples(p)) == 1
+
+
+def _dated(face: str, day: int, p_fav: float = 0.60, **kw) -> dict:
+    row = _row(face, p_fav=p_fav, **kw)
+    row["date"] = f"2026-10-{day:02d}"
+    return row
+
+
+def test_indicator_face_maps_fav_underdog_literals_and_fields():
+    row = _row("3")
+    assert sa.indicator_face(row, "fav") == "3" and sa.indicator_face(row, "modal") == "3"
+    assert sa.indicator_face(row, "underdog") == "0"
+    assert sa.indicator_face(row, "draw") == "1" and sa.indicator_face(row, "away") == "0"
+    row["research"]["upset_side"] = "away"
+    assert sa.indicator_face(row, {"field": "research.upset_side"}) == "0"
+
+
+def test_prescreen_strong_effect_passes_floor_and_suggests_n_min_60():
+    # 选中的 40 行（priced_in=False）热门面 100% 开出 vs 市场 60%；池里另 200 行按市场开
+    rows = [_dated("3", d % 28 + 1, priced=False) for d in range(40)]
+    for d in range(200):
+        rows.append(_dated("3" if d % 5 < 3 else "0", d % 28 + 1, priced=True))
+    r = sa.prescreen_indicator(rows, {"id": "X", "face": "fav",
+                                      "select": {"field": "research.hole.priced_in",
+                                                 "equals": False}})
+    assert r["n"] == 40 and r["pool"] == 240
+    assert r["residual_pp"] > 30 and r["passes_floor"] is True
+    assert r["suggested_n_min"] == 60 and r["effect_abs_pp"] >= 10
+
+
+def test_prescreen_null_effect_fails_floor_and_small_hits_are_noted():
+    rows = [_dated("3" if d % 5 < 3 else "0", d % 28 + 1, priced=(d % 2 == 0))
+            for d in range(240)]
+    spec = {"id": "Y", "face": "fav",
+            "select": {"field": "research.hole.priced_in", "equals": False}}
+    r = sa.prescreen_indicator(rows, spec)
+    assert r["passes_floor"] is False and r["suggested_n_min"] is None
+    assert r["floor_low_pp"] <= r["residual_pp"] <= r["floor_pp"]
+    one = sa.prescreen_indicator(rows[:1], spec)
+    assert one["n"] <= 1 and one["passes_floor"] is False and "note" in one
+    assert "只做展示列" in sa.render_prescreen(r)
+
+
+def test_prescreen_cli_prints_json(tmp_path: Path, capsys):
+    import subprocess
+    import sys
+
+    samples = tmp_path / "s.jsonl"
+    rows = [_dated("3", d % 28 + 1, priced=False) for d in range(30)]
+    rows += [_dated("0", d % 28 + 1, priced=True) for d in range(60)]
+    samples.write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
+    out = tmp_path / "pre.json"
+    proc = subprocess.run(
+        [sys.executable, str(_PATH), "--samples", str(samples), "--json-out", str(out),
+         "--indicator-json", json.dumps({"id": "Z", "face": "fav", "select": {
+             "field": "research.hole.priced_in", "equals": False}})],
+        capture_output=True, text=True, check=True)
+    assert "回溯预筛" in proc.stdout
+    assert json.loads(out.read_text(encoding="utf-8"))["id"] == "Z"

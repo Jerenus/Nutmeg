@@ -31,3 +31,16 @@ def account_month(month: str | None = _MONTH, data_dir: Path = _DATA_DIR,
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding="utf-8")
         _cli.typer.echo(f"→ {target}")
+
+
+_FROM = _cli.typer.Option("26136", "--from", help="起始期号（选择账自 26136 起攒）")
+_TO = _cli.typer.Option(None, "--to", help="截止期号，默认到最新")
+
+
+@account_app.command("choices")
+def account_choices(start: str = _FROM, end: str | None = _TO,
+                    data_dir: Path = _DATA_DIR) -> None:
+    """选择账：每期同钱三列 Jun 实票 / 机器默认 / 退役形（丢光 C 档），攒 20 期再读。"""
+    from nutmeg.decision.choice_ledger import build_choices, render_choices
+
+    _cli.typer.echo(render_choices(build_choices(data_dir, start=start, end=end)))

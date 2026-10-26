@@ -86,9 +86,26 @@ CLOSED = {
 
 
 def graded_experiments(root: Path) -> tuple[str, ...]:
-    """固定清单 + 已签字的人群假说（experiments/registry/CR*.json，2026-10-07）。"""
-    crowd = sorted(p.stem for p in (Path(root) / "experiments" / "registry").glob("CR*.json"))
-    return GRADED_EXPERIMENTS + tuple(c for c in crowd if c not in CLOSED)
+    """固定清单 + 已签字的人群假说（experiments/registry/CR*.json，2026-10-07）
+    + epoch 副本（`<exp>.v2.json`，2026-10-26 口径变更开新 epoch；沿用原实验的适配器）
+    − 展示中（role=display_only：只做分析包列，不 grade）。"""
+    from nutmeg.decision.rsi_prereg import base_exp_id, registry_role
+
+    reg = Path(root) / "experiments" / "registry"
+    crowd = sorted(p.stem for p in reg.glob("CR*.json"))
+    epochs = sorted(p.stem for p in reg.glob("*.v[0-9]*.json")
+                    if base_exp_id(p.stem) in GRADED_EXPERIMENTS)
+    listed = GRADED_EXPERIMENTS + tuple(c for c in crowd if c not in CLOSED) + tuple(epochs)
+    return tuple(e for e in listed if registry_role(reg, e) != "display_only")
+
+
+def monitor_experiments(root: Path) -> tuple[str, ...]:
+    """只 grade 不判决：固定的 F9 + 登记原件 role=monitor 的（K2，2026-10-26）。"""
+    from nutmeg.decision.rsi_prereg import registry_role
+
+    reg = Path(root) / "experiments" / "registry"
+    return MONITORS + tuple(e for e in graded_experiments(root)
+                            if e not in MONITORS and registry_role(reg, e) == "monitor")
 
 
 # 步骤依赖（2026-10-19）：上游失败时这些步记 skipped，不拿旧语料结账、判决、出提案
@@ -226,6 +243,7 @@ def planned_commands(ctx: LoopContext) -> dict[str, list[list[str]]]:
         "verdict_due": [
             [*uv, "nutmeg", "rsi", "verdict", "--exp", exp, *data]
             for exp in graded_experiments(ctx.root)
+            if exp not in monitor_experiments(ctx.root)      # 监测只 grade 不判决
         ],
         "factor_propose": [
             [*uv, "nutmeg", "rsi", "weights", "propose", "--all", "--log",

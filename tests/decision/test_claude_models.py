@@ -173,3 +173,24 @@ def test_research_first_attempt_gets_the_turn_budget_that_actually_finishes(monk
     research_runner._claude_cli("sys", "brief")
     research_runner._claude_cli("sys", "brief " + research_runner.RETRY_MARKER)
     assert seen == ["24", "36"]
+
+
+def test_claude_runs_in_one_fixed_neutral_directory(token_file, monkeypatch, tmp_path):
+    """2026-10-26：cwd 进了 CLI 的缓存前缀，每次新建临时目录＝每场重建 ~1.85 万 token 系统提示
+    缓存（$0.15 → 固定目录第二次 $0.0075）。目录固定、为空、存在。"""
+    import subprocess
+
+    import nutmeg.decision.claude_models as cm
+
+    monkeypatch.setattr(cm.tempfile, "gettempdir", lambda: str(tmp_path))
+    seen = []
+
+    def fake_run(argv, **kw):
+        seen.append(kw["cwd"])
+        return subprocess.CompletedProcess(argv, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    cm.run_claude("sys", "in", model=None)
+    cm.run_claude("sys", "in", model=None)
+    assert seen[0] == seen[1] == str(tmp_path / "nutmeg-claude-neutral")
+    assert list((tmp_path / "nutmeg-claude-neutral").iterdir()) == []

@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
 
 INHERIT = "default"
@@ -121,14 +122,24 @@ def parse_claude_json_output(stdout: str) -> tuple[str, dict]:
 def _run_claude_proc(system_prompt: str, stdin: str, *, model: str | None, allowed_tools: str,
                      max_turns: str, timeout: int, output_format: str):
     import subprocess
-    import tempfile
 
     argv = [claude_bin(), "-p", *model_argv(model), "--system-prompt", system_prompt,
             "--allowedTools", allowed_tools, "--max-turns", str(max_turns),
             "--output-format", output_format]
-    with tempfile.TemporaryDirectory() as neutral:
-        return subprocess.run(argv, input=stdin, capture_output=True, text=True,
-                              timeout=timeout, cwd=neutral, env=claude_env(), check=False)
+    return subprocess.run(argv, input=stdin, capture_output=True, text=True,
+                          timeout=timeout, cwd=neutral_cwd(), env=claude_env(), check=False)
+
+
+def neutral_cwd() -> str:
+    """`claude -p` 的工作目录：**固定**的空目录（不是每次新建的临时目录）。
+
+    空目录是为了不读仓里的 CLAUDE.md；固定是为了提示缓存——CLI 把 cwd 写进它自己的
+    上下文前缀，每次换目录前缀就变，我方 ~1.85 万 token 的系统提示每场重建缓存
+    （2026-10-26 对照：随机目录两次 cache_read 18.6k/创建 18.4k $0.15；固定目录第二次
+    cache_read 37.1k/创建 0 $0.0075）。"""
+    path = Path(tempfile.gettempdir()) / "nutmeg-claude-neutral"
+    path.mkdir(parents=True, exist_ok=True)
+    return str(path)
 
 
 def model_argv(name: str | None) -> list[str]:

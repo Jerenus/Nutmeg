@@ -969,3 +969,31 @@ def test_telemetry_accumulates_across_attempts(tmp_path):
     assert row["status"] == "done" and row["attempts"] == 2
     assert row["model"] == "m2" and row["cost_usd"] == 0.3 and row["output_tokens"] == 30
     assert row["duration_s"] == 12
+
+
+def test_unproven_dead_face_and_market_read_variant_are_kept_not_rejected(tmp_path):
+    """2026-10-26 口径对齐 intake（三证不齐＝WARN）：dead 但三证 2/3 → 按 alive 入库留痕；
+    market_read 枚举外值归一入库、原值留 market_read_raw。此前两者都整份拒收。"""
+    doc = json.loads(GOOD)
+    doc["death_three_proofs"] = {"away": {"verdict": "dead", "a_no_scoring_mechanism": True,
+                                          "b_precedent_carrier_gone": True, "c_anchor_pass": False}}
+    doc["stance"]["market_read"] = "overpriced_fav"
+    root = _board(tmp_path, n=1)
+    report = run_day(
+        day="2026-09-19",
+        jczq_dir=root,
+        data_dir=tmp_path / "keep",
+        claude=lambda system, brief: (0, json.dumps(doc, ensure_ascii=False)),
+        fulfill=lambda argv: (0, ""),
+        profile=lambda match_id: {},
+        budget=10,
+    )
+    assert report["matches"][0]["status"] == "done"
+    saved = json.loads((root / "daily" / "2026-09-19" / "research-周五001.json")
+                       .read_text(encoding="utf-8"))
+    assert saved["death_three_proofs"]["away"]["verdict"] == "alive"
+    assert saved["death_three_proofs"]["away"]["verdict_raw"] == "dead"
+    assert saved["stance"]["market_read"] == "overpriced"
+    assert saved["stance"]["market_read_raw"] == "overpriced_fav"
+    assert any("三证 2/3" in n for n in saved["stance_notes"])
+    assert any(n.startswith("market_read_normalized") for n in saved["stance_notes"])

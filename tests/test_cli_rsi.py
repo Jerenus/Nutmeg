@@ -1373,3 +1373,114 @@ def test_columns_reports_the_evidence_status_of_packet_columns(tmp_path):
                                  "--registry-dir", str(reg)])
     assert r.exit_code == 0, r.output
     assert "许可证 F18 未证 0/140" in r.output and "F99" not in r.output
+
+
+# ── 指标两段式：register --prescreen / epoch / role（2026-10-26）──────────
+
+def _prescreen_file(tmp_path: Path, **over) -> Path:
+    base = {"id": "F2_pre", "n": 48, "residual_pp": 12.3, "ci": [3.0, 21.0], "floor_pp": 9.8,
+            "floor_low_pp": -9.5, "passes_floor": True, "effect_abs_pp": 12.3,
+            "suggested_n_min": 60}
+    p = tmp_path / "pre.json"
+    p.write_text(json.dumps({**base, **over}), encoding="utf-8")
+    return p
+
+
+def test_register_with_prescreen_rewrites_n_min_and_dry_run_does_not_register(tmp_path):
+    d = _data_dir(tmp_path)
+    doc = tmp_path / "F2.json"
+    doc.write_text(json.dumps(DOC), encoding="utf-8")
+    pre = _prescreen_file(tmp_path)
+    r = CliRunner().invoke(app, ["rsi", "register", "--by", "Jun", str(doc), "--data-dir", str(d),
+                                 "--prescreen", str(pre), "--dry-run"])
+    assert r.exit_code == 0, r.output
+    assert "[dry-run] 未登记" in r.output and "n_min=60" in r.output
+    assert json.loads(doc.read_text(encoding="utf-8"))["falsifier"]["n_min"] == 140  # 未回写
+    r = CliRunner().invoke(app, ["rsi", "register", "--by", "Jun", str(doc), "--data-dir", str(d),
+                                 "--prescreen", str(pre)])
+    assert r.exit_code == 0, r.output
+    assert "两段式" in r.output and "n_min=60" in r.output
+    written = json.loads(doc.read_text(encoding="utf-8"))
+    assert written["window"]["n_min"] == 60 and written["prescreen"]["id"] == "F2_pre"
+    r = CliRunner().invoke(app, ["rsi", "status", "--data-dir", str(d)])
+    assert "F2     registered    n=   0/60" in r.output
+
+
+def test_register_with_failed_prescreen_is_refused(tmp_path):
+    d = _data_dir(tmp_path)
+    doc = tmp_path / "F2.json"
+    doc.write_text(json.dumps(DOC), encoding="utf-8")
+    pre = _prescreen_file(tmp_path, passes_floor=False)
+    r = CliRunner().invoke(app, ["rsi", "register", "--by", "Jun", str(doc), "--data-dir", str(d),
+                                 "--prescreen", str(pre)])
+    assert r.exit_code == 1 and "不过地板" in r.output
+    r = CliRunner().invoke(app, ["rsi", "status", "--data-dir", str(d)])
+    assert "F2" not in r.output
+
+
+def test_display_only_role_shows_in_status_and_skips_grade_and_verdict(tmp_path):
+    d = _data_dir(tmp_path)
+    reg = tmp_path / "registry"
+    reg.mkdir()
+    doc = reg / "F2.json"
+    doc.write_text(json.dumps(DOC), encoding="utf-8")
+    pre = _prescreen_file(tmp_path, suggested_n_min=None, effect_abs_pp=4.0)
+    r = CliRunner().invoke(app, ["rsi", "register", "--by", "Jun", str(doc), "--data-dir", str(d),
+                                 "--prescreen", str(pre)])
+    assert r.exit_code == 0 and "展示中" in r.output, r.output
+    assert json.loads(doc.read_text(encoding="utf-8"))["role"] == "display_only"
+    r = CliRunner().invoke(app, ["rsi", "status", "--data-dir", str(d), "--registry-dir", str(reg)])
+    assert "F2     展示中" in r.output and "未接结账" not in r.output
+    r = CliRunner().invoke(app, ["rsi", "grade", "--exp", "F2", "--mode", "prospective",
+                                 "--data-dir", str(d), "--registry-dir", str(reg)])
+    assert r.exit_code == 0 and "展示中" in r.output and "不结账" in r.output
+    r = CliRunner().invoke(app, ["rsi", "verdict", "--exp", "F2", "--data-dir", str(d),
+                                 "--registry-dir", str(reg)])
+    assert r.exit_code == 1 and "display_only" in r.output
+
+
+def test_monitor_role_refuses_verdict_and_loop_skips_it(tmp_path):
+    d = _data_dir(tmp_path)
+    reg = tmp_path / "experiments" / "registry"
+    reg.mkdir(parents=True)
+    doc = reg / "F2.json"
+    doc.write_text(json.dumps({**DOC, "role": "monitor"}), encoding="utf-8")
+    CliRunner().invoke(app, ["rsi", "register", "--by", "Jun", str(doc), "--data-dir", str(d)])
+    r = CliRunner().invoke(app, ["rsi", "verdict", "--exp", "F2", "--data-dir", str(d),
+                                 "--registry-dir", str(reg)])
+    assert r.exit_code == 1 and "监测" in r.output
+    r = CliRunner().invoke(app, ["rsi", "status", "--data-dir", str(d), "--registry-dir", str(reg)])
+    assert "监测：只 grade 不判决" in r.output
+    from nutmeg.decision.rsi_loop import monitor_experiments
+
+    (reg / "K2.json").write_text(json.dumps({**DOC, "exp_id": "K2", "role": "monitor"}),
+                                 encoding="utf-8")
+    assert set(monitor_experiments(tmp_path)) >= {"F9", "K2"}
+
+
+def test_epoch_closes_current_and_registers_v2(tmp_path):
+    d = _data_dir(tmp_path)
+    reg = tmp_path / "registry"
+    reg.mkdir()
+    doc = reg / "F2.json"
+    doc.write_text(json.dumps(DOC), encoding="utf-8")
+    CliRunner().invoke(app, ["rsi", "register", "--by", "Jun", str(doc), "--data-dir", str(d)])
+    r = CliRunner().invoke(app, ["rsi", "epoch", "--exp", "F2", "--reason", "④ 机械化 10-24",
+                                 "--by", "Jun", "--data-dir", str(d), "--registry-dir", str(reg),
+                                 "--dry-run"])
+    assert r.exit_code == 0 and "[dry-run]" in r.output and "F2.v2" in r.output, r.output
+    assert not (reg / "F2.v2.json").exists()
+    r = CliRunner().invoke(app, ["rsi", "epoch", "--exp", "F2", "--reason", "④ 机械化 10-24",
+                                 "--by", "Jun", "--data-dir", str(d), "--registry-dir", str(reg)])
+    assert r.exit_code == 0, r.output
+    assert "F2 → epoch_closed（未到期，只记" in r.output and "F2.v2 已登记" in r.output
+    v2 = json.loads((reg / "F2.v2.json").read_text(encoding="utf-8"))
+    assert v2["epoch_of"] == "F2" and v2["epoch_reason"].startswith("④")
+    assert v2["falsifier"] == DOC["falsifier"] and v2["duties"][0]["name"] == "f2-observation"
+    assert v2["window"]["date_from"] == v2["registered_at"]
+    r = CliRunner().invoke(app, ["rsi", "status", "--data-dir", str(d), "--registry-dir", str(reg)])
+    assert "F2     epoch_closed" in r.output and "epoch_closed → F2.v2" in r.output
+    assert "F2.v2  registered" in r.output
+    r = CliRunner().invoke(app, ["rsi", "epoch", "--exp", "F2", "--reason", "again", "--by", "Jun",
+                                 "--data-dir", str(d), "--registry-dir", str(reg)])
+    assert r.exit_code == 1 and "已" in r.output

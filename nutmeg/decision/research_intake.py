@@ -101,6 +101,8 @@ INTAKE_CODES: dict[str, str] = {
     "core_proofs_incomplete": "WARN",   # 三证不满三面（10-13→26 现役文件 86/215 如此）
     "underdog_path_missing": "WARN",
     "underdog_path_enum": "WARN",
+    "market_read_normalized": "WARN",   # 10-26：stance.market_read 枚举外值已由 stance.py 归一
+    "dead_face_downgraded": "WARN",     # 10-26：判死面三证 <3 → runner 改 alive，verdict_raw 留原值
 }
 """拒收/警告码表，**只在这一处**定级。`intake_warn` 就是一场里命中的 WARN 码集合。"""
 
@@ -185,6 +187,19 @@ def _check_core(research: dict, *, match_no: int, issues: list[IntakeIssue]) -> 
     if not (isinstance(proofs, dict) and all(f in proofs for f in FACE_KEYS)):
         issues.append(_issue(
             "core_proofs_incomplete", match_no, "death_three_proofs", "死亡三证不满三面",
+        ))
+    # runner validate_stance / 三证归一留下的痕（stance.py / research_runner._validate，10-26）
+    if isinstance(stance, dict) and stance.get("market_read_raw") is not None:
+        issues.append(_issue(
+            "market_read_normalized", match_no, "stance",
+            f"market_read `{stance['market_read_raw']}` 归一为 `{stance.get('market_read')}`",
+        ))
+    if isinstance(proofs, dict) and any(
+        isinstance(v, dict) and v.get("verdict_raw") == "dead" for v in proofs.values()
+    ):
+        issues.append(_issue(
+            "dead_face_downgraded", match_no, "death_three_proofs",
+            "判死面三证不满 3 → 按 alive 入库（verdict_raw 留原值）",
         ))
 
 
