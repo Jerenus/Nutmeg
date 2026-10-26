@@ -163,7 +163,8 @@ def test_researched_basis_wins_over_a_stale_price_only_tier(tmp_path):
 def test_write_quarantines_intake_errors_and_restores_price_only(tmp_path):
     root = _day(tmp_path)
     day_dir = root / "daily" / "2026-09-19"
-    invalid = {**RESEARCH, "crash_markers": [["嵌套", "误入标签位"]]}
+    # 2026-10-26 入库桥形式类只警告：嵌套标签已降 WARN，隔离只剩缺核心字段（stance.face 非 3/1/0）
+    invalid = {**RESEARCH, "stance": {**RESEARCH.get("stance", {}), "face": "X"}}
     research_path = day_dir / "research-周五001.json"
     research_path.write_text(json.dumps(invalid, ensure_ascii=False), encoding="utf-8")
     run_report_path = day_dir / "research-run-2026-09-19.json"

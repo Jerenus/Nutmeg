@@ -35,6 +35,7 @@ def _research(**overrides):
             "q4_no_context_flag": False,
         },
         "summary": "锚方中轴双后腰长期缺阵。",
+        "stance": {"face": "3", "structure": "single", "confidence": 4},
     }
     base.update(overrides)
     return base
@@ -104,10 +105,13 @@ def test_narrative_in_a_tag_slot_is_stripped_not_blocking():
     assert result.leg["crash_markers"] == []
 
 
-def test_nested_structure_in_a_tag_slot_is_an_error():
+def test_nested_structure_in_a_tag_slot_warns_and_is_stripped():
+    """2026-10-26 起形式类不拒收：剥离进 note、打 `tag_slot_nested` 标。"""
     result = intake(_research(tracking_tags=[["a", "b"]]), _leg())
-    assert result.blocked is True
-    assert ("ERROR", "tracking_tags") in _levels(result)
+    assert result.blocked is False
+    assert ("WARN", "tracking_tags") in _levels(result)
+    assert "tag_slot_nested" in result.leg["intake_warn"]
+    assert result.leg["tracking_tags"] == []
 
 
 def test_lexicon_members_survive_untouched():
@@ -162,11 +166,13 @@ def test_bare_directional_flag_gets_the_default_face():
     assert result.leg["directional_flags"] == [["anchor_shield_out", "1"]]
 
 
-def test_directional_flag_pointing_at_a_bogus_face_is_an_error():
+def test_directional_flag_pointing_at_a_bogus_face_is_stripped():
     result = intake(
         _research(directional_flags=[["anchor_shield_out", "draw"]]), _leg()
     )
-    assert result.blocked is True
+    assert result.blocked is False
+    assert result.leg["directional_flags"] == []
+    assert "directional_face_bogus" in result.leg["intake_warn"]
 
 
 # —— 结构自相矛盾 ————————————————————————————————
@@ -191,8 +197,11 @@ def test_q4_true_while_a_context_flag_is_present_is_a_contradiction():
     research = _research(nondirectional_flags=["two_way_instability"])
     research["license_questions"]["q4_no_context_flag"] = True
     result = intake(research, _leg())
-    assert result.blocked is True
-    assert ("ERROR", "license_questions") in _levels(result)
+    # 2026-10-26：矛盾仍被点名，但入库并打标（26143/26147/26148 三期为此手工绕行）
+    assert result.blocked is False
+    assert ("WARN", "license_questions") in _levels(result)
+    assert "q4_context_conflict" in result.leg["intake_warn"]
+    assert result.leg["license_questions"]["q4_no_context_flag"] is True
 
 
 def test_q4_true_while_a_crash_marker_is_present_is_a_contradiction():
@@ -200,8 +209,8 @@ def test_q4_true_while_a_crash_marker_is_present_is_a_contradiction():
     research = _research(crash_markers=["opening_promoted_vs_paper"])
     research["license_questions"]["q4_no_context_flag"] = True
     result = intake(research, _leg())
-    assert result.blocked is True
-    assert ("ERROR", "license_questions") in _levels(result)
+    assert result.blocked is False
+    assert "q4_context_conflict" in result.leg["intake_warn"]
 
 
 def test_dead_precedent_with_a_real_match_survives_its_carrier_reason():
@@ -226,10 +235,11 @@ def test_dead_precedent_without_any_real_match_is_still_caught():
         "1", "无——马拉卡纳同型对独立谷不存在 90' 平局先例", "dead",
     ]])
     result = intake(research, _leg())
-    assert ("ERROR", "precedents") in _levels(result)
+    assert "precedents_absent_as_dead" in result.leg["intake_warn"]
+    assert result.leg["precedents"] == []
 
 
-def test_dead_face_without_three_proofs_is_an_error():
+def test_dead_face_without_three_proofs_warns():
     """死面必须三证齐；不齐只能叫「被削弱」。"""
     result = intake(
         _research(
@@ -238,8 +248,9 @@ def test_dead_face_without_three_proofs_is_an_error():
         ),
         _leg(),
     )
-    assert result.blocked is True
-    assert ("ERROR", "structurally_dead_face") in _levels(result)
+    assert result.blocked is False
+    assert ("WARN", "structurally_dead_face") in _levels(result)
+    assert "dead_face_proofs_short" in result.leg["intake_warn"]
 
 
 def test_dead_face_with_three_proofs_passes():
@@ -259,17 +270,44 @@ def test_none_dead_face_is_not_checked():
     assert result.blocked is False
 
 
-def test_bad_anchor_integrity_value_blocks():
+def test_bad_anchor_integrity_value_normalises_with_a_warn_code():
     result = intake(_research(anchor_integrity="有洞"), _leg())
-    assert result.blocked is True
+    assert result.blocked is False
     assert result.leg["anchor_integrity"] == "unknown"
+    assert "anchor_integrity_enum" in result.leg["intake_warn"]
 
 
-def test_missing_confidence_blocks():
+def test_missing_confidence_defaults_with_a_warn_code():
     research = _research()
     del research["confidence"]
     result = intake(research, _leg())
+    assert result.blocked is False
+    assert result.leg["confidence"] == 3
+    assert "confidence_missing" in result.leg["intake_warn"]
+
+
+# —— 只有缺核心才拒收（2026-10-26）————————————————————
+
+def test_missing_stance_face_is_the_only_core_rejection():
+    research = _research()
+    del research["stance"]
+    result = intake(research, _leg())
     assert result.blocked is True
+    assert [i.code for i in result.issues if i.level == "ERROR"] == ["missing_core"]
+
+
+def test_non_object_research_is_rejected():
+    result = intake("not json", _leg(), match_no=3)
+    assert result.blocked is True
+    assert result.issues[0].code == "research_not_object"
+
+
+def test_clean_research_has_only_core_shape_warns():
+    """夹具没有天平与三证 → core_* 只打形式码，不拒。"""
+    result = intake(_research(), _leg())
+    assert result.blocked is False
+    assert {"core_proofs_incomplete", "core_verdict_missing"} <= set(result.leg["intake_warn"])
+    assert not any(i.level == "ERROR" for i in result.issues)
 
 
 # —— 定义漂移与编码/正文相反 ————————————————————
@@ -359,8 +397,8 @@ def test_no_precedent_prose_tagged_dead_is_refused():
         _research(precedents=[["1", "无——同型对该队不存在 90' 平局先例", "dead"]]),
         _leg(),
     )
-    assert result.blocked is True
-    assert ("ERROR", "precedents") in _levels(result)
+    assert result.blocked is False
+    assert ("WARN", "precedents") in _levels(result)
     assert result.leg["precedents"] == []
 
 
@@ -384,14 +422,17 @@ def test_a_real_dead_precedent_still_passes():
     assert result.leg["precedents"][0][2] == "dead"
 
 
-def test_off_lexicon_precedent_status_blocks():
+def test_off_lexicon_precedent_status_is_dropped_with_a_warn_code():
     result = intake(_research(precedents=[["1", "同型平局", "maybe"]]), _leg())
-    assert result.blocked is True
+    assert result.blocked is False
+    assert result.leg["precedents"] == []
+    assert "precedents_status" in result.leg["intake_warn"]
 
 
-def test_malformed_precedent_tuple_blocks():
+def test_malformed_precedent_tuple_is_dropped_with_a_warn_code():
     result = intake(_research(precedents=[["1", "只有两项"]]), _leg())
-    assert result.blocked is True
+    assert result.blocked is False
+    assert "precedents_shape" in result.leg["intake_warn"]
 
 
 def test_intake_transcribes_research_stance_and_strength_balance():

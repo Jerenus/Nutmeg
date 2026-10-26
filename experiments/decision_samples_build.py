@@ -61,6 +61,17 @@ def fair_from_odds(odds):
     return devig(o)
 
 
+def band_of(p):
+    """市场热门概率 → 五档（分析包 §1 的 A/B/b/C/D 口径；structure_align 复用）。"""
+    if p >= 0.8:
+        return "A≥80"
+    if p >= 0.65:
+        return "B65–79"
+    if p >= 0.57:
+        return "b57–64"
+    return "C45–56" if p >= 0.45 else "D<45"
+
+
 def fav_of(m):
     return max(m, key=m.get) if m else None
 
@@ -540,6 +551,10 @@ def main():
             if rs and "research" not in row:
                 row["research"] = research_block(rs, fav, kickoff)
                 row["research"]["src"] = f"zucai/{issue}-research-m{k}.json"
+            elif rs and "research" in row:
+                # 重叠场：竞彩日目录里的副本已入表（runner `reused_zucai` 同一份研究），
+                # 记下 m 文件孪生，免得覆盖报告把它数成「未对齐」（2026-10-26）
+                row["research"]["zucai_twin"] = f"zucai/{issue}-research-m{k}.json"
             elif "research" not in row and (leg.get("_hole") or leg.get("anchor_integrity")):
                 row["research"] = research_block(
                     {
@@ -674,16 +689,7 @@ def main():
         fav = fav_of(m)
         der = {"fav": fav, "p_fav": m[fav] if m else None}
         if m:
-            p = m[fav]
-            der["band"] = (
-                "A≥80"
-                if p >= 0.8
-                else (
-                    "B65–79"
-                    if p >= 0.65
-                    else ("b57–64" if p >= 0.57 else ("C45–56" if p >= 0.45 else "D<45"))
-                )
-            )
+            der["band"] = band_of(m[fav])
         if m and s:
             der["sys_delta_fav_pp"] = round((s[fav] - m[fav]) * 100, 2)
             der["sys_moved"] = abs(s[fav] - m[fav]) > 0.005
@@ -717,6 +723,12 @@ def main():
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
     # ---------------- 覆盖报告 ----------------
+    m_direct = sum(
+        1 for r in out if str((r.get("research") or {}).get("src", "")).startswith("zucai/")
+        and "research-m" in str((r.get("research") or {}).get("src", ""))
+    )
+    m_twin = sum(1 for r in out if (r.get("research") or {}).get("zucai_twin"))
+
     def cov(name, pred):
         xs = [r["date"] for r in out if pred(r)]
         return f"| {name} | {len(xs)} | {min(xs) if xs else '—'} | {max(xs) if xs else '—'} |"
@@ -790,6 +802,7 @@ def main():
     lines += [
         "",
         f"research schema 分布：{dict(sch)}",
+        f"足彩 m 文件对齐：直接入表 {m_direct} ／ 经竞彩副本入表（zucai_twin）{m_twin}",
         "",
         "## 纪律",
         "",

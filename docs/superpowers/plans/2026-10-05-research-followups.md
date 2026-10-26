@@ -37,7 +37,7 @@
 ## 三、流程与工程
 
 ### 10 + 11. 两项治理改动：已定，待 Jun 在非自动模式下执行
-- D-E：研究入库整份拒收（09-27 后 6 场越界拨动，以及只喂 INFO 码的字段）→ 改成只剥掉越界拨动或 INFO 字段，保留研究与表态，记一笔违规；上限不松。
+- ✅ **2026-10-26 关掉** D-E：研究入库整份拒收（09-27 后 6 场越界拨动，以及只喂 INFO 码的字段）→ `research_intake` 只有「缺核心」（stance.face）才拒，q4 矛盾/先例记法/confidence 等形式类入库并打 `intake_warn` 码（码表 `INTAKE_CODES` 一处定级）；runner 自己的 validate_stance / 死面三证仍拒。干跑 26143-m8、10-17 周六006、10-22 周四011、10-23 周五006 四份被拒原件 → 全部入库带 `q4_context_conflict`。
 - D-G：`decision-audit-legs` 退出出票门的地位，唯一的门是 `betslip preview`（V1/V2 + 止损 + 刹车）；CLAUDE.md/AGENTS.md「出票硬门」那一行改指 preview。
 - D-F（开球早于 10:00）：不加夜间批次，作为已知缺口；某月这类场次超过板面 5% 再议。不需要动作。
 - 做法：Jun 在 Claude Code 里切出 auto mode 后逐项确认执行（上次即使批准也被分类器拦下）。详见 `evidence/2026-10-03-overdesign-audit.md` §6。

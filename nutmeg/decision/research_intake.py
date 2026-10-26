@@ -19,6 +19,10 @@
 它不改任何一场的面、不推断动作、不替 agent 改结论。它只回答两个问题——
 「这份研究能不能被机器读」和「它有没有自相矛盾」。
 
+**2026-10-26 起只有「缺核心」才拒收**（码表 `INTAKE_CODES`，一处定级）：q4 与旗行矛盾、
+先例记法、confidence 缺失这类**形式矛盾**全部入库并打 `intake_warn` 标——26143/26147/26148
+三期因 q4 形式矛盾被拒后手工绕行，Jun 定「更多样本是每期的财富」。原件照落、R1 照登记。
+
 ⛔**词典外的旗一律不阻断出票**，只被剥离进 note：agent 现场自命名一个旗如果能堵死
 单选，那不是纪律是瘫痪（26103 一次冒出三个自造旗）。但**剥离必须留痕**，
 否则等于静默丢证据。
@@ -66,12 +70,48 @@ _AFFIRM = ("成立", "为真", "＝true", "=true", "答案是『在』", "答案
 _DENY = ("不成立", "为假", "＝false", "=false", "判否", "判不成立", "false")
 
 
+INTAKE_CODES: dict[str, str] = {
+    # ERROR ＝ 缺核心：机器读不了这份研究（整份不写入）。2026-10-26 Jun「更多样本是每期的财富」
+    # 起，拒收只剩这一类；其余全是「形式类」→ 入库并打 `intake_warn` 标，原件照落、R1 照登记。
+    "research_not_object": "ERROR",
+    "missing_core": "ERROR",            # stance.face 不是 3/1/0（与 runner validate_stance 同口径）
+    # WARN ＝ 形式类（曾经是 ERROR 的在注释里标 ↓）
+    "anchor_integrity_enum": "WARN",    # ↓ 10-26
+    "confidence_missing": "WARN",       # ↓ 10-26
+    "confidence_range": "WARN",         # ↓ 10-26
+    "tag_slot_not_array": "WARN",       # ↓ 10-26
+    "tag_slot_nested": "WARN",          # ↓ 10-26
+    "tag_slot_prose": "WARN",
+    "tag_off_lexicon": "WARN",
+    "directional_pair_shape": "WARN",   # ↓ 10-26
+    "directional_face_bogus": "WARN",   # ↓ 10-26（该旗剥离进 note）
+    "license_questions_type": "WARN",   # ↓ 10-26
+    "q4_context_conflict": "WARN",      # ↓ 10-26：26143/26147/26148 三期手工绕行的那条
+    "q4_false_no_flag": "WARN",
+    "license_prose_mismatch": "WARN",
+    "proof_c_inconsistent": "WARN",
+    "proof_c_drift": "WARN",
+    "dead_face_proofs_short": "WARN",   # ↓ 10-26（runner 自己仍会拒：见 research_runner 死面三证）
+    "precedents_not_array": "WARN",     # ↓ 10-26
+    "precedents_shape": "WARN",         # ↓ 10-26
+    "precedents_status": "WARN",        # ↓ 10-26
+    "precedents_absent_as_dead": "WARN",  # ↓ 10-26（C14 审计门 10-13 已删，豁免风险已不存在）
+    "hole_location_enum": "WARN",
+    "core_verdict_missing": "WARN",     # strength_balance.verdict 缺（09-26 前旧研究不追溯）
+    "core_proofs_incomplete": "WARN",   # 三证不满三面（10-13→26 现役文件 86/215 如此）
+    "underdog_path_missing": "WARN",
+    "underdog_path_enum": "WARN",
+}
+"""拒收/警告码表，**只在这一处**定级。`intake_warn` 就是一场里命中的 WARN 码集合。"""
+
+
 @dataclass
 class IntakeIssue:
     level: str          # ERROR | WARN
     match_no: int
     field: str
     message: str
+    code: str = ""
 
     def __str__(self) -> str:
         icon = "❌" if self.level == "ERROR" else "⚠️"
@@ -88,6 +128,14 @@ class IntakeResult:
     @property
     def blocked(self) -> bool:
         return any(issue.level == "ERROR" for issue in self.issues)
+
+    @property
+    def intake_warn(self) -> list[str]:
+        return sorted({issue.code or issue.field for issue in self.issues if issue.level == "WARN"})
+
+
+def _issue(code: str, match_no: int, field: str, message: str) -> IntakeIssue:
+    return IntakeIssue(INTAKE_CODES[code], match_no, field, message, code)
 
 
 def normalize_proofs(raw: object) -> dict[str, dict[str, object]]:
@@ -118,6 +166,28 @@ def proof_count(proofs: dict[str, object]) -> int:
     return sum(1 for key in PROOF_KEYS if proofs.get(key) is True)
 
 
+def _check_core(research: dict, *, match_no: int, issues: list[IntakeIssue]) -> None:
+    """核心字段：只有 `stance.face` 缺/非法才拒（runner 的 validate_stance 本来就拒，这里不扩）；
+    天平 verdict 与三证三面只打 WARN 码——现役文件四成三证不满三面，拒了等于砍样本。"""
+    stance = research.get("stance")
+    face = str((stance or {}).get("face", "")) if isinstance(stance, dict) else ""
+    if face not in ("3", "1", "0"):
+        issues.append(_issue(
+            "missing_core", match_no, "stance",
+            f"stance.face `{face or '缺'}` 不是 3/1/0 —— 没有表态面的研究机器读不了",
+        ))
+    balance = research.get("strength_balance")
+    if not (isinstance(balance, dict) and balance.get("verdict")):
+        issues.append(_issue(
+            "core_verdict_missing", match_no, "strength_balance", "缺 strength_balance.verdict",
+        ))
+    proofs = research.get("death_three_proofs")
+    if not (isinstance(proofs, dict) and all(f in proofs for f in FACE_KEYS)):
+        issues.append(_issue(
+            "core_proofs_incomplete", match_no, "death_three_proofs", "死亡三证不满三面",
+        ))
+
+
 def _check_hole_location(
     raw: object,
     *,
@@ -132,10 +202,7 @@ def _check_hole_location(
         value = hole.get(key)
         if value not in allowed:
             issues.append(
-                IntakeIssue(
-                    "WARN",
-                    match_no,
-                    "hole_location_uncontrolled",
+                _issue("hole_location_enum", match_no, "hole_location_uncontrolled",
                     f"hole_location.{key} `{value}` 不在闭合值域 {sorted(allowed)}",
                 )
             )
@@ -153,14 +220,13 @@ def _check_underdog_path(
         return
     path = balance.get("underdog_path")
     if not isinstance(path, dict):
-        issues.append(IntakeIssue(
-            "WARN", match_no, "underdog_path", "缺 strength_balance.underdog_path",
+        issues.append(_issue(
+            "underdog_path_missing", match_no, "underdog_path", "缺 strength_balance.underdog_path",
         ))
         return
     for key, allowed in (("side", UNDERDOG_PATH_SIDES), ("strength", UNDERDOG_PATH_STRENGTHS)):
         if path.get(key) not in allowed:
-            issues.append(IntakeIssue(
-                "WARN", match_no, "underdog_path",
+            issues.append(_issue("underdog_path_enum", match_no, "underdog_path",
                 f"underdog_path.{key} `{path.get(key)}` 不在闭合值域 {sorted(allowed)}",
             ))
 
@@ -178,14 +244,13 @@ def _sanitize_tags(
     if values in (None, ""):
         return []
     if not isinstance(values, list):
-        issues.append(IntakeIssue("ERROR", match_no, label, "必须是数组"))
+        issues.append(_issue("tag_slot_not_array", match_no, label, "必须是数组"))
         return []
     kept: list[str] = []
     for item in values:
         if isinstance(item, list | dict):
             issues.append(
-                IntakeIssue(
-                    "ERROR", match_no, label,
+                _issue("tag_slot_nested", match_no, label,
                     f"标签位写进了嵌套结构 {str(item)[:40]}… —— "
                     "封闭词典只收短名，叙述请写 note",
                 )
@@ -196,8 +261,7 @@ def _sanitize_tags(
         if len(text) > MAX_TAG_LEN:
             # 叙述已原样剥离进 note，不再整份驳回（strength-v2，2026-09-26 周六006/013）
             issues.append(
-                IntakeIssue(
-                    "WARN", match_no, label,
+                _issue("tag_slot_prose", match_no, label,
                     f"标签位写进了叙述（{len(text)} 字）→ 已剥离进 note：{text[:40]}…",
                 )
             )
@@ -207,8 +271,7 @@ def _sanitize_tags(
             kept.append(text)
         else:
             issues.append(
-                IntakeIssue(
-                    "WARN", match_no, label,
+                _issue("tag_off_lexicon", match_no, label,
                     f"`{text}` 不在封闭词典 → 已剥离进 note（不阻断出票）",
                 )
             )
@@ -226,15 +289,14 @@ def _sanitize_directional(
     if values in (None, ""):
         return []
     if not isinstance(values, list):
-        issues.append(IntakeIssue("ERROR", match_no, "directional_flags", "必须是数组"))
+        issues.append(_issue("directional_pair_shape", match_no, "directional_flags", "必须是数组"))
         return []
     kept: list[list[str]] = []
     for item in values:
         pair = item if isinstance(item, list | tuple) else (item, "1")
         if len(pair) != 2:
             issues.append(
-                IntakeIssue(
-                    "ERROR", match_no, "directional_flags",
+                _issue("directional_pair_shape", match_no, "directional_flags",
                     f"方向性旗必须是 [旗名, 面] 二元组，实得 {str(item)[:40]}",
                 )
             )
@@ -242,8 +304,7 @@ def _sanitize_directional(
         name, face = str(pair[0]).strip(), str(pair[1]).strip()
         if name not in DIRECTIONAL_LEXICON:
             issues.append(
-                IntakeIssue(
-                    "WARN", match_no, "directional_flags",
+                _issue("tag_off_lexicon", match_no, "directional_flags",
                     f"`{name}` 不在封闭词典 → 已剥离进 note（C0 会再报一次）",
                 )
             )
@@ -251,11 +312,11 @@ def _sanitize_directional(
             continue
         if face not in ("3", "1", "0"):
             issues.append(
-                IntakeIssue(
-                    "ERROR", match_no, "directional_flags",
-                    f"`{name}` 指向的面 `{face}` 不是 3/1/0",
+                _issue("directional_face_bogus", match_no, "directional_flags",
+                    f"`{name}` 指向的面 `{face}` 不是 3/1/0 → 已剥离进 note",
                 )
             )
+            stripped.append(f"directional_flags: {name}→{face}")
             continue
         kept.append([name, face])
     return kept
@@ -285,15 +346,13 @@ def _check_license(
     q4 = license_questions.get("q4_no_context_flag")
     if q4 is True and has_context:
         issues.append(
-            IntakeIssue(
-                "ERROR", match_no, "license_questions",
+            _issue("q4_context_conflict", match_no, "license_questions",
                 "④『无情境旗』判 true，但本场挂着情境旗/崩盘标记 —— 四问④与旗行直接矛盾",
             )
         )
     if q4 is False and not has_context:
         issues.append(
-            IntakeIssue(
-                "WARN", match_no, "license_questions",
+            _issue("q4_false_no_flag", match_no, "license_questions",
                 "④判 false 却零旗；若依据是 C9 机理请写进 note，否则四问会被低估",
             )
         )
@@ -308,8 +367,7 @@ def _check_license(
                 denied = any(word in window for word in _DENY)
                 if affirmed and not denied and coded is False:
                     issues.append(
-                        IntakeIssue(
-                            "WARN", match_no, "license_questions",
+                        _issue("license_prose_mismatch", match_no, "license_questions",
                             f"{key} 编码 false，正文却写「{marker}{window.strip()[:16]}」"
                             " —— 编码与正文可能相反，人工复核",
                         )
@@ -317,8 +375,7 @@ def _check_license(
                     return
                 if denied and not affirmed and coded is True:
                     issues.append(
-                        IntakeIssue(
-                            "WARN", match_no, "license_questions",
+                        _issue("license_prose_mismatch", match_no, "license_questions",
                             f"{key} 编码 true，正文却写「{marker}{window.strip()[:16]}」"
                             " —— 编码与正文可能相反，人工复核",
                         )
@@ -338,8 +395,7 @@ def _check_proofs(
     distinct = {value for value in c_values.values() if value is not None}
     if len(distinct) > 1:
         issues.append(
-            IntakeIssue(
-                "WARN", match_no, "death_three_proofs",
+            _issue("proof_c_inconsistent", match_no, "death_three_proofs",
                 f"三证(c) 在各面之间不一致 {c_values} —— (c) 的宪法口径是"
                 "「正路完整度 PASS」，一条腿只有一个值；逐面不同说明用的是别的定义",
             )
@@ -348,8 +404,7 @@ def _check_proofs(
     for face, value in c_values.items():
         if value is not None and value is not canonical:
             issues.append(
-                IntakeIssue(
-                    "WARN", match_no, "death_three_proofs",
+                _issue("proof_c_drift", match_no, "death_three_proofs",
                     f"{face} 的 (c)={value} 与完整度 `{anchor_integrity}` 不符"
                     f"（应为 {canonical}）—— (c) 定义漂移，按完整度重读",
                 )
@@ -360,8 +415,7 @@ def _check_proofs(
         count = proof_count(proofs.get(face, {}))
         if count < 3:
             issues.append(
-                IntakeIssue(
-                    "ERROR", match_no, "structurally_dead_face",
+                _issue("dead_face_proofs_short", match_no, "structurally_dead_face",
                     f"宣告 `{dead_face}` 结构性死亡，但三证只成立 {count}/3 —— "
                     "死面必须三证齐；不齐只能叫「被削弱」",
                 )
@@ -416,26 +470,23 @@ def _check_precedents(
     if raw in (None, ""):
         return []
     if not isinstance(raw, list):
-        issues.append(IntakeIssue("ERROR", match_no, "precedents", "必须是数组"))
+        issues.append(_issue("precedents_not_array", match_no, "precedents", "必须是数组"))
         return []
     out: list[list] = []
     for item in raw:
         if not isinstance(item, list | tuple) or len(item) != 3:
-            issues.append(IntakeIssue(
-                "ERROR", match_no, "precedents",
+            issues.append(_issue("precedents_shape", match_no, "precedents",
                 f"先例必须是 [面, 描述, 状态] 三元组，实得 {str(item)[:40]}",
             ))
             continue
         face, desc, status = (str(x) for x in item)
         if status not in PRECEDENT_STATUSES:
-            issues.append(IntakeIssue(
-                "ERROR", match_no, "precedents",
+            issues.append(_issue("precedents_status", match_no, "precedents",
                 f"状态 `{status}` 不在词典（alive/dead/none）",
             ))
             continue
         if status == "dead" and _reads_as_absent(desc):
-            issues.append(IntakeIssue(
-                "ERROR", match_no, "precedents",
+            issues.append(_issue("precedents_absent_as_dead", match_no, "precedents",
                 f"「{desc[:28]}…」读起来是**查无先例**却记成 `dead`。"
                 "死亡三证(b) 要的是「载体已不在阵」这个积极证据；"
                 "「没查到」是证据的缺席，请记 `none`——"
@@ -457,9 +508,16 @@ def intake(research: dict, leg: dict, *, match_no: int | None = None) -> IntakeR
 
     `match_no` 是调用方从文件名 `-m<N>` 得到的场次：并集池 headless 研究不写 match_no
     （2026-09-28 全记成场0、写回互相覆盖），此时用它兜底。"""
+    if not isinstance(research, dict):
+        no = int(leg.get("match_no") or match_no or 0)
+        return IntakeResult(
+            match_no=no, leg=dict(leg),
+            issues=[_issue("research_not_object", no, "research", "研究不是 JSON 对象")],
+        )
     match_no = int(research.get("match_no") or leg.get("match_no") or match_no or 0)
     issues: list[IntakeIssue] = []
     stripped: list[str] = []
+    _check_core(research, match_no=match_no, issues=issues)
 
     anchor_integrity = str(
         research.get("anchor_integrity")
@@ -468,8 +526,7 @@ def intake(research: dict, leg: dict, *, match_no: int | None = None) -> IntakeR
     )
     if anchor_integrity not in ("pass", "fail", "symmetric_damage", "unknown"):
         issues.append(
-            IntakeIssue(
-                "ERROR", match_no, "anchor_integrity",
+            _issue("anchor_integrity_enum", match_no, "anchor_integrity",
                 f"`{anchor_integrity}` 不是 pass/fail/symmetric_damage/unknown",
             )
         )
@@ -480,13 +537,12 @@ def intake(research: dict, leg: dict, *, match_no: int | None = None) -> IntakeR
         confidence = int(confidence)
     except (TypeError, ValueError):
         issues.append(
-            IntakeIssue("ERROR", match_no, "confidence", "缺 confidence（1-5）")
+            _issue("confidence_missing", match_no, "confidence", "缺 confidence（1-5）")
         )
         confidence = 3
     if not 1 <= confidence <= 5:
         issues.append(
-            IntakeIssue(
-                "ERROR", match_no, "confidence", f"confidence {confidence} 不在 1-5"
+            _issue("confidence_range", match_no, "confidence", f"confidence {confidence} 不在 1-5"
             )
         )
         confidence = 3
@@ -519,7 +575,7 @@ def intake(research: dict, leg: dict, *, match_no: int | None = None) -> IntakeR
     license_questions = research.get("license_questions") or {}
     if not isinstance(license_questions, dict):
         issues.append(
-            IntakeIssue("ERROR", match_no, "license_questions", "必须是对象")
+            _issue("license_questions_type", match_no, "license_questions", "必须是对象")
         )
         license_questions = {}
     prose = " ".join(
@@ -571,7 +627,9 @@ def intake(research: dict, leg: dict, *, match_no: int | None = None) -> IntakeR
         # 判断 rubric r1（2026-10-02）：逐项答案原样转录，Read/语料/面板都从这里取
         "rubric": research.get("rubric"),
     }
-    return IntakeResult(match_no=match_no, leg=merged, issues=issues, stripped=stripped)
+    result = IntakeResult(match_no=match_no, leg=merged, issues=issues, stripped=stripped)
+    merged["intake_warn"] = result.intake_warn   # 形式类问题随腿入库，样本表/复盘按码筛
+    return result
 
 
 def format_report(results: list[IntakeResult]) -> str:
@@ -594,5 +652,5 @@ def format_report(results: list[IntakeResult]) -> str:
             + ("  ⛔未写入" if result.blocked else "")
         )
         for issue in result.issues:
-            lines.append(f"      {issue}")
+            lines.append(f"      {issue}" + (f"  [{issue.code}]" if issue.code else ""))
     return "\n".join(lines)
