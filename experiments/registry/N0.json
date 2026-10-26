@@ -1,0 +1,26 @@
+{
+  "exp_id": "N0",
+  "claim": "在给定样本量与统计量下，判断因子效应必须超出固定 seed 的标签置换噪音地板，才可称为可区分信号。首个挂接对象＝主指标 F14b（表态 vs 市场同尺寸 top-k 配对残差）。",
+  "mechanism": "随机重排入选行的赛果标签（actual），保留价格、表态与分日聚类，只破坏标签与残差的对应关系；n_perm 次重算 F14b 点估计，其 2.5%–97.5% 分位数定义可复现的零分布。metric = F14b 观测残差 − 地板 97.5 分位（pp），>0 才算可区分；ci = [观测 − p97.5, 观测 − p2.5]。",
+  "tier": "observation",
+  "layer": "judgment",
+  "population": "both",
+  "min_tier": "deep_research",
+  "window": {"date_from": "2026-10-20", "n_min": 120, "date_to": "2026-12-31"},
+  "falsifier": {
+    "metric": "permutation_effect_vs_floor_margin_pp",
+    "stratum": "pooled",
+    "n_min": 120,
+    "bound": "ci_upper",
+    "threshold_pp": 0.0,
+    "direction": "lt_means_falsified"
+  },
+  "stop_rule": "固定 seed=20260920、n_perm=200、每次置换 F14b 内部 bootstrap 60 次；与 F14b 同窗同 n_min（120 个入选场）一次结账：观测残差连地板 97.5 分位都不过（ci_upper<0）＝F14b 的效应与噪音不可区分，N0 证伪的是「F14b 是可区分信号」这句话；不修改既有规则或阈值，不接入票面。",
+  "quota_slot": false,
+  "buckets": [],
+  "rule_ids": [],
+  "source_doc": "docs/superpowers/specs/2026-09-20-experiment-measurement-layer-design.md",
+  "registered_at": "2026-10-25",
+  "exits": {"on_survived": "display_only", "on_falsified": "display_only", "on_expired": "none"},
+  "note": "2026-09-20 草稿 _draft_N0；2026-10-25 Jun 批「都做」后登记：挂主指标 F14b，窗口/n_min 与 F14b 对齐。因子层的地板早已在 rsi weights propose 里用（地板判定列）；这里补的是实验残差层。"
+}

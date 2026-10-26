@@ -1248,7 +1248,8 @@
    "name_zh": "伯恩茅斯",
    "name_en": "Bournemouth",
    "aliases": [
-    "伯恩茅斯"
+    "伯恩茅斯",
+    "伯恩茅"
    ],
    "competition_ids": [
     "eng-premier"
@@ -2305,7 +2306,8 @@
    "name_en": "Newcastle United",
    "aliases": [
     "纽卡斯尔",
-    "Newcastle"
+    "Newcastle",
+    "纽卡斯"
    ],
    "competition_ids": [
     "eng-premier"
@@ -2690,7 +2692,8 @@
     "阿拉维斯",
     "Alavés",
     "Alaves",
-    "Deportivo Alaves"
+    "Deportivo Alaves",
+    "阿拉维"
    ],
    "competition_ids": [
     "esp-laliga"
@@ -2778,7 +2781,8 @@
     "毕尔巴鄂竞技",
     "Athletic Club",
     "毕尔巴鄂",
-    "Athletic Bilbao"
+    "Athletic Bilbao",
+    "毕尔巴"
    ],
    "competition_ids": [
     "esp-laliga"
@@ -2860,7 +2864,8 @@
     "马德里竞技",
     "Atlético Madrid",
     "马竞",
-    "Atletico Madrid"
+    "Atletico Madrid",
+    "马竞技"
    ],
    "competition_ids": [
     "esp-laliga"
@@ -4004,7 +4009,8 @@
    "name_en": "Real Sociedad",
    "aliases": [
     "皇家社会",
-    "Real Sociedad"
+    "Real Sociedad",
+    "社会"
    ],
    "competition_ids": [
     "esp-laliga"
@@ -4085,7 +4091,8 @@
    "aliases": [
     "塞维利亚",
     "Sevilla",
-    "Sevilla FC"
+    "Sevilla FC",
+    "塞维利"
    ],
    "competition_ids": [
     "esp-laliga"
@@ -4172,7 +4179,8 @@
    "aliases": [
     "巴伦西亚",
     "Valencia",
-    "Valencia CF"
+    "Valencia CF",
+    "巴伦西"
    ],
    "competition_ids": [
     "esp-laliga"
@@ -6211,7 +6219,8 @@
    "aliases": [
     "勒沃库森",
     "Bayer Leverkusen",
-    "Leverkusen"
+    "Leverkusen",
+    "勒沃"
    ],
    "competition_ids": [
     "ger-bundesliga"
@@ -6782,7 +6791,8 @@
    "aliases": [
     "奥格斯堡",
     "FC Augsburg",
-    "Augsburg"
+    "Augsburg",
+    "奥格斯"
    ],
    "competition_ids": [
     "ger-bundesliga"
@@ -7522,7 +7532,9 @@
    "aliases": [
     "莱比锡",
     "RB Leipzig",
-    "RB莱比锡"
+    "RB莱比锡",
+    "莱比锡红牛",
+    "莱红牛"
    ],
    "competition_ids": [
     "ger-bundesliga"
@@ -8013,7 +8025,8 @@
     "达姆施塔特",
     "SV Darmstadt 98",
     "Darmstadt 98",
-    "Darmstadt"
+    "Darmstadt",
+    "达姆施"
    ],
    "competition_ids": [
     "ger-bundesliga2"
@@ -8095,7 +8108,8 @@
     "埃弗斯堡",
     "SV Elversberg",
     "埃弗斯贝格",
-    "Elversberg"
+    "Elversberg",
+    "埃沃斯"
    ],
    "competition_ids": [
     "ger-bundesliga"
@@ -8177,7 +8191,8 @@
     "霍芬海姆",
     "TSG Hoffenheim",
     "1899 Hoffenheim",
-    "Hoffenheim"
+    "Hoffenheim",
+    "霍芬海"
    ],
    "competition_ids": [
     "ger-bundesliga"
@@ -8342,7 +8357,8 @@
    "aliases": [
     "斯图加特",
     "VfB Stuttgart",
-    "Stuttgart"
+    "Stuttgart",
+    "斯图加"
    ],
    "competition_ids": [
     "ger-bundesliga"
@@ -8587,7 +8603,8 @@
    "aliases": [
     "沃尔夫斯堡",
     "VfL Wolfsburg",
-    "Wolfsburg"
+    "Wolfsburg",
+    "沃尔夫"
    ],
    "competition_ids": [
     "ger-bundesliga2"
@@ -8912,7 +8929,8 @@
    "name_en": "Atalanta",
    "aliases": [
     "亚特兰大",
-    "Atalanta"
+    "Atalanta",
+    "亚特兰"
    ],
    "competition_ids": [
     "ita-seriea"
@@ -8992,7 +9010,8 @@
    "name_en": "Bologna",
    "aliases": [
     "博洛尼亚",
-    "Bologna"
+    "Bologna",
+    "博洛尼"
    ],
    "competition_ids": [
     "ita-seriea"
@@ -9233,7 +9252,8 @@
    "aliases": [
     "佛罗伦萨",
     "Fiorentina",
-    "佛罗伦萨队"
+    "佛罗伦萨队",
+    "佛罗伦"
    ],
    "competition_ids": [
     "ita-seriea"
@@ -9879,7 +9899,8 @@
    "aliases": [
     "那不勒斯",
     "Napoli",
-    "那坡利"
+    "那坡利",
+    "那不勒"
    ],
    "competition_ids": [
     "ita-seriea"
@@ -11437,7 +11458,8 @@
    "name_zh": "费耶诺德",
    "name_en": "Feyenoord",
    "aliases": [
-    "飞燕诺"
+    "飞燕诺",
+    "费耶诺"
    ],
    "competition_ids": [
     "ned-eredivisie"
@@ -12435,7 +12457,8 @@
    "name_zh": "特尔斯达",
    "name_en": "Telstar",
    "aliases": [
-    "特尔斯塔"
+    "特尔斯塔",
+    "特尔斯"
    ],
    "competition_ids": [
     "ned-eredivisie"

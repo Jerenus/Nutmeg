@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/Users/jz71/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+	<key>Label</key>
+	<string>com.nutmeg.jczq.research-pm</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/zsh</string>
+		<string>-lc</string>
+		<string>cd /Users/jz71/Projects/Nutmeg &amp;&amp; /opt/homebrew/bin/uv run nutmeg ops-run jczq.research-pm '/opt/homebrew/bin/uv run nutmeg research run --day $(date +%F) --data-dir /Users/jz71/Projects/Nutmeg/.nutmeg-data' '/opt/homebrew/bin/uv run nutmeg research refresh --day $(date +%F) --data-dir /Users/jz71/Projects/Nutmeg/.nutmeg-data'</string>
+	</array>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>16</integer>
+		<key>Minute</key>
+		<integer>30</integer>
+	</dict>
+	<key>StandardErrorPath</key>
+	<string>/Users/jz71/Projects/Nutmeg/.nutmeg-data/logs/jczq.research-pm.err.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/jz71/Projects/Nutmeg/.nutmeg-data/logs/jczq.research-pm.out.log</string>
+	<key>WorkingDirectory</key>
+	<string>/Users/jz71/Projects/Nutmeg</string>
+</dict>
+</plist>
