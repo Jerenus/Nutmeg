@@ -304,3 +304,41 @@ def zucai_build_reads(
                          encoding="utf-8")
     _cli.typer.echo(format_warnings(result))
     _cli.typer.echo(f"  reads → {reads_path}\n  legs  → {legs_path}")
+
+
+_LW_ISSUE_OPTION = _cli.typer.Option(None, "--issue", help="只看这一期；不给＝所有未踢完的期")
+_LW_DATA_DIR_OPTION = _cli.typer.Option(_cli.Path(".nutmeg-data"), "--data-dir")
+_LW_DRY_RUN_OPTION = _cli.typer.Option(False, "--dry-run", help="只打印不推、不写状态文件")
+_LW_NOW_OPTION = _cli.typer.Option(None, "--now", help="伪造当前时刻（北京时间 ISO），测试用")
+
+
+@_cli.app.command("zucai-lineup-watch")
+def zucai_lineup_watch(
+    issue: str | None = _LW_ISSUE_OPTION,
+    data_dir: _cli.Path = _LW_DATA_DIR_OPTION,
+    dry_run: bool = _LW_DRY_RUN_OPTION,
+    now: str | None = _LW_NOW_OPTION,
+) -> None:
+    """售后播报巡检（launchd 每 15 分钟）：停售倒计时 / 18:30 位移 diff / 开球前 45–75 分首发复核。
+
+    只推需要 Jun 动作的事：无票不打网；票内场关键人与研究前提相反才推；一场一期一次。
+    """
+    from nutmeg.decision.bj_time import aware
+    from nutmeg.decision.lineup_watch import watch
+
+    report = watch(_cli.Path(data_dir), issue=issue, dry_run=dry_run,
+                   now=aware(now) if now else None)
+    if not report["issues"]:
+        _cli.typer.echo(f"{report['now']} lineup-watch: 无未踢完的期")
+        return
+    for iss, r in report["issues"].items():
+        parts = []
+        for kind in ("countdown", "shift", "lineup"):
+            evs = r.get(kind) or []
+            st = ",".join(sorted({str(e.get("status")) for e in evs})) or "-"
+            parts.append(f"{kind}={st}")
+        _cli.typer.echo(f"{report['now']} {iss}: " + " ".join(parts))
+        for kind in ("countdown", "shift", "lineup"):
+            for e in r.get(kind) or []:
+                if e.get("text"):
+                    _cli.typer.echo("  " + e["text"].replace("\n", "\n  "))

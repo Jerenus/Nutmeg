@@ -117,6 +117,30 @@ class ApiFootballClient:
                 continue
         return FixtureBatch(fixtures=fixtures, requests_made=1, quota=quota)
 
+    def fetch_lineups(self, fixture_id: str) -> list[dict[str, Any]]:
+        """``GET /fixtures/lineups?fixture=`` → 每队 ``{team, xi:[球员名], bench:[球员名]}``。
+
+        开球前约 1 小时才有数据；没有就返回空列表（lineup_watch 记 no_lineups 下轮再试）。
+        """
+        if not self._api_key:
+            raise ApiFootballError('NUTMEG_API_FOOTBALL_KEY is not configured.')
+        payload, _quota = self._request_payload(
+            '/fixtures/lineups', params={'fixture': str(fixture_id)},
+        )
+
+        def _names(rows: Any) -> list[str]:
+            return [str((r.get('player') or {}).get('name') or '')
+                    for r in (rows or []) if isinstance(r, dict)]
+
+        return [
+            {
+                'team': str((item.get('team') or {}).get('name') or ''),
+                'xi': _names(item.get('startXI')),
+                'bench': _names(item.get('substitutes')),
+            }
+            for item in payload.get('response', []) if isinstance(item, dict)
+        ]
+
     def _normalize_fixture(
         self,
         payload: dict[str, Any],
