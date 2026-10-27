@@ -115,6 +115,8 @@ def parse_claude_json_output(stdout: str) -> tuple[str, dict]:
         "cache_creation_input_tokens": usage.get("cache_creation_input_tokens"),
         "output_tokens": usage.get("output_tokens"),
         "cost_usd": doc.get("total_cost_usd"),
+        # 轮数（2026-10-27 P1）：json 输出不带工具调用明细，num_turns 是「搜了几次」的最近代理
+        "num_turns": doc.get("num_turns"),
     }
     return str(doc.get("result") or ""), meta
 

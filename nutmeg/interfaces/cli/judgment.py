@@ -106,6 +106,23 @@ def _crowd_section(data_dir: Path, issue: str) -> str:
         return f"## 人群地图\n\n（未出：{exc!r}）\n"
 
 
+@judgment_app.command("counter-matrix")
+def judgment_counter_matrix(
+    issue: str = _cli.typer.Option(..., "--issue", help="足彩期号 如 26151"),
+    data_dir: Path = _DATA_DIR,
+    write: bool = _cli.typer.Option(False, "--write/--no-write",
+                                    help="同时落 zucai/<期>-counter-matrix.md"),
+) -> None:
+    """§1c 反证矩阵（ACH-lite，2026-10-27）：每场 H1 锚方面 vs H2 翻车面，研究证据逐行打 +/−，
+    同号证据不显示；只由研究 JSON 派生，不出概率、不进否决。"""
+    from nutmeg.decision.counter_matrix import issue_matrices, render_issue
+
+    text = render_issue(issue, issue_matrices(data_dir, issue))
+    if write:
+        (Path(data_dir) / "zucai" / f"{issue}-counter-matrix.md").write_text(text, encoding="utf-8")
+    _cli.typer.echo(text)
+
+
 @judgment_app.command("draft")
 def judgment_draft(
     issue: str = _cli.typer.Option(..., "--issue", help="足彩期号 如 26135"),

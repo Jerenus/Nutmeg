@@ -86,3 +86,14 @@ def test_system_prompt_carries_the_rubric_question_table_from_the_registry():
     assert all(item_id in text for item_id in ITEMS) and f'"version": "{RUBRIC_VERSION}"' in text
     assert "强制改为弃权" in text and text in system_prompt()
     assert "stance.tilt 不用写" in system_prompt()
+
+
+def test_contract_requires_verifiable_sources_and_a_stop_rule():
+    """2026-10-27 探照灯 P1/P2：10-27 抽查 112 份研究只有 6 份带链接；停止靠轮数不靠覆盖。"""
+    from nutmeg.decision.research_prompt import rubric_contract
+
+    for field in ('"sources_consulted"', '"stop_rule"', '"counter_searched"', '"counter_note"',
+                  '"reason": "coverage|budget|dead_end"', "完整 URL", "原句 ≤40 字"):
+        assert field in RESEARCH_JSON_CONTRACT, field
+    assert "URL ｜ 原句≤40字" in rubric_contract()
+    assert "停止规则" in system_prompt() and "研究引用制" in system_prompt()

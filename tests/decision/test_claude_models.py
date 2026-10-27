@@ -194,3 +194,16 @@ def test_claude_runs_in_one_fixed_neutral_directory(token_file, monkeypatch, tmp
     cm.run_claude("sys", "in", model=None)
     assert seen[0] == seen[1] == str(tmp_path / "nutmeg-claude-neutral")
     assert list((tmp_path / "nutmeg-claude-neutral").iterdir()) == []
+
+
+def test_json_output_parser_keeps_num_turns_as_the_search_count_proxy():
+    """2026-10-27 P1：json 输出没有工具调用明细，num_turns 是「搜了几次」的最近代理。"""
+    import json
+
+    from nutmeg.decision.claude_models import parse_claude_json_output
+
+    text, meta = parse_claude_json_output(json.dumps(
+        {"result": "{}", "num_turns": 17, "duration_ms": 1500, "total_cost_usd": 0.02,
+         "usage": {"input_tokens": 1}, "modelUsage": {"claude-opus-5-5": {}}}))
+    assert text == "{}" and meta["num_turns"] == 17 and meta["model"] == "claude-opus-5-5"
+    assert parse_claude_json_output("not json")[1] == {}

@@ -103,6 +103,10 @@ INTAKE_CODES: dict[str, str] = {
     "underdog_path_enum": "WARN",
     "market_read_normalized": "WARN",   # 10-26：stance.market_read 枚举外值已由 stance.py 归一
     "dead_face_downgraded": "WARN",     # 10-26：判死面三证 <3 → runner 改 alive，verdict_raw 留原值
+    # 研究引用制（2026-10-27 探照灯 P1）：来源要能点开；只警告，分析包按「不可复核」读
+    "source_url_missing": "WARN",       # 事实项答「是/有效选项」而 source 里没有 URL
+    "event_source_no_url": "WARN",      # strength_balance.events[].source 没有 URL
+    "sources_consulted_missing": "WARN",  # 研究员没列实际打开过的页面
 }
 """拒收/警告码表，**只在这一处**定级。`intake_warn` 就是一场里命中的 WARN 码集合。"""
 
@@ -518,6 +522,25 @@ def _research_stance(stance: object) -> dict | None:
     return {key: stance.get(key) for key in ("face", "structure", "cover", "confidence")}
 
 
+def _check_sources(research: dict, *, match_no: int, issues: list[IntakeIssue]) -> dict:
+    """研究引用制（2026-10-27 P1）：来源账 + 三个只警告的码。10-27 抽查 112 份里 6 份带链接。"""
+    from nutmeg.decision.research_sources import evidence_sources
+
+    sources = evidence_sources(research)
+    gap = sources["items_active"] - sources["items_with_url"]
+    if gap > 0:
+        issues.append(_issue("source_url_missing", match_no, "rubric.source",
+                             f"事实项 {gap}/{sources['items_active']} 条来源无 URL（站点名不算）"))
+    gap = sources["events"] - sources["events_with_url"]
+    if gap > 0:
+        issues.append(_issue("event_source_no_url", match_no, "strength_balance.events",
+                             f"events {gap}/{sources['events']} 条来源无 URL"))
+    if not sources["declared"]:
+        issues.append(_issue("sources_consulted_missing", match_no, "sources_consulted",
+                             "未列实际打开过的页面 sources_consulted"))
+    return sources
+
+
 def intake(research: dict, leg: dict, *, match_no: int | None = None) -> IntakeResult:
     """一场研究 JSON → 可入库的 leg 字段 + 问题清单。**不改 faces、不产生判断。**
 
@@ -613,6 +636,7 @@ def intake(research: dict, leg: dict, *, match_no: int | None = None) -> IntakeR
     _check_underdog_path(
         research.get("strength_balance"), match_no=match_no, issues=issues
     )
+    sources = _check_sources(research, match_no=match_no, issues=issues)
 
     note =str(research.get("summary", "") or "")[:400]
     if stripped:
@@ -641,6 +665,10 @@ def intake(research: dict, leg: dict, *, match_no: int | None = None) -> IntakeR
         "strength_balance": research.get("strength_balance"),
         # 判断 rubric r1（2026-10-02）：逐项答案原样转录，Read/语料/面板都从这里取
         "rubric": research.get("rubric"),
+        # 研究引用制 / 覆盖门（2026-10-27）：原件带回抓结果就用原件的，否则现算；
+        # coverage 只有 runner 算（要归一前的 rubric 项）
+        "evidence_sources": research.get("evidence_sources") or sources,
+        "coverage": research.get("coverage"),
     }
     result = IntakeResult(match_no=match_no, leg=merged, issues=issues, stripped=stripped)
     merged["intake_warn"] = result.intake_warn   # 形式类问题随腿入库，样本表/复盘按码筛

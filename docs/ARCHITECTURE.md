@@ -285,7 +285,7 @@ flowchart TB
 *图 4　研究到 Read：rubric 答案经协议级聚合派生拨动，Read 写回内核后投影成唯一事实。*
 
 1. **样本池**（并集池，Jun 2026-09-27）：足彩在售期的场次优先，加上竞彩全板；未开球场次的 Read 自动交本体。
-2. **研究契约**：`research_prompt.RESEARCH_JSON_CONTRACT` + `rubric_contract()`（问题表由 `rubric_items.question_table()` 生成，契约与代码不会漂移）+ 分析员定义 `.claude/agents/jczq-match-analyst.md`。
+2. **研究契约**：`research_prompt.RESEARCH_JSON_CONTRACT` + `rubric_contract()`（问题表由 `rubric_items.question_table()` 生成，契约与代码不会漂移）+ 分析员定义 `.claude/agents/jczq-match-analyst.md`。**研究引用制 + 覆盖门（2026-10-27，`research_sources.py`）**：来源＝URL+原句，`sources_consulted` 列实际打开过的页；`research run` 落盘前回抓（`--no-probe` 关）并写 `evidence_sources`；`coverage` 三条（事实 7 题答齐 / 搜过反例 / ≥3 URL ≥2 站点）算 `converged` 与 `stop_reason`，未收敛只标 ◇。入库桥三个只警告的码；日报「研究成本」行报「带 URL n/m、收敛 k/m、均轮数」。**§1c 反证矩阵**（`counter_matrix.py`，`judgment counter-matrix --issue`）：ACH-lite，由研究 JSON 派生、同号证据不显示、不出概率。
 3. **rubric r1 问题表**：事实层 7 项（主 / 客缺阵官宣、停赛、轮换、门将、场地、其他）；结构层 6 项（锚方、中轴完整、弱方路径、平局模态、翻车候选、死面）；价格层 2 项（市场读法、事实已定价）。全文与上限见 RULEBOOK「九」或 `nutmeg rubric items`。
 4. **永不因 rubric 拒收**：漏写＝全部弃权（`rubric_missing`），不合法选项改弃权（`rubric_notes`）。
 5. **改判**：有 rubric 的研究，改判必须落到项并给封闭理由（新官宣信息 / 证据层级不够 / 已被价格吸收 / 研究自相矛盾 / 回市场），tilt 从合并后的 rubric 重新派生；改判账在判决页按理由分层。

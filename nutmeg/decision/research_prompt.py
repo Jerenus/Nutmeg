@@ -33,6 +33,22 @@ RESEARCH_JSON_CONTRACT = """
                     "strength": "none|weak|real|strong"},
   "events": [{"event": str, "side": "home|away", "direction": "up|down",
               "grade": "minor|moderate|major", "pp": int, "priced_in": bool, "source": str}]}
+"sources_consulted": [{"url": "https://…", "site": str, "fetched_at": "ISO",
+                       "used_for": ["F_absence_home", "events[0]", …]}],
+"stop_rule": {"facts_covered": bool, "counter_searched": bool,
+              "counter_note": "搜了什么反例/反方关键词、查到什么（一句）",
+              "sources_verifiable": bool, "reason": "coverage|budget|dead_end"}
+**研究引用制（2026-10-27）**：所有 `source` / `evidence` 一律写
+**完整 URL（https://…）＋原句 ≤40 字**，格式 `URL ｜ 原句`；站点名、「据报道」、「官宣」不算来源
+（赛后要能回到那一句）。`sources_consulted` 列你**实际打开过**的页面，每条事实的 URL 必须能在这里
+找到；事后回抓失败只记录不拒收。
+**停止规则（2026-10-27）**：三条都满足就**立即停止检索、输出 JSON**——
+①事实层 7 题全部作答（弃权也是作答）
+②针对你的表态**主动搜过一次反例**（反方关键词：对手复出/锚方伤情/上轮同类翻车），
+结果写 `counter_note`
+③来源可复核（≥3 个 URL、≥2 个站点）。
+三条未满足而轮数将尽 → `reason="budget"`、查不到的写「未证实」；
+确认查无可查 → `dead_end`。信息越厚不等于越准（26133、WorldCup Arena 2026），不要为凑字数多搜。
 **stance.tilt 不用写（写 null）**：拨动由下面的 rubric 逐项派生，why_not_market 由代码改标。
 stance.confidence 必须等于顶层 confidence。
 宣告 dead 必须三证 3/3；查无先例记 none，不得当 dead。
@@ -60,8 +76,10 @@ def rubric_contract() -> str:
 ## ★判断 rubric（必答，version "{RUBRIC_VERSION}"）——Jev 形状：类型化问题、概率、可弃权、不解释
 顶层字段 "rubric": {{"version": "{RUBRIC_VERSION}", "items": {{<id>: 答案}},
                 "belief": {{"3": p, "1": p, "0": p}}}}
-答案格式：noul → {{"p": 0–1 或 null, "source": str, "captured_at": "ISO", "note": str}}；
-choice → {{"answer": 选项, "p": 该选项的概率, "source": str, "captured_at": "ISO", "note": str}}。
+答案格式：noul → {{"p": 0–1 或 null, "source": "URL ｜ 原句≤40字", "captured_at": "ISO",
+                 "note": str}}；
+choice → {{"answer": 选项, "p": 该选项的概率, "source": "URL ｜ 原句≤40字",
+           "captured_at": "ISO", "note": str}}。
 规则：①一项只答一件事，不要把两件事合在一个来源里；②不知道就弃权（p=null / answer=unknown），
 弃权永远合法；③标"必须带来源"的项，答是/有效选项而没有 source+captured_at 会被**强制改为弃权**，
 不要把推断写成已确认；④事实层没有任何一项成立 → 拨动预算为 0（跟市场），结构层再多也不补分；

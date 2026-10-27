@@ -323,3 +323,20 @@ def test_render_markdown_lists_research_cost_per_day():
     assert "## 研究成本" in md
     assert "2026-10-25：29 场 $7.25，3100 s，claude-opus-5-5 29" in md
     assert "2026-10-26：无遥测行" in md
+
+
+def test_render_markdown_reports_source_coverage_next_to_cost():
+    """2026-10-27 P1 验收线「带 URL ≥90%」要在日报里看得到。"""
+    from nutmeg.decision.rsi_loop import LoopReport, render_markdown
+
+    report = LoopReport(
+        date="2026-10-27", started_at="t", finished_at="t", steps=[], human_actions=[],
+        failed_steps=[], verdicts=[], grades=[], quiet_factors=[], proposals=[],
+    )
+    md = render_markdown(report, telemetry={
+        "2026-10-27": {"matches": 14, "total_cost_usd": 1.0, "total_duration_s": 900.0,
+                       "by_model": {"m": {"matches": 14}},
+                       "sources": {"done": 14, "cited": 13, "converged": 9,
+                                   "stop_reasons": {"coverage": 9, "budget": 5},
+                                   "total_num_turns": 210, "avg_num_turns": 15.0}}})
+    assert "带 URL 13/14、收敛 9/14、均 15.0 轮" in md

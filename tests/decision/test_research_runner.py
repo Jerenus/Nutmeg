@@ -997,3 +997,58 @@ def test_unproven_dead_face_and_market_read_variant_are_kept_not_rejected(tmp_pa
     assert saved["stance"]["market_read_raw"] == "overpriced_fav"
     assert any("三证 2/3" in n for n in saved["stance_notes"])
     assert any(n.startswith("market_read_normalized") for n in saved["stance_notes"])
+
+
+def test_runner_lands_sources_coverage_and_probe_on_the_research_and_the_row(tmp_path):
+    """2026-10-27 探照灯 P1/P2：原件落 evidence_sources（含回抓）与 coverage；行上留
+    urls_cited/converged/stop_reason/num_turns；日投影 telemetry.sources 汇总。"""
+    from nutmeg.decision.rubric_items import FACT_ITEMS, ITEMS
+
+    root = _board(tmp_path, n=1)
+    doc = json.loads(GOOD)
+    items = {k: {"answer": "yes" if ITEMS[k].type == "noul" else "home", "p": 0.9,
+                 "source": f"https://s{i}.example/{k} ｜ 原句",
+                 "captured_at": "2026-09-19T08:00:00+08:00"}
+             for i, k in enumerate(FACT_ITEMS)}
+    doc["rubric"] = {"version": "r3", "items": {**items, "S_anchor_side": {"answer": "home"}}}
+    doc["sources_consulted"] = [{"url": f"https://s{i}.example/x"} for i in range(3)]
+    doc["stop_rule"] = {"counter_searched": True, "counter_note": "搜了客队复出，无",
+                        "reason": "coverage"}
+    probed = []
+
+    def probe(urls):
+        probed.append(len(urls))
+        return {u: {"ok": True, "status": 200, "error": ""} for u in urls}
+
+    report = run_day(day="2026-09-19", jczq_dir=root, data_dir=tmp_path / "d",
+                     claude=lambda s, b: (0, json.dumps(doc, ensure_ascii=False),
+                                          {"model": "m", "cost_usd": 0.01, "num_turns": 9}),
+                     fulfill=lambda argv: (0, ""), profile=lambda match_id: {}, budget=10,
+                     probe=probe)
+    row = report["matches"][0]
+    assert row["status"] == "done" and row["num_turns"] == 9
+    assert row["urls_cited"] == 10 and row["sites_cited"] == 7 and row["probe_ok"] == 10
+    assert row["converged"] is True and row["stop_reason"] == "coverage"
+    assert probed == [10]
+    research = json.loads((root / "daily" / "2026-09-19" / "research-周五001.json").read_text())
+    assert research["coverage"]["facts_answered"] == "7/7"
+    assert research["evidence_sources"]["probe"]["https://s0.example/F_absence_home"]["ok"] is True
+    projection = json.loads(
+        (root / "daily" / "2026-09-19" / "research-run-2026-09-19.json").read_text())
+    assert projection["telemetry"]["sources"] == {
+        "done": 1, "cited": 1, "converged": 1, "stop_reasons": {"coverage": 1},
+        "total_num_turns": 9, "avg_num_turns": 9.0}
+
+
+def test_runner_marks_unconverged_research_without_rejecting_it(tmp_path):
+    """旧式研究（无 stop_rule、来源是站点名）照样入库，只是 coverage.converged=False、◇。"""
+    root = _board(tmp_path, n=1)
+    report = run_day(day="2026-09-19", jczq_dir=root, data_dir=tmp_path / "d",
+                     claude=lambda s, b: (0, GOOD), fulfill=lambda argv: (0, ""),
+                     profile=lambda match_id: {}, budget=10)
+    row = report["matches"][0]
+    assert row["status"] == "done" and row["converged"] is False
+    assert row["stop_reason"] == "undeclared" and row["urls_cited"] == 0 and row["probe_ok"] is None
+    research = json.loads((root / "daily" / "2026-09-19" / "research-周五001.json").read_text())
+    assert research["coverage"]["facts_answered"] == "0/7"
+    assert "probe" not in research["evidence_sources"]

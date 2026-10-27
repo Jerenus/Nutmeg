@@ -565,8 +565,15 @@ def render_markdown(report: LoopReport, *, prev_quiet: set[str] | None = None,
                 lines.append(f"- {day}：无遥测行（研究在遥测接入前跑完，或当日无研究）")
                 continue
             models = "/".join(f"{m} {b['matches']}" for m, b in t["by_model"].items())
-            lines.append(f"- {day}：{t['matches']} 场 ${t['total_cost_usd']:.2f}，"
-                         f"{t['total_duration_s']:.0f} s，{models}")
+            line = (f"- {day}：{t['matches']} 场 ${t['total_cost_usd']:.2f}，"
+                    f"{t['total_duration_s']:.0f} s，{models}")
+            src = t.get("sources") or {}
+            if src.get("done"):
+                # 研究引用制 / 覆盖门（2026-10-27）：P1 验收线「带 URL ≥90%」就看这一行
+                line += (f"；带 URL {src['cited']}/{src['done']}、"
+                         f"收敛 {src['converged']}/{src['done']}"
+                         + (f"、均 {src['avg_num_turns']} 轮" if src.get("avg_num_turns") else ""))
+            lines.append(line)
     if report.grades:
         primary = [g for g in report.grades if _grade_exp(g) in PRIMARY_EXPERIMENTS]
         secondary = [g for g in report.grades if _grade_exp(g) not in PRIMARY_EXPERIMENTS]

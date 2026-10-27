@@ -518,3 +518,39 @@ def test_normalized_market_read_and_downgraded_dead_face_leave_warn_codes():
     codes = {i.code for i in issues}
     assert {"market_read_normalized", "dead_face_downgraded"} <= codes
     assert all(INTAKE_CODES[c] == "WARN" for c in codes)
+
+
+# —— 研究引用制（2026-10-27 探照灯 P1）————————————————————
+
+def test_sources_without_urls_warn_and_are_transcribed_not_blocking():
+    research = _research(
+        rubric={"items": {"F_absence_home": {"answer": "yes", "p": 0.9, "abstain": False,
+                                             "source": "据搜狐报道", "captured_at": "x"}}},
+        strength_balance={"verdict": "home_edge",
+                          "underdog_path": {"side": "away", "strength": "weak"},
+                          "events": [{"event": "a", "source": "https://club.example/n/1"},
+                                     {"event": "b", "source": "主帅发布会"}]},
+    )
+    result = intake(research, _leg())
+    assert result.blocked is False
+    assert {"source_url_missing", "event_source_no_url", "sources_consulted_missing"} \
+        <= set(result.leg["intake_warn"])
+    assert result.leg["evidence_sources"]["urls"] == ["https://club.example/n/1"]
+    assert result.leg["evidence_sources"]["items_with_url"] == 0
+    assert result.leg["coverage"] is None                   # 只有 runner 会算覆盖门
+
+
+def test_fully_cited_research_is_silent_on_source_codes_and_keeps_runner_fields():
+    research = _research(
+        rubric={"items": {"F_absence_home": {"answer": "yes", "p": 0.9, "abstain": False,
+                                             "source": "https://club.example/n/1 ｜ 官宣缺阵",
+                                             "captured_at": "x"}}},
+        sources_consulted=[{"url": "https://club.example/n/1"}],
+        evidence_sources={"urls": ["https://club.example/n/1"], "probe_ok": 1},
+        coverage={"converged": True, "stop_reason": "coverage"},
+    )
+    result = intake(research, _leg())
+    assert not {"source_url_missing", "event_source_no_url", "sources_consulted_missing"} \
+        & set(result.leg["intake_warn"])
+    assert result.leg["evidence_sources"]["probe_ok"] == 1          # 原件带回抓结果就用原件的
+    assert result.leg["coverage"] == {"converged": True, "stop_reason": "coverage"}

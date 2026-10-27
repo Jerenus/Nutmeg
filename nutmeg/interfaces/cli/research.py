@@ -120,8 +120,11 @@ def run(
     code: str | None = typer.Option(None, "--code"),
     budget: int | None = typer.Option(None, "--budget"),
     concurrency: int = typer.Option(2, "--concurrency", min=1),
+    probe: bool = typer.Option(True, "--probe/--no-probe",
+                               help="研究引用制：落盘前回抓一次来源 URL（只记录，不拒收）"),
 ) -> None:
     from nutmeg.decision.research_runner import RESEARCH_DAILY_BUDGET, run_day
+    from nutmeg.decision.research_sources import probe_sources
 
     report = run_day(
         day=day,
@@ -133,9 +136,13 @@ def run(
         budget=budget if budget is not None else RESEARCH_DAILY_BUDGET,
         code=code,
         concurrency=concurrency,
+        probe=probe_sources if probe else None,
     )
     for row in report["matches"]:
         suffix = f" {row['seconds']}s" if "seconds" in row else ""
+        if row.get("urls_cited") is not None:
+            suffix += (f" URL {row['urls_cited']}/{row['sites_cited']}站"
+                       f" 收敛{'✓' if row.get('converged') else '◇'}")
         typer.echo(f"  {row['code']} {row['status']}{suffix}")
     typer.echo(
         f"used_attempts={report['used_attempts']} written={report['written']}"

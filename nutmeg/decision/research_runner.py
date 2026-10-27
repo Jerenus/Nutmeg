@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections import Counter
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
@@ -19,6 +20,7 @@ from nutmeg.decision.claude_models import (
 )
 from nutmeg.decision.research_ledger import ResearchRunLedger
 from nutmeg.decision.research_prompt import render_brief, system_prompt
+from nutmeg.decision.research_sources import Probe, attach_sources, research_coverage
 from nutmeg.decision.rsi_wiring import _cli_invoke
 from nutmeg.decision.stance import validate_stance
 
@@ -40,7 +42,10 @@ RETRY_NOTE = (
 # 测试里的假回调仍可只回两元（2026-10-26 Tier 1 #4）
 Claude = Callable[[str, str], tuple]
 TELEMETRY_KEYS = ("model", "duration_s", "input_tokens", "cache_read_input_tokens",
-                  "cache_creation_input_tokens", "output_tokens", "cost_usd")
+                  "cache_creation_input_tokens", "output_tokens", "cost_usd", "num_turns")
+# 研究引用制 / 覆盖门（2026-10-27 P1/P2）：每行再落来源与收敛读数，
+# 日报按它报「带 URL n/m、收敛 k/m」
+SOURCE_KEYS = ("urls_cited", "sites_cited", "probe_ok", "converged", "stop_reason")
 
 # claude CLI 没登录/登录过期：环境问题，不是这场比赛的问题（2026-10-06 launchd 下 OAuth
 # 过期，12 场各试 2 次、各记一份「永久拒绝」，烧掉 24 次预算）。撞到即停整轮，
@@ -86,8 +91,23 @@ def _merge_telemetry(total: dict, meta: dict) -> dict:
     return out
 
 
+def _sources_from_matches(matches: list[dict]) -> dict:
+    """研究引用制读数：done 的行里几场带 URL、几场收敛、轮数合计（P1 验收：带 URL ≥90%）。"""
+    done = [m for m in matches if isinstance(m, dict) and m.get("status") == "done"]
+    turns = [m["num_turns"] for m in done if m.get("num_turns") is not None]
+    return {
+        "done": len(done),
+        "cited": sum(1 for m in done if (m.get("urls_cited") or 0) >= 1),
+        "converged": sum(1 for m in done if m.get("converged")),
+        "stop_reasons": dict(Counter(str(m.get("stop_reason") or "undeclared") for m in done)),
+        "total_num_turns": sum(turns),
+        "avg_num_turns": round(sum(turns) / len(turns), 1) if turns else None,
+    }
+
+
 def _telemetry_from_matches(matches: list[dict]) -> dict:
-    """一天所有 research-run 行 → 汇总 {matches, total_*, by_model}（只数带 cost_usd 的行）。"""
+    """一天所有 research-run 行 → 汇总 {matches, total_*, by_model, sources}
+    （成本只数带 cost_usd 的行）。"""
     rows = [m for m in matches if isinstance(m, dict) and m.get("cost_usd") is not None]
     by_model: dict[str, dict] = {}
     for row in rows:
@@ -103,6 +123,7 @@ def _telemetry_from_matches(matches: list[dict]) -> dict:
         "total_input_tokens": sum(int(r.get("input_tokens") or 0) for r in rows),
         "total_output_tokens": sum(int(r.get("output_tokens") or 0) for r in rows),
         "by_model": by_model,
+        "sources": _sources_from_matches(matches),
     }
 
 
@@ -128,7 +149,7 @@ def _empty_profile(_match_id: str) -> dict:
     return {}
 
 
-def _validate(text: str, leg: dict) -> dict:
+def _validate(text: str, leg: dict, *, retried: bool = False) -> dict:
     from nutmeg.decision.research_intake import intake
 
     # 模型会在 JSON 前后加说明、围栏，偶尔输出两份（周六007/010/014 因此整份被拒）：
@@ -143,6 +164,10 @@ def _validate(text: str, leg: dict) -> dict:
     missing = [key for key in _REQUIRED if key not in doc]
     if missing:
         raise ValueError(f"缺字段 {missing}")
+    # 覆盖门要数「研究员真正答了几题」：归一后缺项与弃权分不开，所以在 soften 前记下
+    raw_rubric = doc.get("rubric") if isinstance(doc.get("rubric"), dict) else {}
+    raw_item_map = raw_rubric.get("items") if isinstance(raw_rubric.get("items"), dict) else {}
+    raw_items = list(raw_item_map)
     if not 1 <= int(doc["confidence"]) <= 5:
         raise ValueError("confidence 不在 1-5")
     stance_notes: list[str] = []
@@ -195,6 +220,8 @@ def _validate(text: str, leg: dict) -> dict:
     errors = [issue.message for issue in intake_result.issues if issue.level == "ERROR"]
     if errors:
         raise ValueError("research intake ERROR: " + "; ".join(errors))
+    # 覆盖门（2026-10-27 P2）：只算三条、只留痕；未收敛不拒收，分析包 §1 标 ◇
+    doc["coverage"] = research_coverage(doc, raw_items=raw_items, retried=retried)
     return doc
 
 
@@ -233,7 +260,7 @@ def _research_one(
                 }
             if return_code != 0:
                 raise ValueError(f"claude 退出码 {return_code}")
-            research = _validate(text, leg)
+            research = _validate(text, leg, retried=RETRY_MARKER in brief)
         except Exception as exc:  # noqa: BLE001
             last_error = str(exc)
             error_signatures.append(f"{last_error}\n{last_text.strip()}")
@@ -384,7 +411,10 @@ def run_day(
     concurrency: int = 2,
     run_id: str | None = None,
     now: Now | None = None,
+    probe: Probe | None = None,
 ) -> dict:
+    """`probe`：研究引用制的回抓（2026-10-27 P1）。None＝不回抓（测试与离线）；CLI 传
+    `research_sources.probe_sources`。回抓结果只写进原件 `evidence_sources.probe`，不影响入库。"""
     current_time = now or (lambda: datetime.now(BJ))
     started_at = current_time()
     resolved_run_id = run_id or f"rr-{uuid4().hex}"
@@ -598,6 +628,14 @@ def run_day(
                     item["captured_at_declared"] = item.get("captured_at")
                     item["captured_at"] = research["captured_at"]
             research["model"] = model_used
+            # 研究引用制（2026-10-27 P1）：来源账 + 可选回抓，落原件；行上留读数给日报
+            sources = attach_sources(research, probe=probe)
+            coverage = research.get("coverage") or {}
+            result["sources_row"] = {
+                "urls_cited": len(sources["urls"]), "sites_cited": len(sources["sites"]),
+                "probe_ok": sources.get("probe_ok"),
+                "converged": coverage.get("converged"), "stop_reason": coverage.get("stop_reason"),
+            }
             output.write_text(
                 json.dumps(research, ensure_ascii=False, indent=1), encoding="utf-8"
             )
@@ -662,6 +700,8 @@ def run_day(
             "model": telemetry.get("model") or model_used,
             # 研究遥测（2026-10-26）：真 CLI 走 json 输出才有；假回调为 None
             **{key: telemetry.get(key) for key in TELEMETRY_KEYS if key != "model"},
+            **{key: None for key in SOURCE_KEYS},
+            **(result.get("sources_row") or {}),
         }
 
     if board is not None:
