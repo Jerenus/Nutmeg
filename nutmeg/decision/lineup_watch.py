@@ -4,7 +4,7 @@
 播报。本模块由 launchd 每 15 分钟跑一次（`com.nutmeg.zucai.lineups`），**只推需要 Jun 动作的事**
 （2026-10-05 原则）：
 
-1. 首发复核：只看有已登记实票的期；票内场在开球前 45–75 分钟内才拉 API-Football 名单，否则
+1. 首发复核：只看有已登记实票的期；票内场在开球前 20–75 分钟内才拉 API-Football 名单，否则
    立刻退出不打网。研究原件里按上下文分成「研究记缺阵」与「研究记在阵」两组人名，只在
    *研究记缺阵的人首发* 或 *研究记在阵的人坐替补* 时推一条（名单上根本找不到的名字不推——
    宁可漏报不误报）。票面该场全包（310）不推。一场一期只推一次。
@@ -30,7 +30,8 @@ from nutmeg.decision.betslip import BetSlip, load_slips
 from nutmeg.decision.bj_time import BJ, aware, parse_bj
 
 ZUCAI_CHANNELS = ("renjiu", "shengfucai")
-LINEUP_WINDOW_MIN = (45, 75)        # 开球前多少分钟内拉名单
+# 开球前多少分钟内拉名单。26150 场 14：02:35 名单未出、下限 45 分在 02:45 关窗漏掉 → 10-27 改 20
+LINEUP_WINDOW_MIN = (20, 75)
 COUNTDOWN_MIN = (30, 10)            # 停售前几分钟各推一次
 SHIFT_THRESHOLD_PP = 3.0            # 票内场位移 ≥ 这个值才推
 FULL_COVER = "310"
