@@ -153,9 +153,14 @@ def bridge_view(data_dir: Path, issue: str, payload: dict, *, slip_id: str = "pr
                        {str(k): v for k, v in (payload.get("cites") or {}).items()},
                        {str(k): v for k, v in (payload.get("outs") or {}).items()},
                        _matrices(data_dir, issue, errors))
-    signed = [str(no) for no in payload.get("signed_bold") or []]
+    # 桥上签的博胆只认票内的单（双 / 包 / 丢的场号一律忽略），带上票面面——记录写明签了什么
+    signed = [{"no": no, "face": f} for no in dict.fromkeys(
+        str(x) for x in payload.get("signed_bold") or [])
+        if len(f := slip.faces.get(no) or "") == 1]
     return slip, {"opening": opening_lines(packet, slip.faces, gates),
-                  "checks": self_checks(packet, slip.faces, pre, signed_bold=signed),
+                  "checks": self_checks(packet, slip.faces, pre,
+                                        signed_bold=[x["no"] for x in signed]),
+                  "signed_bold": signed,
                   "diffs": diffs, "readout": cite_readout(diffs), "gates": gates,
                   "shape": shape_of(slip.faces), "stake": pre["stake"], "p": pre["p"],
                   "main_label": main.get("label"), "errors": errors}
@@ -224,7 +229,8 @@ def register_issue_routes(app: FastAPI, templates) -> None:
     @app.post("/action/bridge")
     def bridge_action(payload: dict = Body(...)) -> Any:  # noqa: B008
         """定稿：登记桥后票 `<期>-B1`（试玩），成功后才写桥记录。只走一次。
-        等价命令：`betslip preview-set --plan` + `betslip register --slip-id <期>-B1 --trial`。"""
+        等价命令：`betslip preview-set --plan` + `betslip register --slip-id <期>-B1 --trial`。
+        `signed_bold`（场号列表）＝桥上签的博胆：只认票内的单，记录里落成 [{no, face}]。"""
         from nutmeg.decision.bridge import append_bridge, bridge_record
         from nutmeg.decision.precheck import register_reviewed
 
@@ -245,7 +251,7 @@ def register_issue_routes(app: FastAPI, templates) -> None:
                 "slip_id": slip.slip_id, "channel": slip.channel,
                 "draft0": _picked(payload.get("draft0")), "faces": slip.faces,
                 "main_label": view["main_label"], "diffs": view["diffs"],
-                "readout": view["readout"], "checks": checks,
+                "readout": view["readout"], "checks": checks, "signed_bold": view["signed_bold"],
                 "deviation": slip.deviation, "prediction": slip.prediction})
         except (KeyError, ValueError) as error:
             return {"ok": False, "error": _error_text(error)}

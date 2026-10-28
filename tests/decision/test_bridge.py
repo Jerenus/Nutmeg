@@ -73,6 +73,18 @@ def test_check2_signed_bold_c_single_passes_from_param_or_sidecar():
     assert _check(self_checks(sidecar, {"9": "3"}, PRE_CLEAN), 2)["ok"] is False
 
 
+def test_check2_signable_lists_singles_unlicensed_without_bridge_signature():
+    packet = _packet(_row("2", "B", 5, 6), _row("4", "B", 4, 6), _row("9", "C", 4, 5),
+                     _row("11", "C", 4, 5), signed_bold=[{"no": "11", "face": "0"}])
+    faces = {"2": "3", "4": "3", "9": "0", "11": "0", "12": "31"}
+    two = _check(self_checks(packet, faces, PRE_CLEAN), 2)
+    assert two["signable"] == [{"no": "4", "face": "3"}, {"no": "9", "face": "0"}]
+    # 桥上签了照样列（开关要留着才能撤签）
+    signed = _check(self_checks(packet, faces, PRE_CLEAN, signed_bold=["4", "9"]), 2)
+    assert signed["ok"] is True and signed["signable"] == two["signable"]
+    assert all("signable" not in c for c in self_checks(packet, faces, PRE_CLEAN) if c["id"] != 2)
+
+
 def test_check2_a_tier_single_is_not_licensed_and_detail_says_why():
     packet = _packet(_row("4", "A", 7, 7))
     two = _check(self_checks(packet, {"4": "3"}, PRE_CLEAN), 2)

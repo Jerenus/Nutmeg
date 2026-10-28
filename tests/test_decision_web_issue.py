@@ -259,3 +259,57 @@ def test_bridge_action_fourteen_matches_is_shengfucai(tmp_path):
 def test_bridge_action_rejects_bad_issue(tmp_path):
     r = _bridge_client(tmp_path).post("/action/bridge", json={**_BRIDGE, "issue": "../x"})
     assert r.status_code == 400
+
+
+# —— 桥上签博胆（§2 胆表：博胆＝C/D 档人群另一边买奖金，每票 ≤1）——
+
+def _two(body: dict) -> dict:
+    return next(c for c in body["checks"] if c["id"] == 2)
+
+
+def test_bridge_preview_signed_bold_turns_check2_green_for_that_single(tmp_path):
+    client = _bridge_client(tmp_path)
+    plain = client.post("/api/bridge/26151/preview", json={"faces": _FACES}).json()
+    assert _two(plain)["ok"] is False and "13·3" in _two(plain)["detail"]
+    assert [x["no"] for x in _two(plain)["signable"]] == ["8", "9", "13"]
+    assert plain["signed_bold"] == []
+    one = client.post("/api/bridge/26151/preview",
+                      json={"faces": _FACES, "signed_bold": ["13"]}).json()
+    assert "13·3 签过的博胆" not in _two(one)["detail"]          # ✗ 只列不许可的单
+    assert "13·3" not in _two(one)["detail"] and "8·3" in _two(one)["detail"]
+    assert [x["no"] for x in _two(one)["signable"]] == ["8", "9", "13"]   # 签了也留着开关
+    every = client.post("/api/bridge/26151/preview",
+                        json={"faces": _FACES, "signed_bold": ["8", "9", "13"]}).json()
+    assert _two(every)["ok"] is True and "13·3 签过的博胆" in _two(every)["detail"]
+
+
+def test_bridge_action_stores_signed_bold_with_ticket_face(tmp_path):
+    from nutmeg.decision.bridge import bridge_record
+
+    client = _bridge_client(tmp_path)
+    body = client.post("/action/bridge", json={**_BRIDGE, "signed_bold": ["13", 9]}).json()
+    assert body["ok"] is True
+    rec = bridge_record(tmp_path / "data", "26151")
+    assert rec["signed_bold"] == [{"no": "13", "face": "3"}, {"no": "9", "face": "3"}]
+    two = {c["id"]: c for c in rec["checks"]}[2]
+    assert two["ok"] is False and "8·3" in two["detail"] and "13·3" not in two["detail"]
+
+
+def test_bridge_signed_bold_ignores_non_singles(tmp_path):
+    from nutmeg.decision.bridge import bridge_record
+
+    client = _bridge_client(tmp_path)
+    # 10 是双、2 是双、1 不在票内：都不算签
+    payload = {"faces": _FACES, "signed_bold": ["10", "2", "1", "13", "13"]}
+    view = client.post("/api/bridge/26151/preview", json=payload).json()
+    assert view["signed_bold"] == [{"no": "13", "face": "3"}]
+    assert client.post("/action/bridge", json={**_BRIDGE, **payload}).json()["ok"] is True
+    assert bridge_record(tmp_path / "data", "26151")["signed_bold"] == [{"no": "13", "face": "3"}]
+
+
+def test_bridge_action_without_signatures_stores_empty_list(tmp_path):
+    from nutmeg.decision.bridge import bridge_record
+
+    client = _bridge_client(tmp_path)
+    assert client.post("/action/bridge", json=_BRIDGE).json()["ok"] is True
+    assert bridge_record(tmp_path / "data", "26151")["signed_bold"] == []

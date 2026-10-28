@@ -6,6 +6,7 @@
   --muted:#565E66; --sub:#3A4148; --show:#7A828A; --focus:#EEF2FD; --coin-bg:#FAFAF8;
   --veto:#B23A0E; --veto-bg:#FBEDE6; --ok:#17734A; --ok-bg:#E6F2EB; --link:#2348C9;
   --drawer:#F7F8F5; --drawer-line:#C9CDC6; --cited:#EEF2FD; --on-link:#FFFFFF; --on-veto:#FFFFFF;
+  --warn:#8A5300; --warn-bg:#FBF1DE;
   --sans:"Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
   display:block; max-width:1360px; margin:0 auto; padding:28px 24px 64px;
@@ -17,12 +18,14 @@
   --muted:#9AA2AA; --sub:#B7BEC4; --show:#8A929A; --focus:#1C2540; --coin-bg:#16191C;
   --veto:#F08A63; --veto-bg:#3A1D12; --ok:#5CC793; --ok-bg:#16301F; --link:#8EA6F5;
   --drawer:#15191C; --drawer-line:#3A4148; --cited:#1C2540; --on-link:#111417; --on-veto:#111417;
+  --warn:#E9B565; --warn-bg:#33260F;
 }}
 :root[data-theme="dark"] .issue{
   --ink:#E4E7E3; --ground:#111417; --paper:#1A1E22; --line:#2E343A; --line-soft:#24292E;
   --muted:#9AA2AA; --sub:#B7BEC4; --show:#8A929A; --focus:#1C2540; --coin-bg:#16191C;
   --veto:#F08A63; --veto-bg:#3A1D12; --ok:#5CC793; --ok-bg:#16301F; --link:#8EA6F5;
   --drawer:#15191C; --drawer-line:#3A4148; --cited:#1C2540; --on-link:#111417; --on-veto:#111417;
+  --warn:#E9B565; --warn-bg:#33260F;
 }
 body:has(> .issue){background:#F3F4F1}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) body:has(> .issue){background:#111417}}
@@ -194,6 +197,11 @@ body:has(> .issue){background:#F3F4F1}
   font-family:inherit; font-size:14px; width:100%; min-width:0}
 .issue .b-input:focus-visible{outline:2px solid var(--link); outline-offset:1px}
 
+/* ② 签博胆：开关挂在 ② 框里；签 >1 条只警告（琥珀），不拦定稿 */
+.issue .b-signs{display:flex; flex-direction:column; gap:6px; padding-left:38px}
+.issue .b-signs-note{font-size:12px; color:var(--muted)}
+.issue .b-warn{padding:8px 12px; border:1px solid var(--warn); background:var(--warn-bg); color:var(--warn); border-radius:4px; font-size:13px; font-weight:700}
+
 /* 差异格表 */
 .issue .b-diff{border:1px solid var(--line); border-radius:6px; min-width:0}
 .issue .b-diff-scroll{overflow-x:auto}
@@ -239,6 +247,6 @@ body:has(> .issue){background:#F3F4F1}
   .issue .b-col{flex-basis:100%}
   .issue .b-open-row{flex-direction:column; gap:0}
   .issue .b-open-label{flex:none}
-  .issue .b-why,.issue .b-why-done{padding-left:0}
+  .issue .b-why,.issue .b-why-done,.issue .b-signs{padding-left:0}
   .issue .b-actions .btn{flex:1 1 100%}
 }

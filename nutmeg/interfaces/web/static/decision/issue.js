@@ -14,11 +14,15 @@
   const MARK = { veto: "⛔", warn: "⚠️", info: "ℹ️" };
   const COLS = ["场", "对阵", "档", "胜 · 平 · 负", "条件", "翻车面", "机器默认", "死门 P", "首发"];
   // cites：{场号: 矩阵行号 k | "out"}——抽屉「引用」写行号，桥上「矩阵外」写 "out"，定稿随桥记录落盘
-  // mode：draft（默认）→ bridge（进桥时记 draft0）→ walked（B1 已登记；/api/issue 带 bridge 时直接进）
+  // mode：draft（默认）→ bridge（进桥时记 draft0；「回草案」退回 draft，再进桥另记 draft0）
+  //       → walked（B1 已登记；/api/issue 带 bridge 时直接进）
+  // signed：{场号: true}＝桥上签的博胆；只对票内的单有效——该场改成双 / 包 / 丢即自动撤签。
+  // cites / outs / whys / signed / deviation / prediction 只在内存里，来回进出桥都不丢。
   const state = {
     data: null, picks: {}, open: null, review: null, seq: 0, pending: false, cites: {},
     mode: "draft", draft0: null, bview: null, bpending: false, bseq: 0, outs: {}, whys: {},
-    deviation: "", prediction: "", record: null, registered: null, berror: "", submitting: false,
+    signed: {}, deviation: "", prediction: "", record: null, registered: null, berror: "",
+    submitting: false,
   };
   // 偏离理由封闭枚举 = betslip_diagnosis.DEVIATION_REASONS；空串也收（账上记「偏离初稿未登记理由」）
   const DEVIATIONS = [["fact_self_judged", "自判事实"], ["price_instinct", "价格直觉"],
@@ -95,11 +99,18 @@
   }
 
   // ---- 选面 → 审票 -----------------------------------------------------
+  const isSingle = (no) => (state.picks[no] || "").length === 1;
+  const signedNos = () => Object.keys(state.signed).filter(isSingle).sort((a, b) => Number(a) - Number(b));
+  function pruneSigned() {                 // 博胆只签单：改成双 / 包 / 丢就撤签
+    for (const no of Object.keys(state.signed)) if (!isSingle(no)) delete state.signed[no];
+  }
+
   function toggle(no, k) {
     const cur = new Set(state.picks[no] || "");
     if (cur.has(k)) cur.delete(k); else cur.add(k);
     const faces = FACES.filter((f) => cur.has(f)).join("");
     if (faces) state.picks[no] = faces; else delete state.picks[no];
+    pruneSigned();
     render();
     review();
     bridgeRefresh();
@@ -108,6 +119,7 @@
   function setPicks(faces) {
     state.picks = {};
     for (const [no, f] of Object.entries(faces || {})) if (f) state.picks[String(no)] = String(f);
+    pruneSigned();
     render();
     review();
     bridgeRefresh();
@@ -516,7 +528,8 @@
     setBridgeStatus();
     btimer = setTimeout(async () => {
       const body = await postJSON(`/api/bridge/${encodeURIComponent(issue)}/preview`,
-        { faces: { ...state.picks }, cites: { ...state.cites }, outs: outsFor() }, "桥对照接口");
+        { faces: { ...state.picks }, cites: { ...state.cites }, outs: outsFor(), signed_bold: signedNos() },
+        "桥对照接口");
       if (seq !== state.bseq || state.mode !== "bridge") return;   // 过期回应丢掉
       state.bpending = false;
       if (body.ok) {
@@ -527,6 +540,28 @@
       }
       renderBridge();
     }, 150);
+  }
+
+  function backToDraft() {                // 回草案：什么都没写，服务端无可清；再进桥另记 draft0
+    if (state.mode !== "bridge" || state.submitting) return;
+    clearTimeout(btimer);
+    state.bseq++;                          // 在途的对照一律丢掉
+    state.bpending = false;
+    state.mode = "draft";
+    state.draft0 = null;
+    state.bview = null;
+    state.berror = "";
+    renderBridge();
+    if (goBtn) goBtn.focus({ preventScroll: true });
+    const acts = document.getElementById("actions");
+    if (acts && typeof acts.scrollIntoView === "function") acts.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+
+  function toggleSign(no) {
+    if (state.signed[no]) delete state.signed[no];
+    else if (isSingle(no)) state.signed[no] = true;
+    renderBridge();
+    bridgeRefresh();
   }
 
   let statusEl = null;
@@ -551,7 +586,8 @@
     }
     const payload = {
       issue, draft0: { ...(state.draft0 || {}) }, faces: { ...state.picks }, cites: { ...state.cites },
-      outs: outsFor(), whys, deviation: state.deviation, prediction: state.prediction.trim(),
+      outs: outsFor(), whys, signed_bold: signedNos(), deviation: state.deviation,
+      prediction: state.prediction.trim(),
     };
     const body = await postJSON("/action/bridge", payload, "定稿接口");
     state.submitting = false;
@@ -570,6 +606,7 @@
       at: body.at, slip_id: `${issue}-B1`, draft0: payload.draft0, faces: payload.faces,
       main_label: v.main_label, diffs: v.diffs || [], readout: body.readout,
       checks: (v.checks || []).map((c) => (whys[c.id] ? { ...c, why: whys[c.id] } : c)),
+      signed_bold: payload.signed_bold.map((no) => ({ no, face: payload.faces[no] })),
       deviation: payload.deviation, prediction: payload.prediction,
     };
     state.registered = { summary: body.summary, lines: body.lines || [] };
@@ -639,6 +676,7 @@
       body.append(el("span", "b-check-title", `${c.id} · ${c.title}`), el("span", "b-check-detail", c.detail));
       line.append(mark, body);
       box.append(line);
+      if (c.id === 2 && editable && (c.signable || []).length) box.append(signBox(c.signable));
       if (!c.ok && editable) {
         const why = el("label", "b-why");
         why.append(el("span", null, "我为什么仍然这样（停售前写，赛后对账）"),
@@ -651,6 +689,32 @@
       sec.append(box);
     }
     return sec;
+  }
+
+  // ② 里的「签为博胆」：服务端列的不许可单（signable）各一个开关；签 >1 条只警告不拦
+  function signBox(signable) {
+    const box = el("div", "b-signs");
+    box.append(el("span", "b-signs-note", "C/D 档人群另一边买奖金的单可签为博胆；签了 ② 就算它有许可"));
+    const row = el("div", "b-tools");
+    for (const s of signable) {
+      const no = String(s.no);
+      const on = Boolean(state.signed[no]);
+      const label = `${no}·${state.picks[no] || s.face}`;
+      const tog = button("b-btn sign" + (on ? " on" : ""), on ? `${label} 已签博胆` : `${label} 签为博胆`,
+        () => toggleSign(no));
+      tog.dataset.focus = `b-sign-${no}`;
+      tog.setAttribute("aria-pressed", String(on));
+      tog.setAttribute("aria-label", `把场 ${label} 签为博胆`);
+      row.append(tog);
+    }
+    box.append(row);
+    const n = signedNos().length;
+    if (n > 1) {
+      const warn = el("p", "b-warn", `每票博胆 ≤1（§3a ③）：已签 ${n} 条`);
+      warn.setAttribute("role", "status");
+      box.append(warn);
+    }
+    return box;
   }
 
   function reasonNode(d) {
@@ -786,11 +850,15 @@
     const copy = button("btn", `再想改就照抄主形 ${main}`, () => mainShape && setPicks(mainShape.faces));
     copy.dataset.focus = "b-copy";
     copy.disabled = !mainShape || !mainShape.faces || state.submitting;
+    const back = button("btn", "回草案（不登记）", backToDraft);
+    back.dataset.focus = "b-back";
+    back.disabled = state.submitting;
+    back.setAttribute("aria-label", "回到草案继续改，不登记；已写的理由和签名都保留");
     const notes = [];
     if (fails) notes.push(`五条自检 ✗ ${fails} 条——不拦定稿，写的「为什么」随桥记录入账`);
     if (!state.deviation) notes.push("未选偏离理由：照样可登记，账上记「偏离初稿未登记理由」");
     notes.push("⛔ 只表示审票不同意；登记永远可以，否决会随票入账。桥只走一次。");
-    acts.append(fin, copy, el("span", "foot", notes.join("；")));
+    acts.append(fin, copy, back, el("span", "foot", notes.join("；")));
     host.append(acts);
   }
 
@@ -813,6 +881,8 @@
     right.append(sectionTitle("§3b 差异格 · 和主形不同的格"), diffTable(rec.diffs, false), readoutLine(rec.readout));
     cols.append(checksList(rec.checks, false), right);
     host.append(cols);
+    const bold = (rec.signed_bold || []).map((x) => `${x.no}·${x.face}`);
+    if (bold.length) host.append(el("p", "b-dev-done", `签了博胆：${bold.join("、")}`));
     const dev = (DEVIATIONS.find(([code]) => code === rec.deviation) || [null, null])[1];
     host.append(el("p", "b-dev-done", `偏离理由：${dev || (rec.deviation || "未选")} · 预测：${rec.prediction || "没写"}`),
       el("p", "foot", "表仍可改；之后登记的实票由账房在 §5⑪ 和 B1 逐格比，页面不另记。"));

@@ -10,6 +10,7 @@ Jun 拿 A 三屏出一版草案，机器对照一次，他改一次，登记桥�
   字段，本阶段不判，detail 写明。
 - ② 单的许可：单选场 `n == 6 and k >= 5` 才算许可；不在 `signed_bold`（旁车 + 桥上本次签的）里
   的其余单 → ✗。C 档（n=5）的单按定义是博胆；A 档七项口径未定，按不许可处理并在 detail 写明。
+  `signable` 列出不靠桥上签名就不许可的单——页面在这些单旁放「签为博胆」开关。
 - ③ 博胆 ≤1 / 包只给硬币：**只读** `precheck` 的 `verdicts` 里 `code == "V5"` 的行
   （`review.structure_notes`），有就 ✗，detail 原样抄 V5 文字——不自算。
 - ④ 跨票：读 `verdicts` 里 `code == "V2"` 的行（共享裸单 / 共享排除面，含与已购票）；
@@ -91,7 +92,8 @@ def _license(row: dict | None, no: str, face: str, signed) -> tuple[bool, str]:
 
 def self_checks(packet: dict, faces: dict[str, str], pre: dict, *,
                 signed_bold: list[str] = ()) -> list[dict]:
-    """→ [{id: 1..5, ok: bool, title, detail}]。pre＝precheck() 的输出。"""
+    """→ [{id: 1..5, ok: bool, title, detail}]；② 另带 `signable: [{no, face}]`
+    （桥上可签为博胆的单）。pre＝precheck() 的输出。"""
     rows, ticket = _rows(packet), _ticket(faces)
     order = sorted(ticket, key=int)
 
@@ -99,12 +101,15 @@ def self_checks(packet: dict, faces: dict[str, str], pre: dict, *,
     note = "「无机制 C 档」旁车无可机读字段，本条不判"
     one = (not coins, ("票内 D 档：" + "、".join(coins) if coins else "票内无 D 档") + f"；{note}")
 
-    signed = _signed(packet, signed_bold)
-    singles = [_license(rows.get(no), no, ticket[no], signed) for no in order
-               if len(ticket[no]) == 1]
+    signed, sidecar = _signed(packet, signed_bold), _signed(packet, ())
+    solo = [no for no in order if len(ticket[no]) == 1]
+    singles = [_license(rows.get(no), no, ticket[no], signed) for no in solo]
     bad = [text for ok, text in singles if not ok]
     two = (not bad, ("不许可的单：" + "、".join(bad)) if bad
            else ("单都有许可：" + "、".join(t for _, t in singles) if singles else "票内无单"))
+    # 桥上能签的博胆：不靠桥上签名就不许可的单（旁车已签的不再列）
+    signable = [{"no": no, "face": ticket[no]} for no in solo
+                if not _license(rows.get(no), no, ticket[no], sidecar)[0]]
 
     verdicts = pre.get("verdicts") or []
     v5 = [v["text"] for v in verdicts if v.get("code") == "V5"]
@@ -117,8 +122,10 @@ def self_checks(packet: dict, faces: dict[str, str], pre: dict, *,
               if str(x).startswith("⛔") and ("刹车" in x or "日帽" in x)]
     five = (not brakes, "；".join(brakes) if brakes else "帽内")
 
-    return [{"id": i, "ok": ok, "title": TITLES[i], "detail": detail}
-            for i, (ok, detail) in enumerate((one, two, three, four, five), start=1)]
+    out = [{"id": i, "ok": ok, "title": TITLES[i], "detail": detail}
+           for i, (ok, detail) in enumerate((one, two, three, four, five), start=1)]
+    out[1]["signable"] = signable
+    return out
 
 
 def opening_lines(packet: dict, faces: dict[str, str], gates: list[dict]) -> list[dict]:
