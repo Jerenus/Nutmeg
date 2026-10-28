@@ -2,6 +2,9 @@
 
 §3 桥（2026-10-28 第 3 阶段）：`/api/bridge/{期}/preview` 只读；`/action/bridge` 登记桥后票
 `<期>-B1`（试玩）再写 `zucai/<期>-bridge.jsonl`——登记失败不写桥记录，只走一次由桥记录守。
+
+500 票面（第 4 阶段）：先照抄录卡在 500 app 下单，再登记实票。`/api/issue/{期}/slip500` 只算不写；
+`/action/issue/{期}/register` 登记 `<期>-T<n>`（实购，票号由 `betslip.next_slip_id` 分配）。
 """
 from __future__ import annotations
 
@@ -62,6 +65,44 @@ def _matrices(data_dir: Path, issue: str, errors: list[str]) -> dict[str, dict]:
         return {}
 
 
+def _names(data_dir: Path, issue: str, matrices: dict[str, dict]) -> dict[str, str]:
+    """{场号: 主-客}（1–14 全有键）：期次文件优先，缺则反证矩阵（legs-base）的名字。"""
+    from nutmeg.decision.lineup_watch import issue_doc, match_names
+
+    doc = issue_doc(data_dir, issue)
+    names = {no: f"{t[0]}-{t[1]}" for no, t in match_names(doc).items()} if doc else {}
+    return {str(i): names.get(str(i)) or (matrices.get(str(i)) or {}).get("name", "")
+            for i in range(1, 15)}
+
+
+def _multiplier(raw) -> int:
+    try:
+        value = int(1 if raw in (None, "") else raw)
+    except (TypeError, ValueError):
+        value = 0
+    if not 1 <= value <= 99:
+        raise ValueError("倍数须为 1–99 的整数")
+    return value
+
+
+def _sale_ticket(data_dir: Path, issue: str, payload: dict, *, slip_id: str, deviation: str = "",
+                 prediction: str = "", scheme_no: str = ""):
+    """500 下单的那张票（实购）：9 场＝任九、14 场＝胜负彩，其它场数不成票。不写文件。"""
+    from nutmeg.decision.betslip import RENJIU_PICK, SFC_MATCHES, format_faces_row, parse_faces_row
+    from nutmeg.decision.precheck import build_slip
+
+    picked = _picked(payload.get("faces"))
+    faces = parse_faces_row(format_faces_row(picked)) if picked else {}
+    channel = {RENJIU_PICK: "renjiu", SFC_MATCHES: "shengfucai"}.get(len(faces))
+    if channel is None:
+        raise ValueError(f"任九要 {RENJIU_PICK} 场、胜负彩要 {SFC_MATCHES} 场"
+                         f"（已选 {len(faces)} 场）")
+    return build_slip(slip_id=slip_id, channel=channel, placed_at=_today_bj(),
+                      faces=format_faces_row(faces), issue=issue,
+                      multiplier=_multiplier(payload.get("multiplier")), scheme_no=scheme_no,
+                      trial=False, deviation=deviation, prediction=prediction, data_dir=data_dir)
+
+
 def _zucai_gates(slip) -> list[dict]:
     """死法清单前五门（slip 腿上的 fair）。"""
     from nutmeg.decision.slip_group import death_list, is_coin
@@ -94,7 +135,6 @@ def issue_payload(data_dir: Path, issue: str, *, today: _date) -> dict:
     from nutmeg.decision.bankroll import issue_brake
     from nutmeg.decision.bridge import bridge_record
     from nutmeg.decision.files import read_json
-    from nutmeg.decision.lineup_watch import issue_doc, match_names
     from nutmeg.decision.packet_doc import load_packet
     from nutmeg.decision.precheck import brake_line, month_brake
     from nutmeg.decision.review_runner import issue_market
@@ -107,15 +147,14 @@ def issue_payload(data_dir: Path, issue: str, *, today: _date) -> dict:
     draft = read_json(Path(data_dir) / "zucai" / f"{issue}-draft.json", None)
     if draft is None:
         errors.append(f"缺 {issue}-draft.json（judgment draft --write 未跑）")
-    doc = issue_doc(data_dir, issue)
-    names = {no: f"{t[0]}-{t[1]}" for no, t in match_names(doc).items()} if doc else {}
+    names = _names(data_dir, issue, matrices)
     # 止损块与 CLI 预审同一份「实质余量」（待结实购票按全损计）
     state = month_brake(data_dir, today.isoformat())
     matches = []
     for i in range(1, 15):
         no = str(i)
         matrix = matrices.get(no)
-        matches.append({"no": no, "name": names.get(no) or (matrix or {}).get("name", ""),
+        matches.append({"no": no, "name": names[no],
                         "fair": market.get(no), "packet": packet["by_no"].get(no),
                         "matrix": matrix})
     return {"issue": issue, "matches": matches, "default": packet["default"],
@@ -257,3 +296,62 @@ def register_issue_routes(app: FastAPI, templates) -> None:
             return {"ok": False, "error": _error_text(error)}
         return {"ok": True, "at": bridge_record(data_dir, issue)["at"],
                 "summary": done["summary"], "lines": done["lines"], "readout": view["readout"]}
+
+    @app.post("/api/issue/{issue}/slip500")
+    def slip500_api(issue: str, payload: dict = Body(...)) -> Any:  # noqa: B008
+        """抄录卡：14 格（场号 · 简称 · 面）+ 位置式 / 点名式两行 + 注数金额。只算不写——
+        注数金额就是登记时那张票的 `notes / stake_yuan`，与 precheck 同源。"""
+        from nutmeg.decision.betslip import format_faces_row
+
+        data_dir = app.state.data_dir
+        _check_issue(issue)
+        try:
+            slip = _sale_ticket(data_dir, issue, payload, slip_id="preview")
+            row = format_faces_row(slip.faces)
+            notes, stake = slip.notes, slip.stake_yuan
+        except (KeyError, ValueError) as error:   # BetslipError 是 ValueError
+            return {"ok": False, "error": _error_text(error)}
+        names = _names(data_dir, issue, _matrices(data_dir, issue, []))
+        cells = [{"no": no, "name": names[no], "token": token}
+                 for no, token in zip(names, row.split(), strict=True)]
+        named = " ".join(f"{no}·{f}" for no, f in sorted(slip.faces.items(),
+                                                          key=lambda kv: int(kv[0])))
+        return {"ok": True, "faces_row": row, "named": named, "cells": cells,
+                "notes": notes, "stake": stake}
+
+    @app.post("/action/issue/{issue}/register")
+    def register_action(issue: str, payload: dict = Body(...)) -> Any:  # noqa: B008
+        """「我已在 500 下单」→ 登记实票 `<期>-T<n>`（实购）。等价命令：
+        `betslip register --slip-id <期>-T<n> --faces … --multiplier … --scheme-no …`。
+        偏离理由与预测都没写、本期走过桥 → 沿用桥记录的（同一判断的延续）。否决只记码不拦登记。"""
+        from nutmeg.decision.betslip import format_faces_row, load_slips, next_slip_id
+        from nutmeg.decision.bridge import bridge_ledger, bridge_record
+        from nutmeg.decision.precheck import register_reviewed
+
+        data_dir = app.state.data_dir
+        _check_issue(issue)
+        deviation = str(payload.get("deviation") or "").strip()
+        prediction = str(payload.get("prediction") or "").strip()
+        record = bridge_record(data_dir, issue)
+        if record is not None and not deviation and not prediction:
+            deviation = str(record.get("deviation") or "")
+            prediction = str(record.get("prediction") or "")
+        try:
+            slip = _sale_ticket(data_dir, issue, payload, slip_id=next_slip_id(data_dir, issue),
+                                deviation=deviation, prediction=prediction,
+                                scheme_no=str(payload.get("scheme_no") or "").strip())
+            done = register_reviewed(slip, data_dir)
+        except (KeyError, ValueError) as error:   # 偏离理由不在封闭枚举里也在登记之前挡回
+            return {"ok": False, "error": _error_text(error)}
+        saved = next(s for s in load_slips(data_dir, issue=issue) if s.slip_id == slip.slip_id)
+        review = saved.diagnosis.get("review") or {}
+        changed = None
+        if record is not None:   # 跨渠道（胜负彩对任九 B1）不比，bridge_ledger 不出这张 → null
+            changed = next((r["changed"] for r in bridge_ledger(data_dir, issue)["real"]
+                            if r["slip_id"] == saved.slip_id), None)
+        return {"ok": True, "slip_id": saved.slip_id, "summary": done["summary"],
+                "lines": done["lines"], "faces_row": format_faces_row(saved.faces),
+                "notes": saved.notes, "stake": saved.stake_yuan, "multiplier": saved.multiplier,
+                "codes": list(review.get("codes") or []), "vetoed": bool(review.get("vetoed")),
+                "after_kickoff": done["after_kickoff"], "brake_line": done["brake_line"],
+                "b1_changed": changed}

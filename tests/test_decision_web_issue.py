@@ -313,3 +313,122 @@ def test_bridge_action_without_signatures_stores_empty_list(tmp_path):
     client = _bridge_client(tmp_path)
     assert client.post("/action/bridge", json=_BRIDGE).json()["ok"] is True
     assert bridge_record(tmp_path / "data", "26151")["signed_bold"] == []
+
+
+# —— 第 4 阶段：500 抄录卡（只算不写）+ 登记实票 <期>-T<n> ——
+
+def test_register_twice_gives_t1_then_t2_both_purchased(tmp_path):
+    from nutmeg.decision.betslip import load_slips
+
+    client = _client(tmp_path)
+    one = client.post("/action/issue/26151/register", json={"faces": _FACES}).json()
+    two = client.post("/action/issue/26151/register",
+                      json={"faces": _FACES, "multiplier": 2, "scheme_no": "S-2"}).json()
+    assert one["ok"] is True and one["slip_id"] == "26151-T1"
+    assert two["ok"] is True and two["slip_id"] == "26151-T2"
+    assert "26151-T1" in one["summary"] and "试玩" not in one["summary"]
+    assert one["notes"] == 64 and one["stake"] == 128 and one["multiplier"] == 1
+    assert two["stake"] == 256 and two["multiplier"] == 2
+    assert one["faces_row"].split()[12] == "3"
+    assert isinstance(one["codes"], list) and isinstance(one["vetoed"], bool)
+    assert one["b1_changed"] is None and one["brake_line"] and isinstance(one["lines"], list)
+    slips = {s.slip_id: s for s in load_slips(tmp_path / "data", issue="26151")}
+    assert set(slips) == {"26151-T1", "26151-T2"}
+    assert all(s.purchased for s in slips.values())
+    assert all(s.channel == "renjiu" for s in slips.values())
+    assert slips["26151-T2"].scheme_no == "S-2" and slips["26151-T2"].multiplier == 2
+    # 回执里的码来自落盘那张票的审票记录，不另算
+    assert one["codes"] == slips["26151-T1"].diagnosis["review"]["codes"]
+
+
+def test_register_fourteen_is_shengfucai(tmp_path):
+    faces = {str(i): _FACES.get(str(i), "3") for i in range(1, 15)}
+    body = _client(tmp_path).post("/action/issue/26151/register", json={"faces": faces}).json()
+    assert body["ok"] is True and body["slip_id"] == "26151-T1" and "胜负彩" in body["summary"]
+
+
+def test_register_wrong_pick_count_is_error_and_writes_nothing(tmp_path):
+    client = _client(tmp_path)
+    eight = dict(list(_FACES.items())[:8])
+    ten = {**_FACES, "1": "3"}
+    for faces, n in ((eight, 8), (ten, 10)):
+        body = client.post("/action/issue/26151/register", json={"faces": faces}).json()
+        assert body == {"ok": False, "error": f"任九要 9 场、胜负彩要 14 场（已选 {n} 场）"}
+    assert not (tmp_path / "data" / "betslips.jsonl").exists()
+
+
+def test_register_multiplier_out_of_range_is_error(tmp_path):
+    client = _client(tmp_path)
+    for bad in (0, 100, "x"):
+        body = client.post("/action/issue/26151/register",
+                           json={"faces": _FACES, "multiplier": bad}).json()
+        assert body["ok"] is False and "倍" in body["error"]
+    assert not (tmp_path / "data" / "betslips.jsonl").exists()
+
+
+def test_register_rejects_bad_issue(tmp_path):
+    r = _client(tmp_path).post("/action/issue/2615x/register", json={"faces": _FACES})
+    assert r.status_code == 400
+
+
+def test_register_inherits_bridge_reasons_and_reports_b1_changed(tmp_path):
+    from nutmeg.decision.betslip import load_slips
+    from nutmeg.decision.bridge import bridge_ledger
+
+    client = _bridge_client(tmp_path)
+    data = tmp_path / "data"
+    assert client.post("/action/bridge", json=_BRIDGE).json()["ok"] is True
+    body = client.post("/action/issue/26151/register", json={"faces": _MAIN}).json()
+    assert body["ok"] is True and body["slip_id"] == "26151-T1"   # B1 不占 T 号
+    slip = {s.slip_id: s for s in load_slips(data, issue="26151")}["26151-T1"]
+    assert slip.deviation == "fact_self_judged" and slip.prediction == "场 10 开平"
+    real = {r["slip_id"]: r["changed"] for r in bridge_ledger(data, "26151")["real"]}
+    assert body["b1_changed"] == real["26151-T1"] == ["10"]
+
+
+def test_register_own_reasons_override_bridge(tmp_path):
+    from nutmeg.decision.betslip import load_slips
+
+    client = _bridge_client(tmp_path)
+    assert client.post("/action/bridge", json=_BRIDGE).json()["ok"] is True
+    body = client.post("/action/issue/26151/register",
+                       json={"faces": _FACES, "prediction": "我自己的一句"}).json()
+    assert body["ok"] is True and body["b1_changed"] == []
+    slip = {s.slip_id: s for s in load_slips(tmp_path / "data")}["26151-T1"]
+    assert slip.prediction == "我自己的一句" and slip.deviation == ""
+
+
+def test_register_over_stop_loss_carries_stop_code(tmp_path):
+    """止损已触发（待结实购票按全损计）：照登记，审票码记 STOP——否决不拦登记。"""
+    client = _client(tmp_path)
+    big = client.post("/action/issue/26151/register",
+                      json={"faces": _FACES, "multiplier": 99}).json()
+    assert big["ok"] is True and big["stake"] == 128 * 99    # ¥12,672 待结 > 止损线
+    body = client.post("/action/issue/26151/register", json={"faces": _FACES}).json()
+    assert body["ok"] is True and body["slip_id"] == "26151-T2"
+    assert "STOP" in body["codes"] and body["vetoed"] is True
+    assert body["brake_line"].startswith("⛔")
+
+
+def test_slip500_writes_nothing_and_matches_precheck_arithmetic(tmp_path):
+    from nutmeg.decision.betslip import format_faces_row
+
+    client = _client(tmp_path)
+    before = _files(tmp_path / "data")
+    body = client.post("/api/issue/26151/slip500", json={"faces": _FACES, "multiplier": 3}).json()
+    assert body["ok"] is True
+    assert body["faces_row"] == format_faces_row(_FACES)
+    assert body["notes"] == 64 and body["stake"] == 128 * 3
+    assert body["named"] == "2·31 4·10 5·10 7·31 8·3 9·3 10·31 12·10 13·3"
+    assert len(body["cells"]) == 14
+    assert body["cells"][0] == {"no": "1", "name": "甲1-乙1", "token": "*"}
+    assert body["cells"][12] == {"no": "13", "name": "甲13-乙13", "token": "3"}
+    assert _files(tmp_path / "data") == before
+    pre = client.post("/api/precheck", json={"channel": "renjiu", "issue": "26151",
+                                             "faces": _FACES, "multiplier": 3}).json()
+    assert (pre["notes"], pre["stake"]) == (body["notes"], body["stake"])
+
+
+def test_slip500_wrong_pick_count_is_error(tmp_path):
+    body = _client(tmp_path).post("/api/issue/26151/slip500", json={"faces": {"1": "3"}}).json()
+    assert body == {"ok": False, "error": "任九要 9 场、胜负彩要 14 场（已选 1 场）"}

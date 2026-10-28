@@ -1166,6 +1166,32 @@ def bridge_ledger(data_dir: Path, issue: str) -> dict:
 - **不做**：截图回传仍走 Telegram / 会话（截图＝实购的规则在那边），页面不接上传。
 - **验收**：`test_register_returns_faces_row`；`test_register_after_kickoff_flag`（`placed_at` 晚于 `first_kickoff` 时返回 `after_kickoff: true`，页面显示「补写」）。
 
+#### 第 4 阶段细计划（2026-10-28 开工）
+
+**顺序改正**：画布把 500 抄录卡画在登记之后，但真实顺序是 **先照卡在 500 app 下单 → 再登记实票**（登记＝「已经买了」，宪法 §6「没入账=没打」；先登记后不买会让账多一张）。所以：
+- 抄录卡在票面成形（任九 9 场 / 胜负彩 14 场）时就显示，不等登记；
+- 登记按钮写「我已在 500 下单 · 登记实票 <期>-T<n>」，登记后出回执。
+
+**`register_slip` 是同 slip_id 覆盖**，所以票号必须服务端分配：`betslip.next_slip_id(data_dir, issue) -> "<期>-T<n>"`（n＝本期已有 `-T<k>` 的最大 k + 1，B1 不算）。
+
+##### Task 4.1：登记路由 + 票号
+
+- `nutmeg/decision/betslip.py`：`next_slip_id(data_dir, issue)`；测试：空登记簿 → `T1`；已有 T1、T3、B1 → `T4`。
+- `nutmeg/interfaces/decision_web_issue.py`：`POST /action/issue/{期}/register` body `{faces, multiplier?, scheme_no?, deviation?, prediction?}`：
+  1. 渠道按场数（9 → renjiu，14 → shengfucai，其它 → 错误「任九 9 场 / 胜负彩 14 场」）；
+  2. `slip_id = next_slip_id(...)`，`build_slip(..., trial=False)` → `register_reviewed`；
+  3. 返回 `{ok, slip_id, summary, lines, faces_row, notes, stake, multiplier, codes（diagnosis.review.codes）, vetoed, after_kickoff, brake_line, b1_changed}`，`b1_changed`＝本期有桥时 `bridge_ledger` 里这张票的改动格，否则 `null`；
+  4. 偏离理由缺省时，若本期走过桥，沿用桥记录的 `deviation/prediction`（同一判断的延续），否则留空（账上记「偏离初稿未登记理由」）。
+- `POST /api/issue/{期}/slip500` body `{faces, multiplier?}` → `{ok, faces_row, named, cells: [{no, name, token}], notes, stake}`：只算不写，抄录卡用（注数/金额与 `precheck` 同源，不另算）。
+- 测试：登记两次得 T1、T2 且都 `purchased: true`；>9 / <9 场的任九报错不落盘；沿用桥理由；`slip500` 不写文件且 `faces_row` 与 `format_faces_row` 相同；`b1_changed` 与 `bridge_ledger` 一致。
+
+##### Task 4.2：抄录卡 + 登记 + 回执（前端）
+
+- 抄录卡（侧栏草案卡下方，或桥面板之后，票面成形时显示）：14 格（场号 · 简称 · 面，`*` 灰），位置式行 + 复制，点名式行 + 复制（`navigator.clipboard`，失败显示「手动选中」），「500 确认页必须显示 N 注 · ¥X · M 倍——对不上＝抄错了，别付款」，倍数输入（1–99，改了重算）。
+- 登记块：方案号（选填）、偏离理由（桥走过时预填桥里的）、一句预测，按钮「我已在 500 下单 · 登记实票 <期>-T<n>」（按下后禁用防重复）。
+- 回执：`summary`、审票码（⛔ 朱红；`STOP/BRAKE/DAYCAP/V*`）、`after_kickoff` → 「理由写于开球后：照记，不进理由净值」、与 B1 改了哪几格、首发复核（票内 `lineup_before_close` 的场）、「截图发回 → 记实购（截图＝实购）」。可以继续登记下一张（T<n+1>），每张一份回执。
+- 全部 `textContent`；按钮 ≥44px；375px 单列，14 格在窄屏折成 7×2。
+
 ### 第 5 阶段：竞彩当日板 `/jczq/{日}`
 
 - **数据**：`GET /api/jczq/{日}` = `jczq_brief(data_dir, day)` 的行（表态 / 旗 / 损耗 / 关注度 / 一句话）+ `jczq_rows` 的 `leg.fair` + `jczq/daily/<日>/sporttery_markets.json` 经 `sporttery_board.selling_rows` 取 had/hhad SP 与单关开否 + 开球时刻（已开球行禁点）。**不得**在路由里再读一遍 legs-base——`board_rows` 受单一实现守卫。
