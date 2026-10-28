@@ -51,66 +51,20 @@ def _fail(exc: Exception) -> None:
     raise _cli.typer.Exit(code=1)
 
 
-def _build_slip(slip_id, channel, placed_at, faces, legs_file, fair_file, combo, multiplier,
-                issue, scheme_no, trial, note, data_dir=Path(".nutmeg-data"), deviation="",
-                prediction=""):
-    from nutmeg.decision.betslip import BetSlip, BetslipError, SlipLeg, parse_faces_row
+def _slip_from_args(slip_id, channel, placed_at, faces, legs_file, fair_file, combo,
+                    multiplier, issue, scheme_no, trial, note, data_dir=Path(".nutmeg-data"),
+                    deviation="", prediction=""):
+    """命令行参数 → 票：文件在这里读，其余交 `decision.precheck.build_slip`。"""
+    from nutmeg.decision.precheck import build_slip
 
-    legs: list[SlipLeg] = []
-    face_map: dict[str, str] = {}
-    if channel == "jczq":
-        if not legs_file:
-            raise BetslipError("竞彩票须给 --legs-file")
-        raw = json.loads(Path(legs_file).read_text("utf-8"))
-        legs = [SlipLeg(
-            key=str(x["key"]), name=x.get("name", ""),
-            market=x.get("market", "had"), line=x.get("line"),
-            selections=tuple(x.get("selections", ())),
-            odds=tuple(x.get("odds", ())), fair=x.get("fair")) for x in raw]
-    else:
-        if not faces:
-            raise BetslipError("足彩票须给 --faces")
-        face_map = parse_faces_row(faces)
-        fair = _zucai_fair(fair_file, data_dir, issue)
-        legs = [SlipLeg(
-            key=no, market="had",
-            selections=tuple({"3": "home", "1": "draw", "0": "away"}[c] for c in f),
-            fair=fair.get(no)) for no, f in sorted(face_map.items(), key=lambda kv: int(kv[0]))]
-    return BetSlip(
-        slip_id=slip_id, channel=channel, placed_at=placed_at, legs=legs,
-        multiplier=multiplier,
-        combo_sizes=tuple(int(c) for c in combo.split(",")) if combo else (),
-        issue=issue, scheme_no=scheme_no, purchased=not trial, note=note,
-        deviation=deviation, prediction=prediction, faces=face_map)
-
-
-def _zucai_fair(fair_file, data_dir, issue) -> dict[str, dict]:
-    """足彩整板 fair：给了 --fair-file 用文件，否则用 legs-base 的判断概率。"""
-    from nutmeg.decision.review_runner import issue_belief
-
-    return (json.loads(Path(fair_file).read_text("utf-8")) if fair_file
-            else issue_belief(data_dir, issue))
-
-
-def _diagnose(slip, data_dir, planned=()):
-    """登记即诊断（2026-09-30）：共享裸单（含跨渠道）与对照处方，只记录不阻断。
-    `planned`：同组还没登记的计划票（整组预审时当作已购同伴一起比）。"""
-    from nutmeg.decision.betslip import load_slips
-    from nutmeg.decision.betslip_diagnosis import (
-        DEVIATION_REASONS,
-        cross_translators,
-        diagnose,
-        draft_faces_for,
-        peers,
-        prescription_for,
-    )
-
-    if slip.deviation and slip.deviation not in DEVIATION_REASONS:
-        raise ValueError(f"--deviation `{slip.deviation}` 不在 {DEVIATION_REASONS}")
-    slips = [*load_slips(data_dir), *planned]
-    cross = cross_translators(slip, slips, data_dir)
-    return diagnose(slip, peers(slip, slips, cross), prescription_for(slip, data_dir), cross,
-                    draft=draft_faces_for(slip, data_dir))
+    legs = (json.loads(Path(legs_file).read_text("utf-8"))
+            if channel == "jczq" and legs_file else None)
+    fair = (json.loads(Path(fair_file).read_text("utf-8"))
+            if channel != "jczq" and fair_file else None)
+    return build_slip(slip_id=slip_id, channel=channel, placed_at=placed_at, faces=faces,
+                      legs=legs, fair=fair, combo=combo, multiplier=multiplier, issue=issue,
+                      scheme_no=scheme_no, trial=trial, note=note, deviation=deviation,
+                      prediction=prediction, data_dir=data_dir)
 
 
 @betslip_app.command("register")
@@ -133,91 +87,23 @@ def betslip_register(
 ) -> None:
     """登记一张已买的票（幂等，同 slip_id 覆盖）。偏离初稿时带 --deviation/--prediction
     （只记录，登记是事实）。"""
-    from nutmeg.decision.betslip import BetslipError, first_kickoff, register_slip
-    from nutmeg.decision.review import review_record
+    from nutmeg.decision.betslip import BetslipError
+    from nutmeg.decision.precheck import register_reviewed
 
     try:
-        slip = _build_slip(slip_id, channel, placed_at, faces, legs_file, fair_file, combo,
-                           multiplier, issue, scheme_no, trial, note, data_dir, deviation,
-                           prediction)
-        slip.diagnosis = _diagnose(slip, data_dir)
-        slip.first_kickoff = first_kickoff(slip, data_dir)
-        # 审票记录随票入账（宪法 §6）：否决了仍买是事实，账房按它出「否决仍买」一行；
-        # 审票自己出错也不挡登记（登记是事实），留痕
-        try:
-            verdict = _review(slip, slip.diagnosis, data_dir)
-            slip.diagnosis["review"] = review_record(verdict)
-        except Exception as exc:  # noqa: BLE001
-            verdict = {"lines": [f"审票失败：{exc!r}"[:160]]}
-            slip.diagnosis["review"] = {"error": repr(exc)[:200]}
-        discipline = [line for line in (_issue_brake_line(slip, data_dir),
-                                        _day_cap_line(slip, data_dir),
-                                        _brake_line(data_dir, placed_at)) if line]
-        discipline = [line for line in discipline if line.startswith("⛔")]
-        if discipline and "error" not in slip.diagnosis["review"]:
-            record = slip.diagnosis["review"]
-            record["vetoed"] = True
-            record["codes"] = [*record["codes"],
-                               *(["BRAKE"] if any("刹车" in x for x in discipline) else []),
-                               *(["DAYCAP"] if any("日帽" in x for x in discipline) else []),
-                               *(["STOP"] if any("止损" in x or "已触发" in x
-                                                 for x in discipline) else [])]
-        _cli.typer.echo(register_slip(data_dir, slip))
-        for line in slip.diagnosis.get("lines", []):
+        slip = _slip_from_args(slip_id, channel, placed_at, faces, legs_file, fair_file, combo,
+                               multiplier, issue, scheme_no, trial, note, data_dir, deviation,
+                               prediction)
+        out = register_reviewed(slip, data_dir)
+        _cli.typer.echo(out["summary"])
+        for line in out["lines"]:
             _cli.typer.echo("   " + line)
-        for line in verdict["lines"]:
-            _cli.typer.echo("   " + line)
-        for line in discipline:
-            if "刹车" in line or "日帽" in line:
-                _cli.typer.echo("   " + line)
-        if slip.deviation_after_kickoff:
+        if out["after_kickoff"]:
             _cli.typer.echo("   ⚠️偏离理由写于票内最早开球之后：照记，"
                             "但不进「人的偏离」按理由的净值")
-        _cli.typer.echo("   " + _brake_line(data_dir, placed_at))
+        _cli.typer.echo("   " + out["brake_line"])
     except (BetslipError, KeyError, ValueError) as exc:
         _fail(exc)
-
-
-def _issue_brake_line(slip, data_dir: Path, *, extra_yuan: int = 0) -> str | None:
-    """期级刹车（宪法 §4，2026-10-06 起预审否决）：本期已登记实购 + extra + 这张 是否超帽。"""
-    if slip.channel == "jczq" or not slip.issue:
-        return None
-    from nutmeg.decision.bankroll import brake_check
-    from nutmeg.decision.betslip import load_slips
-
-    bought = sum(s.stake_yuan for s in load_slips(data_dir, issue=slip.issue)
-                 if s.purchased and s.slip_id != slip.slip_id)
-    return brake_check(data_dir, slip.issue, slip.stake_yuan, already_yuan=bought + extra_yuan)
-
-
-def _day_cap_line(slip, data_dir: Path, *, extra_yuan: int = 0) -> str | None:
-    """日总帽 ¥2,000（宪法 §4，2026-10-12 入预审）：同一下单日已登记实购（所有渠道）
-    + extra + 这张 是否超帽；预审否决，登记不受限。"""
-    from nutmeg.decision.bankroll import day_cap_check
-    from nutmeg.decision.betslip import load_slips
-
-    day = str(slip.placed_at)[:10]
-    bought = sum(s.stake_yuan for s in load_slips(data_dir)
-                 if s.purchased and s.slip_id != slip.slip_id and str(s.placed_at)[:10] == day)
-    return day_cap_check(day, slip.stake_yuan, already_yuan=bought + extra_yuan)
-
-
-def _brake_line(data_dir: Path, placed_at: str) -> str:
-    """月度止损状态（宪法 §4，2026-10-01）：只打印，不阻断——登记是事实。"""
-    from datetime import date as _date
-
-    from nutmeg.decision.account import pending_ledger
-    from nutmeg.decision.bankroll import brake_state, status_line
-
-    try:
-        when = _date.fromisoformat(placed_at)
-    except ValueError:
-        when = _date.today()
-    try:   # 待结实购票按全损计（2026-10-28）；登记簿读不出就退回已结账口径
-        pending = pending_ledger(data_dir, when.strftime("%Y-%m"))
-    except Exception:  # noqa: BLE001
-        pending = None
-    return status_line(brake_state(data_dir, when, pending=pending))
 
 
 @betslip_app.command("preview")
@@ -236,33 +122,22 @@ def betslip_preview(
 ) -> None:
     """买之前先看：同一张票的注数/P/共享裸单/对照处方，不登记、不写盘（2026-09-30）。"""
     from nutmeg.decision.betslip import BetslipError
+    from nutmeg.decision.precheck import precheck
 
     try:
-        slip = _build_slip("preview", channel, placed_at, faces, legs_file, fair_file, combo,
-                           multiplier, issue, "", False, "", data_dir, deviation, prediction)
-        diag = _diagnose(slip, data_dir)
-        p = slip.hit_probability
-        _cli.typer.echo(f"预览 {channel} {slip.notes} 注 × {multiplier} 倍 = ¥{slip.stake_yuan:,}"
+        slip = _slip_from_args("preview", channel, placed_at, faces, legs_file, fair_file,
+                               combo, multiplier, issue, "", False, "", data_dir, deviation,
+                               prediction)
+        out = precheck(slip, data_dir)
+        p = out["p"]
+        _cli.typer.echo(f"预览 {channel} {out['notes']} 注 × {multiplier} 倍 = ¥{out['stake']:,}"
                         + (f"｜P(全对)={p * 100:.2f}%" if p is not None else ""))
-        for line in diag.get("lines", []):
+        for line in [*out["diagnosis_lines"], *out["review_lines"], out["brake_line"],
+                     *out["discipline"]]:
             _cli.typer.echo("   " + line)
-        review_lines = _review_lines(slip, diag, data_dir)
-        for line in review_lines:
-            _cli.typer.echo("   " + line)
-        brake = _brake_line(data_dir, placed_at)
-        _cli.typer.echo("   " + brake)
-        issue_brake = _issue_brake_line(slip, data_dir)
-        if issue_brake:
-            _cli.typer.echo("   " + issue_brake)
-        day_cap = _day_cap_line(slip, data_dir)
-        if day_cap:
-            _cli.typer.echo("   " + day_cap)
-        # 月度止损触发、期级刹车超帽、日帽超帽（宪法 §4）与 V1/V2 同级否决（2026-10-06）：
-        # 预审退出码 1，登记不受此限——连亏之后最需要这条线的时候，不该只靠意志力读一行字
-        vetoed = (any(line.startswith("⛔") for line in review_lines) or brake.startswith("⛔")
-                  or bool(issue_brake) or bool(day_cap))
-        _log_preview(data_dir, slip, vetoed)
-        if vetoed:
+        if out["log_warning"]:
+            _cli.typer.echo(out["log_warning"], err=True)
+        if out["vetoed"]:
             raise _cli.typer.Exit(code=1)       # 审票否决：改票后再审（登记不受此限）
     except (BetslipError, KeyError, ValueError) as exc:
         _fail(exc)
@@ -292,7 +167,7 @@ def _plan_slips(plan: Path, data_dir: Path) -> tuple[list[dict], list]:
     for i, row in enumerate(rows, 1):
         label = str(row.get("label") or f"计划{i}")
         legs_file, fair_file = row.get("legs_file"), row.get("fair_file")
-        slips.append(_build_slip(
+        slips.append(_slip_from_args(
             f"plan:{label}", row["channel"], row["placed_at"], row.get("faces"),
             base / legs_file if legs_file else None, base / fair_file if fair_file else None,
             row.get("combo"), int(row.get("multiplier", 1)), str(row.get("issue", "")), "",
@@ -364,6 +239,7 @@ def betslip_preview_set(plan: Path = _PLAN, data_dir: Path = _DATA_DIR,
     `--given` 钉住赛果后各票还剩多少；备选模式改报「每张与已登记实购票合起来」。26136 那天
     第一版副单照抄主单的选法，主副同死 73.7%——单看两张的 P 读不出来。"""
     from nutmeg.decision.betslip import BetslipError
+    from nutmeg.decision.precheck import brake_line, log_preview_safe, precheck
 
     try:
         pins = _pins(given, single=True)
@@ -373,35 +249,33 @@ def betslip_preview_set(plan: Path = _PLAN, data_dir: Path = _DATA_DIR,
         if alternatives:
             _cli.typer.echo(f"互斥备选 {len(slips)} 张：每张只和已登记实购票比（不做组内互审）")
         for slip in slips:
-            diag = _diagnose(slip, data_dir, planned=(
-                [] if alternatives else [s for s in slips if s is not slip]))
-            p = slip.hit_probability
-            _cli.typer.echo(f"【{slip.slip_id[5:]}】{slip.channel} {slip.notes} 注 × "
-                            f"{slip.multiplier} 倍 = ¥{slip.stake_yuan:,}"
-                            + (f"｜P(全对)={p * 100:.2f}%" if p is not None else ""))
-            for line in diag.get("lines", []):
-                _cli.typer.echo("   " + line)
-            review_lines = _review_lines(slip, diag, data_dir)
             earlier = 0 if alternatives else sum(
                 s.stake_yuan for s in slips[:slips.index(slip)]
                 if s.issue == slip.issue and s.channel != "jczq")
-            issue_brake = _issue_brake_line(slip, data_dir, extra_yuan=earlier)
-            if issue_brake:
-                review_lines = [*review_lines, issue_brake]
             same_day = 0 if alternatives else sum(
                 s.stake_yuan for s in slips[:slips.index(slip)]
                 if str(s.placed_at)[:10] == str(slip.placed_at)[:10])
-            day_cap = _day_cap_line(slip, data_dir, extra_yuan=same_day)
-            if day_cap:
-                review_lines = [*review_lines, day_cap]
+            out = precheck(slip, data_dir, planned=(
+                [] if alternatives else [s for s in slips if s is not slip]),
+                extra_issue_yuan=earlier, extra_day_yuan=same_day, log=False)
+            p = out["p"]
+            _cli.typer.echo(f"【{slip.slip_id[5:]}】{slip.channel} {out['notes']} 注 × "
+                            f"{slip.multiplier} 倍 = ¥{out['stake']:,}"
+                            + (f"｜P(全对)={p * 100:.2f}%" if p is not None else ""))
+            for line in out["diagnosis_lines"]:
+                _cli.typer.echo("   " + line)
+            review_lines = [*out["review_lines"], *out["discipline"]]
             for line in review_lines:
                 _cli.typer.echo("   " + line)
+            # 逐张否决不含月度止损（止损在整组末行报一次、单独决定退出码）
             veto = any(line.startswith("⛔") for line in review_lines)
             if veto:
                 vetoed.append(slip.slip_id[5:])
-            for row in diag.get("shared_naked") or []:
+            for row in out["diagnosis"].get("shared_naked") or []:
                 together.setdefault(f"{row['key']}{row['face']}", set()).update(row["slip_ids"])
-            _log_preview(data_dir, slip, veto)
+            warning = log_preview_safe(data_dir, slip, veto)
+            if warning:
+                _cli.typer.echo(warning, err=True)
         total = sum(s.stake_yuan for s in slips)
         if alternatives:
             _cli.typer.echo(f"备选 {len(slips)} 张｜否决 {len(vetoed)} 张"
@@ -415,7 +289,7 @@ def betslip_preview_set(plan: Path = _PLAN, data_dir: Path = _DATA_DIR,
                 f"{key} 在 {len(ids)} 张票上" for key, ids in worst))
         for line in _group_lines(slips, data_dir, alternatives, pins):
             _cli.typer.echo(line)
-        brake = _brake_line(data_dir, slips[0].placed_at) if slips else ""
+        brake = brake_line(data_dir, slips[0].placed_at) if slips else ""
         if brake:
             _cli.typer.echo("   " + brake)
         if vetoed or brake.startswith("⛔"):
@@ -444,6 +318,7 @@ def betslip_complement(plan: Path = _BASE_PLAN, channel: str = _SEARCH_CHANNEL,
         SFC_MATCHES,
         BetslipError,
     )
+    from nutmeg.decision.precheck import zucai_fair
     from nutmeg.decision.slip_group import best_complement, death_text, p_all, p_any, pct
 
     try:
@@ -454,8 +329,8 @@ def betslip_complement(plan: Path = _BASE_PLAN, channel: str = _SEARCH_CHANNEL,
         if not pairs or any(not _arithmetic_ready(s) for _, s in pairs):
             raise BetslipError("基准须是足彩票（胜负彩 14 场 / 任九恰 9 场）且每场有 fair")
         row, first = pairs[0]
-        fair = _zucai_fair(Path(plan).parent / row["fair_file"] if row.get("fair_file")
-                           else None, data_dir, first.issue)
+        fair = (json.loads((Path(plan).parent / row["fair_file"]).read_text("utf-8"))
+                if row.get("fair_file") else zucai_fair(data_dir, first.issue))
         base = [(s.slip_id[5:], s.faces) for _, s in pairs]
         fixed = _pins(fix, single=False)
         found = best_complement([t for _, t in base], fair, max_notes=max_notes, fixed=fixed,
@@ -488,35 +363,6 @@ def betslip_complement(plan: Path = _BASE_PLAN, channel: str = _SEARCH_CHANNEL,
                         "概率来自 fair，结论随 fair 变")
     except (BetslipError, KeyError, ValueError) as exc:
         _fail(exc)
-
-
-def _log_preview(data_dir: Path, slip, vetoed: bool) -> None:
-    """预审留痕（2026-10-02）：截止播报据此提醒「审过但还没登记」。失败不影响预审。"""
-    from datetime import datetime as _datetime
-
-    from nutmeg.decision.day_decisions import log_preview
-
-    try:
-        keys = [leg.key for leg in slip.legs] or list(slip.faces)
-        log_preview(data_dir, placed_at=slip.placed_at, channel=slip.channel, issue=slip.issue,
-                    keys=keys, stake=slip.stake_yuan, vetoed=vetoed,
-                    now=_datetime.now().astimezone(), faces=slip.faces or None,
-                    p=slip.hit_probability)
-    except Exception as exc:  # noqa: BLE001 —— 不挡预审，但截止提醒会因此漏掉，必须看得见
-        _cli.typer.echo(f"⚠️预审留痕写入失败（截止播报不会提醒这张票）：{exc!r}", err=True)
-
-
-def _review(slip, diagnosis: dict, data_dir: Path) -> dict:
-    """审票（2026-10-01 定位）：V1 期望回报率 / V2 共享裸单 否决，V3 倍投警告。"""
-    from nutmeg.decision.review import prize_model, review
-    from nutmeg.decision.review_runner import issue_market
-
-    market = issue_market(data_dir, slip.issue) if slip.channel != "jczq" else None
-    return review(slip, diagnosis, prize_model=prize_model(data_dir), market=market)
-
-
-def _review_lines(slip, diagnosis: dict, data_dir: Path) -> list[str]:
-    return _review(slip, diagnosis, data_dir)["lines"]
 
 
 @betslip_app.command("list")
