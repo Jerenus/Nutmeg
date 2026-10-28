@@ -61,7 +61,7 @@ def test_day_page_has_every_block_and_links_back(tmp_path: Path):
                   "day-decisions", "day-session", "day-talk"):
         assert f'id="{block}"' in html
     assert "/static/decision/day.css" in html
-    assert 'href="/observe"' in html and 'href="/ledger"' in html
+    assert 'href="/lab"' in html and 'href="/ledger"' in html  # 实验室 2026-10-28 起是 /lab
 
 
 def test_workbench_topbar_links_to_day(tmp_path: Path):

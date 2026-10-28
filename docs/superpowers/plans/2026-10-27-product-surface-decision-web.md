@@ -1408,6 +1408,77 @@ def bridge_ledger(data_dir: Path, issue: str) -> dict:
 - **研究消费读数**：`bridge_ledger` 跨期汇总「理由指到矩阵行 / 差异格」——这是画布上 `[k / n]` 的真实来源，第 3 阶段落盘后才有数。
 - **验收**：`test_lab_api_lists_live_experiments`（退役实验不出现在活跃表）。
 
+#### 第 8 阶段细计划（2026-10-28 开工）
+
+**勘察结论**：
+- 画布上「它量什么 / 在表上是哪一列 / 状态」三列分别取自三处：
+  - 登记原件 `experiments/registry/<id>.json` 的 `claim`。
+  - `exits` 里的 `packet_column:<列>`。
+  - 实证标签。实证 / 已证伪 / 测不出 / 未证 n/n_min / 退役 这套标签现在**只在 CLI**：`interfaces/cli/rsi.py` 的 `_evidence_label` 和 `rsi columns` 命令体。
+- `account.experiment_board` 已经给出 n / n_min / metric / CI / verdict，但不读登记原件，也不管退役。
+
+**改正（相对上面规格）**：
+- **实证标签搬出 CLI**，成为唯一实现。`rsi columns` 改调它，输出逐字不变。这一条与第 0 阶段搬预审同理：否则会造出第二份标签逻辑。
+- **规则 v3 回放不进实验室页。** 它要跑 gym 5.8 s，`nutmeg account month` 里照旧有，页面只链过去。
+- **gym 403 天结论卡写死在页面里**，注明出处为 `evidence/2026-10-01-replay-gym.md` 与 `2026-10-01-history-expansion.md`。理由同否决清单：这是常驻结论，不是每次现算。
+
+##### Task 8.1：实验室接口
+
+- 新模块 `nutmeg/decision/lab.py`：
+  - `evidence_label(e, v, d, g, f)`：从 CLI 原样搬来。CLI 的 `_evidence_label` 删掉，改从这里 import。
+  - `registry_docs(registry_dir) -> {exp_id: doc}`：跳过 `_draft_*`，用 `rsi_prereg.load_registry_doc` 读。
+  - `lab_board(data_dir, registry_dir) -> {"live": [...], "settled": [...], "errors": [...]}`：
+    - 每行字段：`{exp_id, claim, layer, tier, n, n_min, metric_pp, ci, label, verdict, columns:[列], window, source_doc}`。
+    - 判决与退役从内核读，读法同 `rsi columns`。
+    - 进 `settled` 的行：已结账（协议 v2）、退役或到期。其余进 `live`。
+    - 内核读不出时只进 `errors`。
+  - `columns_line(board)`：`rsi columns` 的那一行文本由它生成，CLI 打印它。
+- `nutmeg/decision/bridge.py`：
+  - 新增 `cite_totals(data_dir) -> {issues, diffs, matrix, outside, blank}`。
+  - 做法：汇总所有 `zucai/*-bridge.jsonl` 的首条记录，各取 `cite_readout(rec["diffs"])` 相加。
+- 新模块 `nutmeg/interfaces/decision_web_lab.py`：
+  - 入口：`register_lab_routes(app, templates)`。
+  - `lab_payload(data_dir, registry_dir, *, launchd)` 返回：
+    - `board`：`lab_board`。
+    - `cites`：`cite_totals`。
+    - `ops`：`{jobs, alarms:[label], failed_runs}`，其中 `jobs` 和 `alarms` 来自 `day_ops.launchd_rows`，`failed_runs` 是今日 runs 里 exit≠0 的段数（读取方式与 `/runs` 页同源）。
+    - `errors`。
+  - 每块各自 try，失败只进 `errors`。
+  - 路由：
+    - `GET /lab`：页面外壳 `templates/decision/lab.html`，含 `nav_active = "lab"` 和 nav include。`lab.js` 与 `lab.css` 先放占位文件。
+    - `GET /api/lab`。
+  - `registry_dir` 默认取仓内 `experiments/registry`，与 CLI 默认一致。
+  - `_nav.html` 的「实验室」链接改为 `/lab`，并加 `aria-current`。
+- 测试：
+  - `tests/decision/test_lab.py`：
+    - `evidence_label` 五种结果各一例。
+    - `rsi columns` 在一个沙盒库上改前改后输出一致。
+    - `cite_totals` 跨两期相加。
+  - `tests/test_decision_web_lab.py`：
+    - 退役实验不出现在 `live`（`test_lab_api_lists_live_experiments`）。
+    - `/api/lab` 在内核不可达时仍返回 200 并带 `errors`。
+    - 导航指向 `/lab`。
+
+##### Task 8.2：实验室页前端（按画布 Lab 板）
+
+- 新增 `templates/decision/lab.html`，以及 `static/decision/lab.js`、`lab.css`。沿用 ledger / day 的同一套 token，class 加 `lab-` 前缀，浅色、深色都要做。
+- 页面自上而下：
+  1. **「哪条规则有资格拦你」**：写死三张卡。
+     - V1 期望回报率 < 0.5。
+     - V2 共享裸单，例证 26122 73.8%。
+     - 宪法纪律：止损 / 刹车档 / 日帽。这是你签的线，不是实证规则；预审标 ⛔，登记不受限。
+     - 三张卡都注明出处 RULEBOOK「〇」。
+  2. **「决策表上的列 · 离判决还有多远」**：`live` 表，每行列编号（链 `/observe/exp/<id>`）、它量什么（`claim` 首句）、`n / n_min` 小进度条、状态（`label`）、在表上是哪一列。表下注一行：「一列只有过了登记的 bound 才有资格变成否决；在那之前，它在决策表上永远是虚线框。」
+  3. **gym 结论卡**：写死，注明出处。
+  4. **「已判决 · 退役」**：`settled` 每行列编号、`label` 与 `claim` 首句。
+  5. **「研究层消费量」**：`[matrix / diffs]`，另列矩阵外与空白的计数。`diffs` 为 0 时写「还没有桥后改动」。
+  6. **运维一行**：作业数、告警、失败段数，链 `/runs/<今天>`。
+- 只用 `textContent`；`errors` 要看得见；390px 宽时整页不横滚。
+- 浏览器验收在沙盒做：
+  - live / settled 的行数与 `nutmeg rsi status` 一致。
+  - 浅色、深色都要看。
+  - 375px 宽时检查横滚。
+
 ### 第 9 阶段：口袋窗
 
 - **页面**：所有新页在 390px 宽可用（表横滚、侧栏下沉、按钮 ≥44px），不另做 app。

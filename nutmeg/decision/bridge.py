@@ -217,6 +217,20 @@ def bridge_record(data_dir: Path, issue: str) -> dict | None:
     return None
 
 
+def cite_totals(data_dir: Path) -> dict:
+    """{issues, diffs, matrix, outside, blank}：所有期桥（每期首条记录）的 `cite_readout` 相加——
+    实验室页「研究层消费量」。issues＝走过桥的期数。"""
+    out = {"issues": 0, "diffs": 0, "matrix": 0, "outside": 0, "blank": 0}
+    for path in sorted((Path(data_dir) / "zucai").glob(f"*{BRIDGE_SUFFIX}")):
+        rec = bridge_record(data_dir, path.name.removesuffix(BRIDGE_SUFFIX))
+        if rec is None:
+            continue
+        out["issues"] += 1
+        for key, value in cite_readout(rec.get("diffs") or []).items():
+            out[key] += value
+    return out
+
+
 def append_bridge(data_dir: Path, issue: str, record: dict) -> Path:
     """追加 zucai/<期>-bridge.jsonl；已有记录则抛 BridgeError（只走一次由服务端守）。"""
     old = bridge_record(data_dir, issue)

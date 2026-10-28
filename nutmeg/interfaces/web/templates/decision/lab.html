@@ -1,0 +1,11 @@
+{% extends "decision/layout.html" %}
+{% block body %}
+<link rel="stylesheet" href="/static/decision/lab.css?v={{ asset_v }}">
+<link rel="stylesheet" href="/static/decision/shell.css?v={{ asset_v }}">
+{% set nav_active = "lab" %}{% include "decision/_nav.html" %}
+<main id="lab" class="lab">
+  <header class="lab-head"><h1>实验室</h1></header>
+  <p id="errors" class="errors" hidden></p>
+</main>
+<script src="/static/decision/lab.js?v={{ asset_v }}"></script>
+{% endblock %}
