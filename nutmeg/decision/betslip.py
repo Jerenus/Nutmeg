@@ -439,13 +439,22 @@ def load_slips(data_dir, *, issue: str | None = None,
     return slips
 
 
+def _next_numbered(slips: list[BetSlip], prefix: str, tag: str) -> str:
+    """`<prefix>-<tag><n>`：n＝已登记同前缀同标记的最大序号 + 1（其它后缀不算）。"""
+    pattern = re.compile(rf"{re.escape(prefix)}-{tag}(\d+)")
+    taken = [int(m[1]) for s in slips if (m := pattern.fullmatch(s.slip_id))]
+    return f"{prefix}-{tag}{max(taken, default=0) + 1}"
+
+
 def next_slip_id(data_dir, issue: str) -> str:
     """本期下一张实票号 `<期>-T<n>`：n＝已登记 `-T<k>` 的最大 k + 1（`-B1` 等其它后缀不算）。
     `register_slip` 同 slip_id 覆盖，所以票号只许服务端分配（2026-10-28 第 4 阶段）。"""
-    pattern = re.compile(rf"{re.escape(str(issue))}-T(\d+)")
-    taken = [int(m[1]) for s in load_slips(data_dir, issue=str(issue))
-             if (m := pattern.fullmatch(s.slip_id))]
-    return f"{issue}-T{max(taken, default=0) + 1}"
+    return _next_numbered(load_slips(data_dir, issue=str(issue)), str(issue), "T")
+
+
+def next_jczq_slip_id(data_dir, day: str) -> str:
+    """竞彩板面日 day 的下一张票号 `<YYYYMMDD>-J<n>`（登记簿现行写法，如 `20261017-J1`）。"""
+    return _next_numbered(load_slips(data_dir, channel="jczq"), day.replace("-", ""), "J")
 
 
 def register_slip(data_dir, slip: BetSlip, *, now: datetime | None = None) -> str:

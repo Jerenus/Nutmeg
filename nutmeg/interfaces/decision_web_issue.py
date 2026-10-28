@@ -15,39 +15,18 @@ from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException, Request
 
-_ISSUE = re.compile(r"\d{5}")
+from nutmeg.interfaces.decision_web_forms import error_text as _error_text
+from nutmeg.interfaces.decision_web_forms import parlay_label as _parlay
+from nutmeg.interfaces.decision_web_forms import parse_multiplier as _multiplier
+from nutmeg.interfaces.decision_web_forms import today_bj as _today_bj
 
-# precheck.build_slip 的报错是写给命令行的；页面上换成人话（precheck 不改）
-_PAGE_WORDS = {"足彩票须给 --faces": "还没选场", "竞彩票须给 --legs-file": "还没选腿"}
-_SHORT = re.compile(r"任九至少选 (\d+) 场，实得 (\d+) 场")
+_ISSUE = re.compile(r"\d{5}")
 
 
 def _check_issue(issue: str) -> str:
     if not _ISSUE.fullmatch(issue):
         raise HTTPException(status_code=400, detail="期号须为 5 位数字")
     return issue
-
-
-def _page_error(message: str) -> str:
-    if message in _PAGE_WORDS:
-        return _PAGE_WORDS[message]
-    if short := _SHORT.fullmatch(message):
-        need, got = int(short[1]), int(short[2])
-        return f"任九还差 {need - got} 场（已选 {got} 场）"
-    return message
-
-
-def _error_text(error: Exception) -> str:
-    message = error.args[0] if isinstance(error, KeyError) and error.args else error
-    return _page_error(str(message))
-
-
-def _today_bj() -> str:
-    from datetime import datetime
-
-    from nutmeg.decision.bj_time import BJ
-
-    return datetime.now(BJ).date().isoformat()
 
 
 def _picked(faces: dict | None) -> dict[str, str]:
@@ -73,16 +52,6 @@ def _names(data_dir: Path, issue: str, matrices: dict[str, dict]) -> dict[str, s
     names = {no: f"{t[0]}-{t[1]}" for no, t in match_names(doc).items()} if doc else {}
     return {str(i): names.get(str(i)) or (matrices.get(str(i)) or {}).get("name", "")
             for i in range(1, 15)}
-
-
-def _multiplier(raw) -> int:
-    try:
-        value = int(1 if raw in (None, "") else raw)
-    except (TypeError, ValueError):
-        value = 0
-    if not 1 <= value <= 99:
-        raise ValueError("倍数须为 1–99 的整数")
-    return value
 
 
 def _sale_ticket(data_dir: Path, issue: str, payload: dict, *, slip_id: str, deviation: str = "",
@@ -123,12 +92,6 @@ def _zucai_mode(channel: str, n: int) -> str:
     if n < RENJIU_PICK:
         return f"任九 · 还差 {RENJIU_PICK - n} 场"
     return f"{n} 场 · 任九不可购"
-
-
-def _parlay(sizes: tuple[int, ...], n_legs: int) -> str:
-    if sizes == (1,) and n_legs == 1:
-        return "单关"
-    return "+".join(f"{m}串1" for m in sizes)
 
 
 def issue_payload(data_dir: Path, issue: str, *, today: _date) -> dict:

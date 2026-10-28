@@ -1200,6 +1200,29 @@ def bridge_ledger(data_dir: Path, issue: str) -> dict:
 - **历史账卡**：只读已落盘的 gym 产出（`.nutmeg-data/replay/` 下最近一次 `gym run` 结果）；没有就写「未跑」，**页面绝不触发 gym**。
 - **验收**：`tests/test_decision_web_jczq.py`——板面行数 = legs-base 场数；已开球行 `selectable: false`；`had` 未开（SP 全空）的行 `selectable: false`；precheck 竞彩 2 串 1 的 `ratio` 与 CLI `betslip preview --channel jczq --legs-file` 一致。
 
+#### 第 5 阶段细计划（2026-10-28 开工）
+
+**勘察结论**：`gym.board.load_jczq_board(data_dir, day)` 已是体彩快照的唯一读法——每场 `had` SP、`hhad`（线 + SP）、`selling`、`kickoff_bj`、`single_allowed`，板级 `allup`（各玩法允许的过关方式）。`judgment_brief.jczq_brief` 给表态 / 旗 / 损耗 / 关注度 / rubric / 一句话 / 大热。两者合起来就是板面，**不再读 legs-base 或 sporttery 原件**。
+
+**改正（相对上面第 5 阶段规格）**：腿由**服务端**按选择表组装（`{场次: 面集合}` → `SlipLeg(key, name, market="had", selections, odds=板面 SP, fair=legs-base 市场)`），页面不传赔率——赔率只有一个来源，页面也改不了它。竞彩票号 `<YYYYMMDD>-J<n>`（登记簿现行写法，如 `20261017-J1`），同样由服务端分配。
+
+##### Task 5.1：竞彩板 API + 预审 + 登记
+
+- `nutmeg/decision/betslip.py`：`next_slip_id` 加竞彩分支或新增 `next_jczq_slip_id(data_dir, day)`（同一私有 helper，不复制正则逻辑）。
+- 新模块 `nutmeg/interfaces/decision_web_jczq.py`（`register_jczq_routes(app, templates)`，`decision_web.py` 调一次）：
+  - `jczq_payload(data_dir, day, *, now)` → `{day, rows: [{code, name, kickoff, kicked, selectable, sp: {3,1,0}|null, fair: {3,1,0}, ret: {3,1,0}（fair×SP，每元回报）, single, hhad, stance, flags, load, attention, rubric, note, fav}], allup_had, brake: {line, room, tripped}, counts, errors}`。`selectable`＝在售且未开球且 `had` 齐全。
+  - `GET /jczq` → 307 到今天；`GET /jczq/{day}`（模板外壳）；`GET /api/jczq/{day}`。
+  - `POST /api/jczq/{day}/precheck` body `{picks: {code: "31"}, multiplier}` → 服务端组腿（拒不可选的场、拒单关未开时的 1 腿、拒 >8 腿、拒 `allup_had` 不含 `n×1` 的过关），`precheck(log=False)` → `{ok, combo, notes, stake, p, ratio, verdicts, discipline, brake_line, max_payout, legs: [{code, name, faces, odds}]}`。
+  - `POST /action/jczq/{day}/register` body 同上 + `{scheme_no, deviation, prediction}` → `next_jczq_slip_id` → `build_slip(channel="jczq", legs=…, combo=str(n))` → `register_reviewed` → `{ok, slip_id, summary, codes, vetoed, after_kickoff, brake_line, slip_text}`；`slip_text`＝500 投注单逐腿「周三001 大阪钢巴-布里兰 胜平负 胜 @1.54」+ 「n串1 · N 注 · M 倍 · ¥X」。
+  - 测试（`tests/test_decision_web_jczq.py`，用 tmp 造 `sporttery_markets.json` + `jczq-legs-base.json` 两三场）：行数与 selectable；`ret` = fair×SP；precheck 2 串 1 的 `ratio` 等于直接 `precheck(build_slip(...))`；单关未开的 1 腿被拒；已开球的场被拒；登记两次得 `J1`、`J2` 且 `purchased`；`slip_text` 每腿一行。
+
+##### Task 5.2：竞彩板前端
+
+- `templates/decision/jczq.html` + `static/decision/jczq.js` / `jczq.css`（沿用 issue.css 的色板与写法，可直接 import 公共变量或复制最小集合；不改 issue.*）。
+- 页面：刹车带（`brake.line` + 余量）→ 头部计数（板面 / 研究 / 判断≠市场 / 单关开 / 机器不构票）→ 读法一行（虚线只展示）→ 筛选（全部 / 未开球 / 表态单 / 有旗 / 大热 ≥70 / PM ≥$2万，计数）→ 板面表（编号 · 开球 · 对阵 · 胜平负 SP 格（大字 SP、小字市场 %）· 让球 · 表态（虚线）· 旗·损耗 · 关注度；已开球/不可选行灰、不可点；点对阵展开：一句话、rubric、每元回报三格（≥0.9 加框）、让球 SP）。
+- 侧栏「我的串」：腿列表（每腿可删）、过关显示（n串1；1 腿显示「单关」或「单关未开」）、倍数 ±（1–99）、金额 / P / 中了拿回 / V1，全部来自 `/api/jczq/{day}/precheck`；审票卡同期页样式；理由五选一 + 预测；「我已在 500 下单 · 登记」→ 回执（审票码、500 投注单文本 + 复制、开球后补写提示、截图回传提示、止损行）。
+- 浏览器验收：今天板（10-28）或沙盒 10-25 板，点两场 2 串 1 → 与 `betslip preview --channel jczq` 同 ratio；已开球场不可点；375px 无整页横滚。
+
 ### 第 6 阶段：今天（`/day/{日}` 换皮）
 
 - **新外壳 `templates/decision/shell.html`**：导航（今天 / 期 <在售期> / 竞彩 / 账房 / 实验室）+ 刹车带（`month_report.effective_net / effective_room / effective_tripped` + `bankroll.issue_brake`）。`/day` `/issue` `/jczq` `/ledger` `/lab` 都继承它。
