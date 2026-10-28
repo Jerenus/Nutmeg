@@ -1,2 +1,144 @@
-/* 实验室页（2026-10-28 产品形态第 8 阶段）。Task 8.1 只放占位；版式与浅/深色 token 在 Task 8.2。 */
-.lab{box-sizing:border-box; max-width:100%; padding:16px}
+/* 实验室页（2026-10-28 产品形态第 8 阶段 Task 8.2，配色照 Lab.dc.html 画布）。
+   token 与 day.css / ledger.css 同一组，全部挂在 .lab 下；类名一律 lab- 前缀，
+   不撞 app.css 的通用名（.btn / .gate / .col / .empty …）；不加载网络字体。 */
+
+.lab{
+  --ink:#15181B; --ground:#F3F4F1; --paper:#FFFFFF; --line:#DADDD7; --line-soft:#ECEEE9;
+  --muted:#565E66; --sub:#3A4148; --show:#7A828A; --focus:#EEF2FD;
+  --veto:#B23A0E; --veto-bg:#FBEDE6; --ok:#17734A; --ok-bg:#E6F2EB; --link:#2348C9;
+  --warn:#8A5300; --warn-bg:#FBF1DE; --on-ink:#FFFFFF; --on-ink-sub:#C9CED3; --on-ink-line:#3A4148; --bar:#15181B;
+  --sans:"Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  display:flex; flex-direction:column; gap:24px; max-width:1280px; margin:0 auto; padding:24px 24px 64px;
+  min-height:100vh; background:var(--ground); color:var(--ink);
+  font-family:var(--sans); font-size:14px; line-height:1.5;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .lab{
+  --ink:#E4E7E3; --ground:#111417; --paper:#1A1E22; --line:#2E343A; --line-soft:#24292E;
+  --muted:#9AA2AA; --sub:#B7BEC4; --show:#8A929A; --focus:#1C2540;
+  --veto:#F08A63; --veto-bg:#3A1D12; --ok:#5CC793; --ok-bg:#16301F; --link:#8EA6F5;
+  --warn:#E9B565; --warn-bg:#33260F; --on-ink:#111417; --on-ink-sub:#3A4148; --on-ink-line:#B7BEC4; --bar:#B7BEC4;
+}}
+:root[data-theme="dark"] .lab{
+  --ink:#E4E7E3; --ground:#111417; --paper:#1A1E22; --line:#2E343A; --line-soft:#24292E;
+  --muted:#9AA2AA; --sub:#B7BEC4; --show:#8A929A; --focus:#1C2540;
+  --veto:#F08A63; --veto-bg:#3A1D12; --ok:#5CC793; --ok-bg:#16301F; --link:#8EA6F5;
+  --warn:#E9B565; --warn-bg:#33260F; --on-ink:#111417; --on-ink-sub:#3A4148; --on-ink-line:#B7BEC4; --bar:#B7BEC4;
+}
+body:has(> .lab){background:#F3F4F1}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) body:has(> .lab){background:#111417}}
+:root[data-theme="dark"] body:has(> .lab){background:#111417}
+.lab *{box-sizing:border-box}
+.lab .mono{font-family:var(--mono); font-variant-numeric:tabular-nums}
+.lab p{margin:0}
+.lab a{color:var(--link)}
+.lab a:focus-visible{outline:2px solid var(--link); outline-offset:2px}
+.lab h1{margin:0; font-size:30px; font-weight:700}
+.lab h2{margin:0; font-size:18px; font-weight:700}
+.lab .errors{margin:0; padding:10px 14px; border:1px solid var(--veto); background:var(--veto-bg); color:var(--veto);
+  border-radius:6px; font-weight:700; overflow-wrap:anywhere; display:flex; flex-direction:column; gap:2px}
+.lab .errors[hidden]{display:none}
+.lab .lab-muted{color:var(--muted)}
+.lab .lab-src{font-size:12px; color:var(--muted); line-height:1.5; overflow-wrap:anywhere}
+.lab .lab-wait{color:var(--muted)}
+
+/* ---- 头部 ---- */
+.lab .lab-head{display:flex; flex-direction:column; gap:4px}
+.lab .lab-kicker{font-size:13px; color:var(--muted); overflow-wrap:anywhere}
+
+/* ---- 卡片 ---- */
+.lab .lab-card{background:var(--paper); border:1px solid var(--line); border-radius:8px; padding:20px 24px;
+  display:flex; flex-direction:column; gap:12px; min-width:0}
+.lab .lab-card-head{display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; gap:6px 12px}
+.lab .lab-tag{font-size:12px; padding:3px 10px; border:1px dashed var(--show); border-radius:4px; color:var(--sub); white-space:nowrap}
+.lab .lab-note{font-size:14px; line-height:1.7; color:var(--sub); overflow-wrap:anywhere}
+
+/* ---- 1. 谁有资格拦你 ---- */
+.lab .lab-section{display:flex; flex-direction:column; gap:12px; min-width:0}
+.lab .lab-vetoes{display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr)); gap:16px}
+.lab .lab-veto{background:var(--veto-bg); border:1px solid var(--veto); border-radius:8px; padding:18px 20px;
+  display:flex; flex-direction:column; gap:6px; min-width:0}
+.lab .lab-veto.lab-discipline{background:var(--paper)}
+.lab .lab-veto-kind{font-size:12px; font-weight:700; color:var(--veto)}
+.lab .lab-veto-title{font-size:18px; font-weight:700; overflow-wrap:anywhere}
+.lab .lab-veto-body{font-size:14px; line-height:1.6; color:var(--sub); overflow-wrap:anywhere}
+
+/* ---- 2. live 表（宽屏网格，窄屏每行一块，不横滚） ---- */
+.lab .lab-grid{display:flex; flex-direction:column}
+.lab .lab-row{display:grid; grid-template-columns:72px minmax(0,2fr) minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr);
+  gap:16px; padding:12px 0; align-items:center; border-bottom:1px solid var(--line-soft); font-size:14px}
+.lab .lab-row:last-child{border-bottom:none}
+.lab .lab-row.lab-row-head{padding:0 0 8px; font-size:12px; color:var(--muted); border-bottom:1px solid var(--line)}
+.lab .lab-id{font-family:var(--mono); font-weight:600; display:inline-flex; align-items:center; min-height:44px;
+  text-decoration:none}
+.lab .lab-id:hover{text-decoration:underline}
+.lab .lab-what{overflow-wrap:anywhere}
+.lab .lab-prog{display:flex; align-items:center; gap:10px; min-width:0}
+.lab .lab-bar{flex:1 1 auto; height:10px; background:var(--line-soft); border-radius:5px; overflow:hidden; min-width:40px}
+.lab .lab-bar > span{display:block; height:100%; background:var(--bar)}
+.lab .lab-n{flex:0 0 auto; font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:13px; text-align:right; white-space:nowrap}
+.lab .lab-label{justify-self:start; font-size:13px; padding:3px 8px; border-radius:3px; border:1px dashed var(--show);
+  color:var(--sub); font-family:var(--mono); font-variant-numeric:tabular-nums; white-space:nowrap}
+.lab .lab-label.lab-good{border:1px solid var(--ok); background:var(--ok-bg); color:var(--ok); font-weight:700}
+.lab .lab-label.lab-bad{border:1px solid var(--veto); background:var(--veto-bg); color:var(--veto); font-weight:700}
+.lab .lab-label.lab-flat{border-style:solid; color:var(--muted)}
+.lab .lab-col{color:var(--sub); overflow-wrap:anywhere}
+.lab .lab-cell-k{display:none}
+
+/* ---- 3–5. 三块并排 ---- */
+.lab .lab-trio{display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start}
+.lab .lab-trio > *{flex:1 1 340px; min-width:0}
+.lab .lab-gym{background:var(--ink); color:var(--on-ink); border-radius:8px; padding:24px; display:flex; flex-direction:column; gap:14px}
+.lab .lab-gym .lab-src,.lab .lab-gym .lab-gym-k{color:var(--on-ink-sub)}
+.lab .lab-gym-kicker{font-size:13px; color:var(--on-ink-sub)}
+.lab .lab-gym-head{font-size:20px; font-weight:700; line-height:1.4; overflow-wrap:anywhere}
+.lab .lab-gym-nums{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px}
+.lab .lab-gym-num{display:flex; flex-direction:column; gap:2px; min-width:0}
+.lab .lab-gym-big{font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:26px; font-weight:600}
+.lab .lab-gym-k{font-size:13px; line-height:1.5; overflow-wrap:anywhere}
+.lab .lab-gym-foot{font-size:14px; line-height:1.7; border-top:1px solid var(--on-ink-line); padding-top:12px; overflow-wrap:anywhere}
+
+.lab .lab-settled{display:flex; flex-direction:column; gap:4px}
+.lab .lab-settled-group{font-size:12px; color:var(--muted); margin-top:8px}
+.lab .lab-settled-group:first-child{margin-top:0}
+.lab .lab-settled-row{display:grid; grid-template-columns:56px auto minmax(0,1fr); gap:4px 10px; align-items:baseline;
+  font-size:14px; line-height:1.5}
+.lab .lab-settled-row .lab-id{min-height:32px}
+.lab .lab-settled-row .lab-label{font-size:12px; padding:1px 6px}
+.lab .lab-settled-claim{color:var(--sub); overflow-wrap:anywhere; min-width:0}
+
+.lab .lab-big{font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:30px; font-weight:600}
+.lab .lab-counts{display:flex; flex-wrap:wrap; gap:4px 16px; font-size:14px; color:var(--sub)}
+.lab .lab-counts b{font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--ink)}
+
+/* ---- 6. 运维一行 ---- */
+.lab .lab-ops{background:var(--paper); border:1px solid var(--line); border-radius:8px; padding:14px 24px;
+  display:flex; flex-wrap:wrap; gap:8px 20px; align-items:center}
+.lab .lab-dot{width:10px; height:10px; border-radius:50%; background:var(--ok); flex:0 0 auto}
+.lab .lab-dot.lab-dot-bad{background:var(--veto)}
+.lab .lab-ops-title{font-size:16px; font-weight:700}
+.lab .lab-ops-text{font-size:14px; color:var(--sub); overflow-wrap:anywhere; min-width:0; flex:1 1 220px}
+.lab .lab-ops-text b{font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--ink)}
+.lab .lab-ops-text .lab-alarm{color:var(--veto); font-weight:700}
+.lab .lab-btn{display:inline-flex; align-items:center; min-height:44px; padding:0 14px; margin-left:auto;
+  border:1px solid var(--line); border-radius:4px; background:var(--paper); color:var(--ink); text-decoration:none; white-space:nowrap}
+.lab .lab-btn:hover{background:var(--focus)}
+
+@media (max-width:760px){
+  .lab .lab-row.lab-row-head{display:none}
+  .lab .lab-row{grid-template-columns:minmax(0,1fr) auto; gap:4px 12px; padding:10px 0}
+  .lab .lab-row > .lab-c-id{grid-column:1; grid-row:1}
+  .lab .lab-row > .lab-c-label{grid-column:2; grid-row:1; justify-self:end}
+  .lab .lab-row > .lab-c-what,.lab .lab-row > .lab-c-n,.lab .lab-row > .lab-c-col{grid-column:1 / -1}
+  .lab .lab-c-col{display:flex; gap:6px}
+  .lab .lab-cell-k{display:inline; font-size:12px; color:var(--muted); white-space:nowrap}
+}
+@media (max-width:600px){
+  .lab{padding:16px 16px 48px; gap:18px}
+  .lab h1{font-size:24px}
+  .lab .lab-card{padding:16px 14px}
+  .lab .lab-gym{padding:18px 16px}
+  .lab .lab-ops{padding:12px 14px}
+  .lab .lab-trio{gap:18px}
+  .lab .lab-btn{margin-left:0}
+}
