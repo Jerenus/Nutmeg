@@ -49,7 +49,8 @@ def create_decision_app(*, output_dir, kernel_state=None,
     _assets = [
         web_root / "static" / "decision" / name
         for name in ("app.js", "observe.js", "observe.css", "day.js", "runs.js", "runs.css",
-                     "issue.js", "issue.css", "jczq.js", "jczq.css", "shell.css")
+                     "issue.js", "issue.css", "jczq.js", "jczq.css", "shell.css",
+                     "ledger.js", "ledger.css")
     ]
     _mtimes = [asset.stat().st_mtime for asset in _assets if asset.exists()]
     templates.env.globals["asset_v"] = str(int(max(_mtimes))) if _mtimes else "0"
@@ -501,9 +502,11 @@ def create_decision_app(*, output_dir, kernel_state=None,
 
     from nutmeg.interfaces.decision_web_issue import register_issue_routes
     from nutmeg.interfaces.decision_web_jczq import register_jczq_routes
+    from nutmeg.interfaces.decision_web_ledger import register_ledger_routes
     from nutmeg.interfaces.decision_web_shell import register_shell
 
     register_issue_routes(app, templates)
     register_jczq_routes(app, templates)
     register_shell(app, templates)
+    register_ledger_routes(app, templates)
     return app

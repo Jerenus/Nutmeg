@@ -61,7 +61,7 @@ def test_day_page_has_every_block_and_links_back(tmp_path: Path):
                   "day-decisions", "day-session", "day-talk"):
         assert f'id="{block}"' in html
     assert "/static/decision/day.css" in html
-    assert 'href="/observe"' in html and 'href="/betslips"' in html
+    assert 'href="/observe"' in html and 'href="/ledger"' in html
 
 
 def test_workbench_topbar_links_to_day(tmp_path: Path):
@@ -115,7 +115,7 @@ def test_three_pages_carry_the_nav_with_active_issue_links(tmp_path: Path):
         html = client.get(url).text
         assert 'class="nm-nav"' in html, url
         assert 'href="/issue/26152"' in html and "停售 22:00" in html, url
-        assert 'href="/jczq"' in html and 'href="/betslips"' in html, url
+        assert 'href="/jczq"' in html and 'href="/ledger"' in html, url
         assert "/static/decision/shell.css" in html, url
 
 

@@ -149,7 +149,7 @@ window.Day = (function () {
       acts.appendChild(button("btn veto-fill", targets.length > 1 ? "登记 " + t.target + " 空仓" : "登记本期空仓",
         function () { if (open) closePass(); else openPass(t, "brake"); }));
     });
-    acts.appendChild(link("/betslips", "btn veto-line", "看账房"));
+    acts.appendChild(link("/ledger", "btn veto-line", "看账房"));
     add(box, acts, passForm("brake"));
   }
 

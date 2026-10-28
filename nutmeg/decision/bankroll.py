@@ -19,15 +19,34 @@ MONTHLY_STOP_LOSS_YUAN = 8000
 2026-10-18 20:15 Jun 再改为 8,000——当时计入待结票后 10 月净值 −6,165、已破 6,000 线 ¥165。
 改数只改这里与宪法 §4。"""
 
+STOP_LOSS_HISTORY = (("2026-10-01", 3000), ("2026-10-11", 6000), ("2026-10-18", 8000))
+"""止损线历史（生效日, 线），出处＝设计系列第 ⑦ 条与上面 docstring。最后一项必须等于
+`MONTHLY_STOP_LOSS_YUAN`（测试守）；改线时两处一起改。"""
 
-def ticket_month(key: str, data_dir: Path) -> str | None:
-    """记分牌 tickets 键 → 所属月份：`jczq-YYYYMMDD` 按日期；足彩期号按 `<issue>-issue.json`
-    的 sale_deadline；找不到 → None（不猜）。"""
+
+def stop_loss_on(day: str) -> int:
+    """某日（YYYY-MM-DD）生效的止损线。10-01 之前没有月度止损，按首档给（曲线只是画线用）。"""
+    line = STOP_LOSS_HISTORY[0][1]
+    for since, value in STOP_LOSS_HISTORY:
+        if str(day)[:10] >= since:
+            line = value
+    return line
+
+
+def ticket_day(key: str, data_dir: Path) -> str | None:
+    """记分牌 tickets 键 → 归属日（YYYY-MM-DD）：`jczq-YYYYMMDD` 按日期；足彩期号按
+    `<issue>-issue.json` 的 sale_deadline；找不到 → None（不猜）。归月 / 归日只有这一处口径。"""
     if key.startswith("jczq-") and len(key) == 13 and key[5:].isdigit():
-        return f"{key[5:9]}-{key[9:11]}"
+        return f"{key[5:9]}-{key[9:11]}-{key[11:13]}"
     issue_doc = read_json(Path(data_dir) / "zucai" / f"{key}-issue.json")
     deadline = str((issue_doc or {}).get("sale_deadline") or "")
-    return deadline[:7] if len(deadline) >= 7 and deadline[4] == "-" else None
+    return deadline[:10] if len(deadline) >= 10 and deadline[4] == deadline[7] == "-" else None
+
+
+def ticket_month(key: str, data_dir: Path) -> str | None:
+    """记分牌 tickets 键 → 所属月份（`ticket_day` 的前 7 位）；找不到 → None。"""
+    day = ticket_day(key, data_dir)
+    return day[:7] if day else None
 
 
 def month_net(data_dir: Path, month: str, *, scoreboard_path: Path | None = None) -> dict:

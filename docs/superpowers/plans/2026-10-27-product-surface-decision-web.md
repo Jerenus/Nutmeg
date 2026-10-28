@@ -1322,6 +1322,86 @@ def bridge_ledger(data_dir: Path, issue: str) -> dict:
 - **新函数 `account.daily_curve(data_dir, month) -> list[{day, net, line}]`**：按结算日累计 `month_net` 的 entries，`line` 取当日生效的止损线（−3,000 → 10-11 −6,000 → 10-18 −8,000 的历史要在函数里写成常量表并注明出处 `design_series` 第 ⑦ 条）。机器初稿线用 `draft_board` 的逐期结果累计。
 - **验收**：`test_daily_curve_matches_month_net`（曲线末点 = `month_net.net`）；`test_ledger_api_has_three_ledgers`。
 
+#### 第 7 阶段细计划（2026-10-28 开工）
+
+**勘察结论**：
+- `month_report` 每次跑两遍 gym 回放（`out_dir=None`，不写盘）：沙盒 10 月整份 6.4 s，其中规则 v3 5.8 s、初稿账约 0.2 s（Task 7.1 实测）。主页面不能等它，所以 `month_report` 加 `with_draft` / `with_rule_v3` 两个开关。
+- 记分牌 tickets 只记了 `encoded_at`，没有结算日。足彩期按 `sale_deadline` 归日，竞彩按键里的日期归日，和 `ticket_month` 的归月口径一致。
+
+**改正（相对上面规格）**：
+- **初稿账单独接口，按需加载。** `month_report` 加 `with_draft=True` 参数。主接口传 False，初稿账走 `/api/ledger/{月}/draft`，进程内按（月，scoreboard 与 betslips 的 mtime）缓存。
+- **机器初稿线这轮不画。** `draft_board` 只有月合计，没有逐期结果。初稿账以三列数字卡出现。逐期曲线需要 gym 的 per-issue 输出，等以后再接。
+- **止损线历史写成常量表，放在 `bankroll.py` 的 `MONTHLY_STOP_LOSS_YUAN` 旁边，不放在 account 里。** 那段 docstring 本来就记着这段历史。表的最后一项必须等于 `MONTHLY_STOP_LOSS_YUAN`，由测试守。
+
+##### Task 7.1：曲线 + 账房接口
+
+- `nutmeg/decision/bankroll.py`
+  - 加 `STOP_LOSS_HISTORY = (("2026-10-01", 3000), ("2026-10-11", 6000), ("2026-10-18", 8000))` 与 `stop_loss_on(day) -> int`，出处是 `design_series` 第 ⑦ 条。
+  - 加 `ticket_day(key, data_dir) -> str | None`：`jczq-YYYYMMDD` 取那一天；足彩期号取 `sale_deadline[:10]`。`ticket_month` 改为基于它实现，口径只有一处。
+- `nutmeg/decision/account.py`
+  - `daily_curve(data_dir, month) -> {"points": [{day, net, line}], "moves": [{day, from, to}], "effective": {day, net} | None}`。
+    - `points` 按 `ticket_day` 汇总当天净值并累计，每一步一点，`line` 取 `stop_loss_on(day)`。
+    - `moves` 是当月内止损线的变动。
+    - `effective` 是今天的「实质」点：已结净值减去待结注金，取 `pending_ledger`。
+  - `month_report` 加 `with_draft` 参数，默认 True，CLI 行为不变。
+- 新模块 `nutmeg/interfaces/decision_web_ledger.py`：入口 `register_ledger_routes(app, templates)`，由 `decision_web.py` 调用一次。
+  - `ledger_payload(data_dir, month)` 返回：
+    - `month`、`months`：记分牌里出现过的月份，降序。
+    - `report`：`month_report(with_draft=False)` 里可 JSON 化的部分。
+    - `curve`：`daily_curve` 的结果。
+    - `issues`：本月足彩逐期 `[{issue, stake, payout, net, slips}]`，来自记分牌 tickets。
+    - `jczq_days`：本月有票的竞彩日 `[{day, stake, net}]`。
+    - `choices`：`build_choices`，期范围取本月各期的最小与最大期号。
+    - `bridges`：`[bridge_ledger(期)]`，只列走过桥的期。
+    - `errors`：每块各自 try，失败只进这里。
+  - 路由：
+    - `GET /ledger`：307 到当月。
+    - `GET /ledger/{月}`：页面外壳，`nav_active = "ledger"`。
+    - `GET /api/ledger/{月}`：返回 `ledger_payload`。
+    - `GET /api/ledger/{月}/draft`：返回 `draft_board`，带缓存。
+    - 月份格式不是 `YYYY-MM` 时返回 400。
+  - `_nav.html` 的「账房」链接改为 `/ledger`，并加上 `aria-current`。今天页的「看账房」也改指 `/ledger`。
+- 测试：
+  - `tests/decision/test_account_curve.py`：
+    - 曲线末点等于 `month_net.net`。
+    - 线在 10-11 和 10-18 换档。
+    - `STOP_LOSS_HISTORY` 最后一项等于 `MONTHLY_STOP_LOSS_YUAN`。
+    - `ticket_month` 的结果不变（对照现有用例）。
+  - `tests/test_decision_web_ledger.py`：
+    - 主接口不调用 gym（monkeypatch `draft_board` 为抛错，主接口仍 200）。
+    - 三本账字段都在。
+    - 坏月份返回 400。
+    - `/draft` 第二次调用命中缓存。
+
+##### Task 7.2：账房页前端（按画布 Ledger 板）
+
+- 新增 `templates/decision/ledger.html`、`static/decision/ledger.js`、`static/decision/ledger.css`。沿用 issue 与 today 的同一套 token，浅色、深色都要做。
+- 页面自上而下：
+  1. **月份切换**：取 `months`。
+  2. **四块数字**：
+     - 净值 vs 空仓。
+     - 投入 / 返奖 / 回收率。
+     - 足彩 N 期净值，含中奖期。
+     - 竞彩 N 个出票日净值。
+     - 实质余量一行，取 `report.pending`、`effective_net`、`effective_room`。
+  3. **曲线**：内联 SVG，阶梯折线。
+     - 画三样：实际净值、0 线（空仓）、止损线。止损线是阶梯，`moves` 处要标注，且不能隐藏。
+     - 今天的实质点画成虚线。
+     - 只画服务端给的点，页面不累计。
+  4. **足彩逐期表**：每期的投入、返奖、净值，每期链到 `/issue/<期>`。
+  5. **理由账**：
+     - 按理由列出张数、投入、净值、待结数。
+     - 开球后才写理由的单列。
+     - 审票否决仍买的单列，含否决码计数。
+  6. **初稿账**：懒加载 `/draft`，三列分别是实际出票、机器初稿、空仓。加载中显示「回放中…」。
+  7. **选择账**：每期列 Jun 的票形与净值、机器形的净值、丢光 C 档形的净值。
+  8. **桥后改动账**：每期列 B1 与实票的差异格。
+- 只用 `textContent`；390px 宽时整页不横滚（表格在自己的容器里横滑）。
+- 浏览器验收在沙盒做：
+  - 10 月曲线末点 = −9,170 与记分牌一致，两次换线的标注可见。
+  - 初稿账能加载出来。
+  - 浅色、深色都要看。
+
 ### 第 8 阶段：实验室 `/lab`
 
 - **数据**：`account.experiment_board(data_dir)`（各实验 n / n_min / verdict）、`account.rule_v3_board`；每行链 `/observe/exp/{id}`（已有页，不重做）；否决清单写死在模板里并注明来源（RULEBOOK「〇」：只有 V1/V2 有实证，止损/刹车是 Jun 签的线）。

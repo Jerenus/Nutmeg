@@ -1,0 +1,11 @@
+{% extends "decision/layout.html" %}
+{% block body %}
+<link rel="stylesheet" href="/static/decision/ledger.css?v={{ asset_v }}">
+<link rel="stylesheet" href="/static/decision/shell.css?v={{ asset_v }}">
+{% set nav_active = "ledger" %}{% include "decision/_nav.html" %}
+<main id="ledger" data-month="{{ month }}" class="ledger">
+  <header class="ledger-head"><h1>账房 {{ month }}</h1></header>
+  <p id="errors" class="errors" hidden></p>
+</main>
+<script src="/static/decision/ledger.js?v={{ asset_v }}"></script>
+{% endblock %}

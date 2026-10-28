@@ -51,7 +51,8 @@ def test_empty_day_is_explicit_not_silent(tmp_path):
 def test_retired_v1_routes_are_gone(tmp_path):
     """旧 DecisionStore 读写路由(批准/拒绝 Read、确认 legs、SOP 任务栏、对象/校准/账本页)已退役。"""
     client, out, date = _app(tmp_path)
-    for path in ("/objects", "/calibration", "/ledger", "/api/sop-steps?issue=1&date=" + date):
+    # /ledger 2026-10-28 起是新账房页（第 7 阶段），不再列为退役路由
+    for path in ("/objects", "/calibration", "/api/sop-steps?issue=1&date=" + date):
         assert client.get(path).status_code == 404
     for path in ("/action/approve-read", "/action/reject-read", "/action/confirm-legs",
                  "/action/run-task"):

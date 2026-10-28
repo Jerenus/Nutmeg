@@ -7,11 +7,18 @@ belief 回放本月竞彩板面日）；④ 判断力主/次指标最新结账�
 """
 from __future__ import annotations
 
+import calendar
 import json
 from datetime import date as _date
 from pathlib import Path
 
-from nutmeg.decision.bankroll import MONTHLY_STOP_LOSS_YUAN, month_net
+from nutmeg.decision.bankroll import (
+    MONTHLY_STOP_LOSS_YUAN,
+    STOP_LOSS_HISTORY,
+    month_net,
+    stop_loss_on,
+    ticket_day,
+)
 
 EXP_PREFIX = "EXP:"
 EXP_BUDGET_PER_DAY = 30
@@ -253,7 +260,48 @@ def draft_board(data_dir: Path, month: str) -> dict:
     return out
 
 
-def month_report(data_dir: Path, month: str) -> dict:
+def daily_curve(data_dir: Path, month: str, *, today: _date | None = None) -> dict:
+    """账房曲线（2026-10-28 第 7 阶段）：{points:[{day, net, line}], moves:[{day, from, to}],
+    effective:{day, net}|None}。
+
+    points＝`month_net` 的条目按 `ticket_day` 归日、逐日累计（当日净为 0 的日子不出点），末点＝
+    `month_net.net`；line＝当日生效的止损线（正数，画在 −line）。moves＝当月内止损线换档。
+    effective＝「实质」点：已结净值减待结注金（`pending_ledger`）；当月取今天（北京），过去的月
+    只在仍有待结票时给、取月末；其余 None。"""
+    data_dir = Path(data_dir)
+    net = month_net(data_dir, month)
+    by_day: dict[str, float] = {}
+    for key, value in net["entries"]:
+        day = ticket_day(key, data_dir) or ""
+        by_day[day] = by_day.get(day, 0.0) + value
+    points, total = [], 0.0
+    for day in sorted(by_day):
+        if not by_day[day]:
+            continue
+        total += by_day[day]
+        points.append({"day": day, "net": round(total, 2), "line": stop_loss_on(day)})
+    moves = [{"day": since, "from": STOP_LOSS_HISTORY[i - 1][1], "to": value}
+             for i, (since, value) in enumerate(STOP_LOSS_HISTORY)
+             if i and since[:7] == month]
+    if today is None:
+        from datetime import datetime
+
+        from nutmeg.decision.bj_time import BJ
+        today = datetime.now(BJ).date()
+    pending = pending_ledger(data_dir, month)
+    this_month, effective = today.strftime("%Y-%m"), None
+    if month == this_month or (month < this_month and pending["n"]):
+        year, mon = int(month[:4]), int(month[5:7])
+        day = (today.isoformat() if month == this_month
+               else f"{month}-{calendar.monthrange(year, mon)[1]:02d}")
+        effective = {"day": day, "net": round(net["net"] - pending["stake"], 2)}
+    return {"points": points, "moves": moves, "effective": effective}
+
+
+def month_report(data_dir: Path, month: str, *, with_draft: bool = True,
+                 with_rule_v3: bool = True) -> dict:
+    """两块 gym 回放（沙盒 10 月整份 6.4 s，大头是规则 v3 的 5.8 s，初稿账约 0.2 s）：账房页主接口
+    两个都传 False（结果里不出这两个键），初稿账走按需接口。CLI 用默认值，行为不变。"""
     data_dir = Path(data_dir)
     net = month_net(data_dir, month)
     by_channel = {"jczq": 0.0, "zucai": 0.0}
@@ -275,7 +323,7 @@ def month_report(data_dir: Path, month: str) -> dict:
             continue
         label = row.get("verdict") or "not_due"
         verdicts[label] = verdicts.get(label, 0) + 1
-    return {
+    report = {
         "month": month, "net": net["net"], "stake": net["stake"],
         "entries": len(net["entries"]), "unknown": net["unknown"],
         "by_channel": {k: round(v, 2) for k, v in by_channel.items()},
@@ -286,9 +334,13 @@ def month_report(data_dir: Path, month: str) -> dict:
         "effective_room": round(MONTHLY_STOP_LOSS_YUAN + effective_net, 2),
         "effective_tripped": effective_net <= -MONTHLY_STOP_LOSS_YUAN,
         "exploration": spend, "deviations": deviations, "vetoed": vetoed, "experiments": board,
-        "verdicts": verdicts, "rule_v3": rule_v3_board(data_dir, month),
-        "draft": draft_board(data_dir, month),
+        "verdicts": verdicts,
     }
+    if with_rule_v3:
+        report["rule_v3"] = rule_v3_board(data_dir, month)
+    if with_draft:
+        report["draft"] = draft_board(data_dir, month)
+    return report
 
 
 def render_month(report: dict) -> str:
