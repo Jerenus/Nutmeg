@@ -7,6 +7,7 @@
   --veto:#B23A0E; --veto-bg:#FBEDE6; --ok:#17734A; --ok-bg:#E6F2EB; --link:#2348C9;
   --drawer:#F7F8F5; --drawer-line:#C9CDC6; --cited:#EEF2FD; --on-link:#FFFFFF; --on-veto:#FFFFFF;
   --warn:#8A5300; --warn-bg:#FBF1DE;
+  --dash:#B5BAB3; --off-bg:#F3F4F1;
   --sans:"Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
   display:block; max-width:1360px; margin:0 auto; padding:28px 24px 64px;
@@ -19,6 +20,7 @@
   --veto:#F08A63; --veto-bg:#3A1D12; --ok:#5CC793; --ok-bg:#16301F; --link:#8EA6F5;
   --drawer:#15191C; --drawer-line:#3A4148; --cited:#1C2540; --on-link:#111417; --on-veto:#111417;
   --warn:#E9B565; --warn-bg:#33260F;
+  --dash:#4A5158; --off-bg:#15191C;
 }}
 :root[data-theme="dark"] .issue{
   --ink:#E4E7E3; --ground:#111417; --paper:#1A1E22; --line:#2E343A; --line-soft:#24292E;
@@ -26,6 +28,7 @@
   --veto:#F08A63; --veto-bg:#3A1D12; --ok:#5CC793; --ok-bg:#16301F; --link:#8EA6F5;
   --drawer:#15191C; --drawer-line:#3A4148; --cited:#1C2540; --on-link:#111417; --on-veto:#111417;
   --warn:#E9B565; --warn-bg:#33260F;
+  --dash:#4A5158; --off-bg:#15191C;
 }
 body:has(> .issue){background:#F3F4F1}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) body:has(> .issue){background:#111417}}
@@ -231,6 +234,47 @@ body:has(> .issue){background:#F3F4F1}
 .issue .b-actions .btn{flex:0 1 auto}
 .issue .b-actions .foot{flex:1 1 100%}
 
+/* ---- 500 票面（第 4 阶段，画布 Issue.dc.html 回执板）：抄录卡 → 登记块 → 回执；复用 .bridge 外框 ---- */
+.issue .slip500{border:2px solid var(--ink)}
+.issue .s5-cells{display:grid; grid-template-columns:repeat(14,minmax(0,1fr)); gap:4px}
+.issue .s5-cell{min-height:84px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; padding:6px 2px;
+  border-radius:4px; background:var(--ink); color:var(--paper); border:1px solid var(--ink); min-width:0}
+.issue .s5-cell.off{background:var(--off-bg); color:var(--show); border:1px dashed var(--dash)}
+.issue .s5-no{font-size:12px; opacity:.8}
+.issue .s5-name{font-size:12px; line-height:1.3; text-align:center; overflow-wrap:anywhere; max-width:100%;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden}
+.issue .s5-tok{font-size:20px; font-weight:600; line-height:1.2}
+.issue .s5-lines{display:flex; flex-wrap:wrap; gap:16px}
+.issue .s5-line{flex:1 1 420px; min-width:0; display:flex; flex-direction:column; gap:6px}
+.issue .s5-line .label,.issue .s5-mult .label,.issue .s5-confirm .label{font-size:12px; color:var(--muted)}
+.issue .s5-line-row{display:flex; gap:8px; align-items:stretch}
+.issue .s5-code-line{flex:1 1 auto; min-width:0; font-size:15px; padding:10px 12px; background:var(--ground); border-radius:4px;
+  overflow-x:auto; white-space:nowrap; user-select:all}
+.issue .s5-copy{min-width:76px; flex:0 0 auto}
+.issue .s5-copy.primary{background:var(--ink); color:var(--paper); border-color:var(--ink)}
+.issue .b-btn:disabled{opacity:.45; cursor:not-allowed}
+.issue .s5-copy-fail{font-size:12px; font-weight:700; color:var(--warn)}
+.issue .s5-confirm-row{display:flex; flex-wrap:wrap; gap:12px; align-items:stretch}
+.issue .s5-confirm{flex:1 1 420px; min-width:0; display:flex; flex-direction:column; gap:4px; padding:12px 14px; border:1px solid var(--ink); border-radius:6px}
+.issue .s5-confirm-v{font-size:20px; font-weight:600}
+.issue .s5-confirm-note{font-size:13px; font-weight:700; color:var(--veto)}
+.issue .s5-mult{flex:0 1 160px; min-width:0; display:flex; flex-direction:column; gap:4px; justify-content:flex-end}
+.issue .s5-reg{display:flex; flex-direction:column; gap:12px; padding-top:18px; border-top:1px solid var(--line-soft)}
+.issue .s5-reg .b-why{padding-left:0; font-size:13px}
+.issue .s5-receipts{display:flex; flex-direction:column; gap:12px; padding-top:18px; border-top:1px solid var(--line-soft)}
+.issue .s5-receipt{display:flex; flex-direction:column; gap:8px; padding:16px; border:1px solid var(--line); border-radius:6px; background:var(--paper)}
+.issue .s5-receipt:first-of-type{border:2px solid var(--ink)}
+.issue .s5-receipt h3{font-size:18px}
+.issue .s5-summary{font-size:14px; font-weight:500; overflow-wrap:anywhere}
+.issue .s5-chips{display:flex; flex-wrap:wrap; gap:6px}
+.issue .s5-chip{padding:2px 8px; border-radius:3px; font-size:12px; font-weight:700; border:1px solid var(--ink); color:var(--ink); font-family:var(--mono)}
+.issue .s5-chip.veto{background:var(--veto); color:var(--on-veto); border-color:var(--veto)}
+.issue .s5-note{font-size:13px; line-height:1.6; padding:8px 12px; border:1px solid var(--line); border-radius:4px; overflow-wrap:anywhere}
+.issue .s5-note.veto{background:var(--veto-bg); border-color:var(--veto); color:var(--veto); font-weight:700}
+.issue .s5-note.warn{background:var(--warn-bg); border-color:var(--warn); color:var(--warn); font-weight:700}
+.issue .s5-note.ok{background:var(--ok-bg); border-color:var(--ok); color:var(--ok); font-weight:700}
+.issue .s5-note.strong{font-weight:700; border-color:var(--ink)}
+
 /* 按钮 */
 .issue .actions{display:flex; flex-direction:column; gap:10px}
 .issue .btn{min-height:48px; padding:0 16px; border-radius:6px; font-size:15px; cursor:pointer; background:var(--paper); color:var(--ink); border:1px solid var(--ink)}
@@ -249,4 +293,8 @@ body:has(> .issue){background:#F3F4F1}
   .issue .b-open-label{flex:none}
   .issue .b-why,.issue .b-why-done,.issue .b-signs{padding-left:0}
   .issue .b-actions .btn{flex:1 1 100%}
+  .issue .s5-cells{grid-template-columns:repeat(7,minmax(0,1fr))}
+  .issue .s5-line,.issue .s5-confirm,.issue .s5-mult{flex:1 1 100%}
+  .issue .s5-confirm-v{font-size:18px}
+  .issue .s5-receipt{padding:12px}
 }

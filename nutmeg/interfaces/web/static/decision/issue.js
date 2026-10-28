@@ -2,6 +2,8 @@
 // 推导一律在服务端：注数 / P / V 码 / 止损 / 刹车 / 死法清单来自 /api/precheck，
 // 档 / 条件 k/n / 翻车面 / 默认 / 死门 / 首发来自分析包旁车（/api/issue）。这里只渲染。
 // §3 桥（第 3 阶段）：五条自检 / 差异格 / 理由读数来自 /api/bridge/{期}/preview，定稿走 /action/bridge。
+// 500 票面（第 4 阶段）：先照抄录卡在 500 app 下单（/api/issue/{期}/slip500，只算不写），
+// 再「我已在 500 下单」登记实票（/action/issue/{期}/register，票号 T<n> 服务端分配），每张一份回执。
 // 研究文本是不可信输入：全部 textContent，不用 innerHTML。
 (() => {
   "use strict";
@@ -23,6 +25,11 @@
     mode: "draft", draft0: null, bview: null, bpending: false, bseq: 0, outs: {}, whys: {},
     signed: {}, deviation: "", prediction: "", record: null, registered: null, berror: "",
     submitting: false,
+    // 500 抄录卡 + 实票登记：slip＝最近一次 slip500 回包（{…, mult}＝当时送的倍数）；
+    // reg＝登记块（touched＝自己动过偏离理由 / 预测，walked 时就不再用桥记录覆盖）；receipts 新的在前
+    slip: null, sseq: 0, spending: false, mult: "1", copied: {},
+    reg: { scheme: "", deviation: "", prediction: "", touched: false, posting: false, error: "" },
+    receipts: [],
   };
   // 偏离理由封闭枚举 = betslip_diagnosis.DEVIATION_REASONS；空串也收（账上记「偏离初稿未登记理由」）
   const DEVIATIONS = [["fact_self_judged", "自判事实"], ["price_instinct", "价格直觉"],
@@ -75,6 +82,7 @@
     if (state.data.bridge) {              // 本期桥已走过：直接进 walked，表上摆 B1
       state.mode = "walked";
       state.record = state.data.bridge;
+      prefillFromBridge();
       setPicks(state.record.faces);
     } else {
       render();
@@ -114,6 +122,7 @@
     render();
     review();
     bridgeRefresh();
+    slipRefresh();
   }
 
   function setPicks(faces) {
@@ -123,6 +132,7 @@
     render();
     review();
     bridgeRefresh();
+    slipRefresh();
   }
 
   let timer = null;
@@ -223,6 +233,7 @@
     }
     renderSide();
     renderBridge();
+    renderSlip();
   }
 
   // ---- 侧栏：草案卡 / 审票卡 / 死法清单 ---------------------------------
@@ -611,8 +622,10 @@
     };
     state.registered = { summary: body.summary, lines: body.lines || [] };
     state.mode = "walked";
+    prefillFromBridge();
     renderGo();
     renderBridge();
+    renderSlip();
   }
 
   function gotoEvidence(no) {
@@ -904,6 +917,326 @@
     if (state.mode === "walked") walkedPanel(host); else bridgePanel(host);
     setBridgeStatus();
     if (key && key.startsWith("b-")) {      // 重画不丢焦点与光标（输入框边打边对照）
+      const again = host.querySelector(`[data-focus="${key}"]`);
+      if (again) {
+        again.focus();
+        if (sel && typeof again.setSelectionRange === "function") again.setSelectionRange(sel[0], sel[1]);
+      }
+    }
+  }
+
+  // ---- 500 票面（第 4 阶段）：抄录卡 → 在 500 下单 → 登记实票 → 回执 ---------------
+  // 顺序是「先照卡下单、再登记」：登记＝已经买了（没入账＝没打）。卡上的注数 / 金额 / 两行字
+  // 全来自 slip500（与登记那张票同源）；票号 T<n> 由服务端分配，页面只在登记回来后才写下一号。
+  const HARD = ["STOP", "BRAKE", "DAYCAP"];   // 纪律否决码：一律 ⛔
+
+  function prefillFromBridge() {              // walked：登记块沿用桥记录的偏离理由与预测（同一判断的延续）
+    const rec = state.record;
+    if (!rec || state.reg.touched) return;
+    state.reg.deviation = String(rec.deviation || "");
+    state.reg.prediction = String(rec.prediction || "");
+  }
+
+  let stimer = null;
+  function slipRefresh() {
+    clearTimeout(stimer);
+    const seq = ++state.sseq;              // 新点格 / 新倍数让在途的旧抄录卡作废
+    if (!walkable()) {
+      state.slip = null; state.spending = false; renderSlip();
+      return;
+    }
+    state.spending = true;
+    setSlipStatus();
+    stimer = setTimeout(async () => {
+      const mult = String(state.mult).trim();
+      const body = await postJSON(`/api/issue/${encodeURIComponent(issue)}/slip500`,
+        { faces: { ...state.picks }, multiplier: mult }, "抄录卡接口");
+      if (seq !== state.sseq) return;      // 过期回应丢掉
+      state.spending = false;
+      state.slip = { ...body, mult: mult || "1" };
+      state.copied = {};
+      renderSlip();
+    }, 150);
+  }
+
+  let sstatusEl = null;
+  let copyBtns = [];
+  function setSlipStatus() {
+    if (sstatusEl) sstatusEl.textContent = state.spending ? "重算中…" : state.slip && state.slip.ok ? "已核对" : "";
+    for (const b of copyBtns) b.disabled = state.spending;   // 重算中不许复制旧行
+  }
+
+  function selectText(key) {
+    const host = document.getElementById("slip500");
+    const node = host && host.querySelector(`[data-focus="${key}"]`);
+    if (!node) return;
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } catch {
+      /* 选不中也只能让人自己拖选 */
+    }
+  }
+
+  async function copyLine(key, text) {
+    let ok = false;
+    try {
+      const clip = globalThis.navigator && globalThis.navigator.clipboard;
+      if (clip && typeof clip.writeText === "function") {
+        await clip.writeText(text);
+        ok = true;
+      }
+    } catch {
+      ok = false;
+    }
+    state.copied[key] = ok ? "ok" : "fail";
+    renderSlip();
+    if (!ok) selectText(`s5-code-${key}`);
+  }
+
+  function lineRow(key, label, text) {
+    const box = el("div", "s5-line");
+    box.append(el("span", "label", label));
+    const row = el("div", "s5-line-row");
+    const code = el("code", "s5-code-line mono", text);
+    code.dataset.focus = `s5-code-${key}`;
+    const done = state.copied[key];
+    const btn = button("b-btn s5-copy" + (key === "pos" ? " primary" : ""),
+      done === "ok" ? "已复制" : done === "fail" ? "手动选中" : "复制", () => copyLine(key, text));
+    btn.dataset.focus = `s5-copy-${key}`;
+    btn.setAttribute("aria-label", `复制${label}`);
+    btn.disabled = state.spending;
+    copyBtns.push(btn);
+    row.append(code, btn);
+    box.append(row);
+    if (done === "fail") {
+      const note = el("span", "s5-copy-fail", "剪贴板不可用：已选中这一行，手动复制（⌘C / 长按）");
+      note.setAttribute("role", "status");
+      box.append(note);
+    }
+    return box;
+  }
+
+  function slipCells(cells) {
+    const grid = el("div", "s5-cells");
+    grid.setAttribute("role", "list");
+    grid.setAttribute("aria-label", "500 票面 14 格（按 500 场序）");
+    for (const c of cells || []) {
+      const off = !c.token || c.token === "*";
+      const box = el("div", "s5-cell" + (off ? " off" : ""));
+      box.setAttribute("role", "listitem");
+      box.setAttribute("aria-label", `场 ${c.no} ${c.name || ""} ${off ? "不选" : c.token}`);
+      box.append(el("span", "s5-no mono", c.no), el("span", "s5-name", c.name || "—"),
+        el("span", "s5-tok mono", off ? "*" : c.token));
+      grid.append(box);
+    }
+    return grid;
+  }
+
+  function multInput() {
+    const wrap = el("label", "s5-mult");
+    wrap.append(el("span", "label", "倍数（1–99）"));
+    const input = el("input", "b-input mono");
+    input.type = "number";
+    input.min = "1";
+    input.max = "99";
+    input.step = "1";
+    input.inputMode = "numeric";
+    input.value = state.mult;
+    input.dataset.focus = "s5-mult";
+    input.setAttribute("aria-label", "倍数 1 到 99");
+    input.addEventListener("input", (e) => { state.mult = e.target.value; slipRefresh(); });
+    wrap.append(input);
+    return wrap;
+  }
+
+  function slipCard(host) {
+    const head = el("div", "b-head");
+    const h = el("h2", null, "500 抄录卡 · 先照着下单，再登记");
+    h.id = "slip500-h";
+    sstatusEl = el("span", "b-status");
+    head.append(h, el("span", "muted", "照这张卡在 500 app 里点；确认页的注数、金额、倍数要和下面一致"), sstatusEl);
+    host.append(head);
+    const v = state.slip;
+    if (v && !v.ok) {
+      const banner = el("p", "b-error", v.error || "抄录卡算不出");
+      banner.setAttribute("role", "alert");
+      host.append(banner);
+    }
+    if (!v || !v.ok) {
+      if (!v) host.append(el("p", "muted", state.spending ? "重算中…" : "还没有抄录卡。"));
+      host.append(multInput());
+      return;
+    }
+    host.append(slipCells(v.cells));
+    const lines = el("div", "s5-lines");
+    lines.append(lineRow("pos", "位置式（500 方案页整行，* ＝不选）", v.faces_row || ""),
+      lineRow("named", "点名式（手敲、发消息用）", v.named || ""));
+    host.append(lines);
+    const confirm = el("div", "s5-confirm-row");
+    const box = el("div", "s5-confirm");
+    box.append(el("span", "label", "500 确认页必须显示 "),
+      el("span", "s5-confirm-v mono", `${v.notes} 注 · ¥${v.stake} · ${v.mult} 倍`),
+      el("span", "s5-confirm-note", "——对不上＝抄错了，别付款"));
+    confirm.append(box, multInput());
+    host.append(confirm);
+  }
+
+  const nextSlipNo = () => {
+    const last = state.receipts[0];
+    const m = last && /-T(\d+)$/.exec(String(last.slip_id || ""));
+    return m ? `${issue}-T${Number(m[1]) + 1}` : "";
+  };
+
+  function regInput(focusKey, field, label, placeholder) {
+    return textInput(focusKey, state.reg[field], label, placeholder, (t) => {
+      state.reg[field] = t;
+      if (field !== "scheme") state.reg.touched = true;
+    });
+  }
+
+  function registerBlock(host) {
+    const sec = el("div", "s5-reg");
+    sec.append(sectionTitle("登记实票", "登记＝已经买了（没入账＝没打）——先在 500 付完款再按"));
+    const scheme = el("label", "b-why");
+    scheme.append(el("span", null, "500 方案号（选填）"), regInput("s5-scheme", "scheme", "500 方案号（选填）", "方案号"));
+    const chips = el("div", "b-chips");
+    for (const [code, label] of DEVIATIONS) {
+      const on = state.reg.deviation === code;
+      const chip = button("b-chip" + (on ? " on" : ""), label, () => {
+        state.reg.deviation = on ? "" : code;
+        state.reg.touched = true;
+        renderSlip();
+      });
+      chip.dataset.focus = `s5-dev-${code}`;
+      chip.setAttribute("aria-pressed", String(on));
+      chips.append(chip);
+    }
+    const pred = el("label", "b-why");
+    pred.append(el("span", null, "一句可证伪的预测"),
+      regInput("s5-pred", "prediction", "一句可证伪的预测", "写一句赛后能判对错的话"));
+    sec.append(scheme, sectionTitle("偏离机器默认的理由", "五选一；不选也能登记，账上记「偏离初稿未登记理由」"), chips, pred);
+    if (state.mode === "walked" && state.record) {
+      sec.append(el("p", "foot", "已按桥记录预填偏离理由与预测；两样都清空时服务端仍沿用桥记录。"));
+    }
+    if (state.reg.error) {
+      const banner = el("p", "b-error", state.reg.error);
+      banner.setAttribute("role", "alert");
+      sec.append(banner);
+    }
+    const acts = el("div", "b-actions");
+    const next = nextSlipNo();
+    const go = button("btn primary", state.reg.posting ? "登记中…"
+      : `我已在 500 下单 · 登记实票${next ? " " + next : ""}`, registerReal);
+    go.dataset.focus = "s5-register";
+    go.disabled = state.reg.posting;
+    acts.append(go, el("span", "foot", "⛔ 只表示审票不同意；登记永远可以，否决会随票入账。可以接着登记下一张，每张一份回执。"));
+    sec.append(acts);
+    host.append(sec);
+  }
+
+  async function registerReal() {
+    if (state.reg.posting) return;
+    state.reg.posting = true;
+    state.reg.error = "";
+    renderSlip();
+    const payload = {
+      faces: { ...state.picks }, multiplier: String(state.mult).trim(),
+      scheme_no: state.reg.scheme.trim(), deviation: state.reg.deviation, prediction: state.reg.prediction.trim(),
+    };
+    const body = await postJSON(`/action/issue/${encodeURIComponent(issue)}/register`, payload, "登记接口");
+    state.reg.posting = false;
+    if (!body.ok) {
+      state.reg.error = body.error || "登记失败";
+    } else {
+      state.receipts.unshift(body);
+      state.reg.scheme = "";              // 方案号一张一个；理由与预测留着给下一张
+    }
+    renderSlip();
+  }
+
+  // ⛔：纪律码（止损 / 刹车 / 日帽）一律；V 码看登记回来的审票行是不是 ⛔ 级（V1 也可能只是 ⚠️）
+  function vetoCode(code, r) {
+    if (HARD.includes(code)) return true;
+    const lines = r.lines || [];
+    if (lines.some((l) => String(l).startsWith(`⛔${code} `))) return true;
+    if (lines.some((l) => new RegExp(`^\\S*${code} `).test(String(l)))) return false;
+    return Boolean(r.vetoed) && /^V\d/.test(code);
+  }
+
+  function lineupReview(r) {
+    const tokens = String(r.faces_row || "").split(/\s+/);
+    const byTime = new Map();
+    tokens.forEach((t, i) => {
+      if (!t || t === "*") return;
+      const no = String(i + 1);
+      const m = (state.data.matches || []).find((x) => x.no === no);
+      const p = (m && m.packet) || {};
+      if (!p.lineup_before_close) return;
+      const at = p.lineup_at || "时刻不明";
+      if (!byTime.has(at)) byTime.set(at, []);
+      byTime.get(at).push(no);
+    });
+    return [...byTime].map(([at, nos]) => `首发 ${at} 停售前可见：场 ${nos.join(" · ")}`);
+  }
+
+  function receiptCard(r) {
+    const box = el("article", "s5-receipt");
+    box.setAttribute("aria-label", `回执 ${r.slip_id}`);
+    const head = el("div", "b-head");
+    head.append(el("h3", null, `已登记 ${r.slip_id} · 实购`), el("span", "muted", r.faces_row || ""));
+    box.append(head, el("p", "s5-summary", r.summary || ""));
+    const codes = r.codes || [];
+    if (codes.length) {
+      const chips = el("div", "s5-chips");
+      for (const c of codes) {
+        const veto = vetoCode(c, r);
+        chips.append(el("span", "s5-chip" + (veto ? " veto" : ""), veto ? `⛔${c}` : c));
+      }
+      box.append(chips);
+    }
+    const notes = [];
+    if (r.vetoed) notes.push(["veto", "审票不同意，已随票入账（登记不受限）"]);
+    if (r.after_kickoff) notes.push(["warn", "理由写于开球后：照记，不进理由净值"]);
+    if (Array.isArray(r.b1_changed)) {
+      notes.push(["", r.b1_changed.length
+        ? `与桥后票 B1 改了 ${r.b1_changed.length} 格：${r.b1_changed.map((no) => `场 ${no}`).join("、")}`
+        : "和 B1 一样"]);
+    }
+    for (const t of lineupReview(r)) notes.push(["ok", t]);
+    notes.push(["strong", "把 500 确认页截图发回 → 记实购（截图＝实购）"]);
+    if (r.brake_line) notes.push([String(r.brake_line).startsWith("⛔") ? "veto" : "", r.brake_line]);
+    for (const [cls, t] of notes) box.append(el("p", "s5-note" + (cls ? " " + cls : ""), t));
+    for (const line of r.lines || []) box.append(el("p", "foot", line));
+    return box;
+  }
+
+  function renderSlip() {
+    const host = document.getElementById("slip500");
+    if (!host || !state.data) return;
+    const active = document.activeElement;
+    const key = active && active.dataset ? active.dataset.focus : null;
+    const sel = active && typeof active.selectionStart === "number" ? [active.selectionStart, active.selectionEnd] : null;
+    host.replaceChildren();
+    sstatusEl = null;
+    copyBtns = [];
+    const show = walkable();
+    host.hidden = !show && !state.receipts.length;
+    if (show) {
+      slipCard(host);
+      registerBlock(host);
+    }
+    if (state.receipts.length) {
+      const list = el("div", "s5-receipts");
+      list.append(sectionTitle("回执", `${state.receipts.length} 张 · 新的在前`));
+      for (const r of state.receipts) list.append(receiptCard(r));
+      host.append(list);
+    }
+    setSlipStatus();
+    if (key && key.startsWith("s5-")) {     // 重画不丢焦点与光标
       const again = host.querySelector(`[data-focus="${key}"]`);
       if (again) {
         again.focus();
