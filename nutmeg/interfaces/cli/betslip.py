@@ -206,13 +206,18 @@ def _brake_line(data_dir: Path, placed_at: str) -> str:
     """月度止损状态（宪法 §4，2026-10-01）：只打印，不阻断——登记是事实。"""
     from datetime import date as _date
 
+    from nutmeg.decision.account import pending_ledger
     from nutmeg.decision.bankroll import brake_state, status_line
 
     try:
         when = _date.fromisoformat(placed_at)
     except ValueError:
         when = _date.today()
-    return status_line(brake_state(data_dir, when))
+    try:   # 待结实购票按全损计（2026-10-28）；登记簿读不出就退回已结账口径
+        pending = pending_ledger(data_dir, when.strftime("%Y-%m"))
+    except Exception:  # noqa: BLE001
+        pending = None
+    return status_line(brake_state(data_dir, when, pending=pending))
 
 
 @betslip_app.command("preview")

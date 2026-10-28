@@ -13,6 +13,7 @@ from itertools import combinations
 from math import prod
 
 from nutmeg.decision.faces import FACE_OF
+from nutmeg.decision.structure_tiers import COIN_TOP1
 
 SUBSETS = ("3", "1", "0", "31", "30", "10", "310")
 
@@ -51,6 +52,11 @@ def co_death(tickets: list[dict], fair: dict) -> tuple[float, list[tuple[str, st
 SHARED_EXCLUDED_MIN = 0.30
 """跨票共享排除面的门槛（§8a 第 4 条，2026-10-14）：所有票同时排掉的 ≥30% 面＝共享裸单同类项。
 26138 2·0(45%)、26139 3·10/8·31(25%/19%)、26140 两胆 6·3/8·0 的被排面——四期死因都在这里。"""
+
+
+def is_coin(faces: dict) -> bool:
+    """D 档（§1 五档：市场最大面 <45%）＝任九里该先丢、不该拉进来当双的场。"""
+    return max(faces.values()) < COIN_TOP1
 
 
 def death_list(tickets: list[dict], fair: dict,
@@ -139,7 +145,10 @@ def death_list_lines(tickets: list[dict], fair: dict, *, top: int = 5) -> list[s
     ordered, pass_through = death_list(tickets, fair, top=top)
     if not ordered:
         return ["   死法清单：无同死面（没有一场是所有票都没盖同一面）"]
-    shown = "、".join(f"{no}开{f} {p * 100:.0f}%" for no, f, p in ordered[:top])
+    # 2026-10-28（26151 三张同死在 1开0 35%：D 档硬币被拉进任九当双）：D 档的面标出来，
+    # 桥 §3 第一句要并列「死法清单第一行是哪格、是不是拉进来的 D 档」
+    shown = "、".join(f"{no}开{f} {p * 100:.0f}%" + ("·D档" if is_coin(fair[no]) else "")
+                     for no, f, p in ordered[:top])
     more = (f"（另 {len(ordered) - top} 条 <{ordered[top][2] * 100:.0f}%）"
             if len(ordered) > top else "")
     scope = "全组同死面" if len(tickets) > 1 else "本票被排面"

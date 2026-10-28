@@ -109,3 +109,17 @@ def test_best_complement_never_shares_a_30pct_excluded_face_with_the_base():
     _, ticket = found
     assert not shared_excluded([base[0], ticket], fair)
     assert "1" in ticket and ticket["1"] != "30"   # 场 1 的平 35% 必须有一张盖住
+
+
+def test_death_list_marks_coin_band_faces_so_the_bridge_asks_why_a_d_band_match_is_in():
+    """2026-10-28（26151）：三张票同死在 1开0 35%——D 档硬币被拉进任九当双。死法清单把
+    市场最大面 <45% 的场标 ·D档，桥 §3 第一句要并列「第一行是不是拉进来的 D 档」。"""
+    from nutmeg.decision.slip_group import death_list_lines, is_coin
+
+    fair = {"1": {"home": 0.40, "draw": 0.27, "away": 0.33},    # D 档
+            "2": {"home": 0.67, "draw": 0.18, "away": 0.15}}    # B 档
+    a = {"1": "31", "2": "3"}
+    b = {"1": "1", "2": "3"}
+    assert is_coin(fair["1"]) and not is_coin(fair["2"])
+    line = death_list_lines([a, b], fair)[0]
+    assert "1开0 33%·D档、2开10 33%｜" in line        # B 档那一格不标

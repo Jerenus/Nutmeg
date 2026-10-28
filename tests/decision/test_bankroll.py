@@ -55,6 +55,11 @@ def test_brake_trips_at_the_stop_loss_and_prints_room_otherwise(tmp_path: Path):
     tripped = brake_state(data, date(2026, 10, 5))
     assert tripped["net"] == -8100.0 and tripped["tripped"] is True
     assert status_line(tripped).startswith("⛔") and "空仓到月底" in status_line(tripped)
+    # 2026-10-28：待结实购票按注金全损计（26149/26150 预审报「余 ¥766」实 ¥78 的根因）
+    pend = brake_state(data, date(2026, 9, 30), pending={"n": 2, "stake": 7000.0})
+    assert pend["effective_net"] == round(calm["net"] - 7000, 2) and pend["tripped"] is True
+    assert "待结 2 张 ¥7,000 按全损计 → 实质" in status_line(pend)
+    assert status_line(pend).startswith("⛔")
 
 
 def test_issue_brake_after_two_wiped_issues_or_an_explicit_precommit(tmp_path: Path):
