@@ -1,19 +1,207 @@
-.day-nav a { margin-left: 12px; color: inherit; opacity: .8; }
-.day-block { margin: 18px 0; padding: 14px 16px; border: 1px solid rgba(127,127,127,.25); border-radius: 12px; }
-.day-block h2 { margin: 0 0 10px; font-size: 15px; letter-spacing: .04em; opacity: .75; }
-.day-pre { white-space: pre-wrap; font: 12px/1.5 ui-monospace, Menlo, monospace; max-height: 260px; overflow: auto; }
-.day-row { display: grid; grid-template-columns: 1.6fr 1fr 1fr 2.4fr; gap: 8px; padding: 6px 0; border-top: 1px dashed rgba(127,127,127,.25); font-size: 13px; }
-.day-row.alarm { color: #c0392b; }
-.day-row.ok { opacity: .85; }
-.day-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
-.day-card { border: 1px solid rgba(127,127,127,.3); border-radius: 10px; padding: 10px 12px; }
-.day-card h3 { margin: 0 0 6px; font-size: 14px; }
-.day-card .day-badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; background: rgba(127,127,127,.18); margin-right: 6px; }
-.day-card details summary { cursor: pointer; font-size: 12px; opacity: .8; }
-.day-card pre { font: 11px/1.4 ui-monospace, Menlo, monospace; white-space: pre-wrap; max-height: 220px; overflow: auto; }
-.day-decision { display: flex; gap: 10px; align-items: baseline; padding: 5px 0; font-size: 13px; }
-.day-decision .due { font: 12px ui-monospace, Menlo, monospace; opacity: .8; }
-.day-decision.expired { opacity: .5; text-decoration: line-through; }
-.day-talk-input { display: flex; gap: 8px; margin-top: 8px; }
-.day-talk-input input { flex: 1; padding: 6px 8px; }
-@media (max-width: 640px) { .day-row { grid-template-columns: 1fr 1fr; } }
+/* 今天页（2026-10-28 产品形态第 6 阶段 Task 6.2，配色照 Today.dc.html 画布）。
+   token 与 issue.css / jczq.css 同一组，全部挂在 .today 下；不改 app.css，不加载网络字体。 */
+
+.today{
+  --ink:#15181B; --ground:#F3F4F1; --paper:#FFFFFF; --line:#DADDD7; --line-soft:#ECEEE9;
+  --muted:#565E66; --sub:#3A4148; --show:#7A828A; --focus:#EEF2FD;
+  --veto:#B23A0E; --veto-bg:#FBEDE6; --ok:#17734A; --ok-bg:#E6F2EB; --link:#2348C9;
+  --warn:#8A5300; --warn-bg:#FBF1DE; --brake:#8A4B00; --brake-bg:#FFF3E0; --brake-line:#B86A00;
+  --drawer:#F7F8F5; --on-ink:#FFFFFF; --on-veto:#FFFFFF; --seg-off:#E3E5E0;
+  --sans:"Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  display:flex; flex-direction:column; gap:24px; max-width:1280px; margin:0 auto; padding:24px 24px 64px;
+  min-height:100vh; background:var(--ground); color:var(--ink);
+  font-family:var(--sans); font-size:14px; line-height:1.5;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .today{
+  --ink:#E4E7E3; --ground:#111417; --paper:#1A1E22; --line:#2E343A; --line-soft:#24292E;
+  --muted:#9AA2AA; --sub:#B7BEC4; --show:#8A929A; --focus:#1C2540;
+  --veto:#F08A63; --veto-bg:#3A1D12; --ok:#5CC793; --ok-bg:#16301F; --link:#8EA6F5;
+  --warn:#E9B565; --warn-bg:#33260F; --brake:#E9B565; --brake-bg:#33260F; --brake-line:#9A6A1F;
+  --drawer:#15191C; --on-ink:#111417; --on-veto:#111417; --seg-off:#3A4148;
+}}
+:root[data-theme="dark"] .today{
+  --ink:#E4E7E3; --ground:#111417; --paper:#1A1E22; --line:#2E343A; --line-soft:#24292E;
+  --muted:#9AA2AA; --sub:#B7BEC4; --show:#8A929A; --focus:#1C2540;
+  --veto:#F08A63; --veto-bg:#3A1D12; --ok:#5CC793; --ok-bg:#16301F; --link:#8EA6F5;
+  --warn:#E9B565; --warn-bg:#33260F; --brake:#E9B565; --brake-bg:#33260F; --brake-line:#9A6A1F;
+  --drawer:#15191C; --on-ink:#111417; --on-veto:#111417; --seg-off:#3A4148;
+}
+body:has(> .today){background:#F3F4F1}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) body:has(> .today){background:#111417}}
+:root[data-theme="dark"] body:has(> .today){background:#111417}
+.today *{box-sizing:border-box}
+.today .mono{font-family:var(--mono); font-variant-numeric:tabular-nums}
+.today .muted{color:var(--muted)}
+.today .small{font-size:12px}
+.today p{margin:0}
+.today a{color:var(--link)}
+.today button{font-family:inherit; color:inherit}
+.today button:focus-visible,.today a:focus-visible,.today .input:focus-visible,.today summary:focus-visible{outline:2px solid var(--link); outline-offset:2px}
+.today h2{margin:0; font-size:20px; font-weight:700}
+
+/* ---- 按钮 / 输入（≥44px 触控） ---- */
+.today .btn{flex:0 1 auto; display:inline-flex; align-items:center; justify-content:center; min-height:44px; padding:0 18px; font-weight:400;
+  border-radius:6px; font-size:15px; cursor:pointer; text-decoration:none; white-space:nowrap;
+  background:var(--paper); color:var(--ink); border:1px solid var(--ink)}
+.today .btn.primary{background:var(--ink); color:var(--on-ink); border-color:var(--ink); font-weight:500}
+.today .btn.veto-fill{background:var(--veto); color:var(--on-veto); border:none; font-weight:500}
+.today .btn.veto-line{background:var(--paper); color:var(--veto); border-color:var(--veto)}
+.today .btn:disabled{opacity:.45; cursor:not-allowed}
+.today .input{min-height:44px; padding:0 12px; border:1px solid var(--line); border-radius:4px; background:var(--paper); color:var(--ink);
+  font-family:inherit; font-size:14px; width:100%; min-width:0}
+.today .errors{margin:0; padding:10px 14px; border:1px solid var(--veto); background:var(--veto-bg); color:var(--veto);
+  border-radius:6px; font-weight:700; overflow-wrap:anywhere}
+.today .errors[hidden]{display:none}
+
+/* ---- 刹车带（排第一，越线朱色） ---- */
+.today .brake{display:flex; flex-wrap:wrap; gap:14px 32px; align-items:center; padding:18px 20px;
+  background:var(--brake-bg); border:1px solid var(--brake-line); border-radius:8px}
+.today .brake.veto{background:var(--veto-bg); border:1px solid var(--veto); border-bottom-width:3px}
+.today .brake-nums{display:flex; flex-wrap:wrap; gap:12px 32px; align-items:flex-end}
+.today .brake-num{display:flex; flex-direction:column; gap:2px; min-width:0}
+.today .brake-label{font-size:13px; color:var(--sub)}
+.today .brake-big{font-size:18px; font-weight:600; color:var(--ink); overflow-wrap:anywhere}
+.today .brake-num.lead .brake-label{font-weight:700; color:var(--brake); letter-spacing:.04em}
+.today .brake-num.lead .brake-big{font-size:30px; color:var(--brake)}
+.today .brake.veto .brake-num.lead .brake-label,.today .brake.veto .brake-num.lead .brake-big{color:var(--veto)}
+.today .brake-why{font-size:12px; color:var(--muted)}
+.today .brake-line{flex:1 1 320px; min-width:0; font-size:14px; line-height:1.6; color:var(--sub); overflow-wrap:anywhere}
+.today .brake-actions{display:flex; flex-wrap:wrap; gap:10px}
+
+/* 空仓理由框（刹车带里 / 卡片里同一个） */
+.today .pass-form{flex:1 1 100%; display:flex; flex-direction:column; gap:8px; padding:14px 16px;
+  background:var(--paper); border:1px solid var(--ink); border-radius:6px; min-width:0}
+.today .pass-form .label{font-size:13px; color:var(--muted)}
+.today .pass-actions{display:flex; flex-wrap:wrap; gap:8px}
+.today .pass-error{color:var(--veto); font-weight:700; overflow-wrap:anywhere}
+.today .foot{font-size:12px; color:var(--muted)}
+
+.today .today-head{display:flex; flex-wrap:wrap; gap:4px 16px; align-items:baseline}
+.today .today-head h1{margin:0; font-size:26px; font-weight:700}
+
+/* ---- 两栏（窄屏右栏落到下面） ---- */
+.today .cols{display:flex; flex-wrap:wrap; gap:32px; align-items:flex-start}
+.today .col-main{flex:3 1 520px; min-width:0; display:flex; flex-direction:column; gap:28px}
+.today .col-side{flex:2 1 360px; min-width:0; display:flex; flex-direction:column; gap:16px}
+.today .block{display:flex; flex-direction:column; gap:14px; min-width:0}
+.today .block-head{display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; gap:4px 12px}
+
+/* 时间轴：竖排，时刻 · 点 · 事 */
+.today .rail{list-style:none; margin:0; padding:16px 20px; background:var(--paper); border:1px solid var(--line); border-radius:8px;
+  display:flex; flex-direction:column}
+.today .ev{display:grid; grid-template-columns:auto 14px minmax(0,1fr); gap:12px; align-items:start; padding:6px 0; position:relative}
+.today .ev-t{font-size:14px; font-weight:600; min-width:48px}
+.today .ev-dot{width:10px; height:10px; margin-top:6px; border-radius:50%; background:var(--line); justify-self:center}
+.today .ev-text{display:flex; flex-direction:column; min-width:0}
+.today .ev-label{font-size:14px; overflow-wrap:anywhere}
+.today .ev-sub{font-size:12px; color:var(--muted); overflow-wrap:anywhere}
+.today .ev.past .ev-dot{background:var(--ink)}
+.today .ev.past .ev-label,.today .ev.past .ev-t{color:var(--muted)}
+.today .ev.deadline .ev-dot{background:var(--veto)}
+.today .ev.deadline .ev-label,.today .ev.deadline .ev-t{color:var(--veto); font-weight:700}
+.today .ev.alarm .ev-dot{background:var(--veto); border-radius:2px}
+.today .ev.alarm .ev-label{color:var(--veto)}
+.today .ev.kickoff .ev-dot{background:transparent; border:2px solid var(--ink)}
+.today .ev.now{margin:4px 0; padding:6px 0; border-top:2px solid var(--link)}
+.today .ev.now .ev-dot{background:var(--link)}
+.today .ev.now .ev-t,.today .ev.now .ev-label{color:var(--link); font-weight:700}
+
+/* 待你决定 */
+.today #day-decisions .day-body{display:flex; flex-direction:column; gap:14px}
+.today .decision{background:var(--paper); border:1px solid var(--line); border-radius:8px; padding:20px 24px;
+  display:flex; flex-direction:column; gap:12px; min-width:0}
+.today .decision.open.register{border:2px solid var(--ink)}
+.today .decision.done,.today .decision.expired{background:var(--drawer)}
+.today .decision.done .subject{color:var(--ok)}
+.today .decision.expired .subject{color:var(--muted); text-decoration:line-through}
+.today .decision-head{display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px 16px; align-items:baseline}
+.today .subject{flex:1 1 280px; min-width:0; font-size:17px; font-weight:700; overflow-wrap:anywhere}
+.today .decision.done .subject,.today .decision.expired .subject{font-size:15px; font-weight:500}
+.today .due{font-size:15px; white-space:nowrap}
+.today .default{font-size:15px; line-height:1.7}
+.today .decision-actions{display:flex; flex-wrap:wrap; gap:10px}
+
+/* 期一眼 */
+.today .glance{background:var(--paper); border:1px solid var(--line); border-radius:8px; padding:20px 24px;
+  display:flex; flex-direction:column; gap:16px; min-width:0}
+.today .tiers{display:flex; flex-wrap:wrap; gap:8px; font-size:14px}
+.today .tier{padding:4px 10px; border-radius:4px; border:1px solid transparent}
+.today .tier.lic{background:var(--line-soft)}
+.today .tier.lic.on{background:var(--ink); color:var(--on-ink)}
+.today .tier.c{border-color:var(--ink)}
+.today .tier.d{border:1px dashed var(--show)}
+.today .lic{display:flex; flex-direction:column; gap:10px}
+.today .lic-head{display:flex; justify-content:space-between; gap:12px; font-size:13px; color:var(--muted)}
+.today .lic-row{display:grid; grid-template-columns:minmax(0,7.5em) minmax(0,1fr) 3em; gap:12px; align-items:center}
+.today .lic-name{font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.today .segs{display:grid; gap:3px}
+.today .segs.none{height:14px; border:1px dashed var(--show); border-radius:2px}
+.today .seg{display:block; height:14px; border-radius:2px; background:var(--seg-off)}
+.today .seg.on{background:var(--ink)}
+.today .seg.seg-gate{box-shadow:inset 2px 0 0 var(--veto)}
+.today .lic-k{text-align:right; font-size:14px}
+.today .shapes{display:flex; flex-direction:column; gap:10px; border-top:1px solid var(--line-soft); padding-top:14px}
+.today .shape{display:flex; flex-direction:column; gap:2px}
+.today .shape-main{display:flex; gap:10px; align-items:baseline; font-size:14px}
+.today .shape-name{flex:1 1 auto; min-width:0; overflow-wrap:anywhere}
+.today .role{display:inline-block; margin-right:6px; padding:0 6px; border:1px dashed var(--show); border-radius:3px;
+  font-size:11px; color:var(--sub); vertical-align:1px}
+.today .shape-price{flex:0 0 auto; min-width:52px; text-align:right}
+.today .shape-p{flex:0 0 auto; min-width:60px; text-align:right}
+.today .shape-note{font-size:12px; line-height:1.5; color:var(--muted); overflow-wrap:anywhere}
+.today .default-box{display:flex; flex-direction:column; gap:4px; border-top:1px solid var(--line-soft); padding-top:14px}
+.today .default-why{font-size:13px; line-height:1.6; color:var(--sub); overflow-wrap:anywhere}
+.today .more{display:inline-flex; align-items:center; min-height:44px; font-size:14px; text-decoration:none}
+.today .more:hover{text-decoration:underline}
+
+/* 竞彩一行 / 运维一行 */
+.today .line-card{background:var(--paper); border:1px solid var(--line); border-radius:8px; padding:14px 24px 6px;
+  display:flex; flex-direction:column; gap:4px; min-width:0}
+.today .line-card p{font-size:14px; color:var(--sub); overflow-wrap:anywhere}
+.today .line-head{display:flex; justify-content:space-between; align-items:baseline; gap:12px; font-size:15px}
+.today .ops-title{display:inline-flex; align-items:center; gap:8px}
+.today .ops .dot{width:10px; height:10px; border-radius:50%; background:var(--ok)}
+.today .ops.alarm{border-color:var(--veto)}
+.today .ops.alarm .dot{background:var(--veto)}
+.today .ops.alarm .line-head .mono{color:var(--veto); font-weight:700}
+
+/* ---- 折叠区：原有五块 ---- */
+.today .folds{display:flex; flex-direction:column; gap:10px; border-top:1px solid var(--line); padding-top:16px}
+.today .fold{background:var(--paper); border:1px solid var(--line); border-radius:8px; min-width:0}
+.today .fold > summary{min-height:44px; display:flex; align-items:center; gap:8px; padding:0 18px; cursor:pointer;
+  font-size:15px; font-weight:700; list-style:none}
+.today .fold > summary::-webkit-details-marker{display:none}
+.today .fold > summary::before{content:"▸"; color:var(--muted); font-weight:400}
+.today .fold[open] > summary::before{content:"▾"}
+.today .fold > summary .n{font-weight:400; color:var(--muted); font-size:13px}
+.today .fold > .day-body{padding:4px 18px 16px}
+.today .day-pre{white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.5 var(--mono); max-height:320px; overflow:auto; margin:0}
+.today .fold > pre.day-body{margin:0 18px 16px; padding:0}
+.today .day-row{padding:6px 0; border-top:1px dashed var(--line); font-size:13px; overflow-wrap:anywhere}
+.today .day-row.alarm{color:var(--veto)}
+.today .day-cards{display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr)); gap:12px}
+.today .day-card{border:1px solid var(--line); border-radius:8px; padding:10px 12px; display:flex; flex-direction:column; gap:6px; min-width:0}
+.today .day-card h3{margin:0; font-size:14px}
+.today .badges{display:flex; flex-wrap:wrap; gap:6px}
+.today .day-badge{padding:1px 8px; border-radius:999px; font-size:11px; background:var(--line-soft)}
+.today .day-badge.alarm{background:var(--veto-bg); color:var(--veto)}
+.today .day-card details summary{cursor:pointer; font-size:12px; color:var(--muted)}
+.today .day-card pre{font:11px/1.4 var(--mono); white-space:pre-wrap; overflow-wrap:anywhere; max-height:220px; overflow:auto; margin:0}
+.today .day-logic{font-size:13px; overflow-wrap:anywhere}
+.today #day-session .day-body{display:flex; flex-direction:column; gap:8px; align-items:flex-start}
+.today .day-talk-input{display:flex; flex-wrap:wrap; gap:8px; padding:0 18px 16px}
+.today .day-talk-input .input{flex:1 1 180px; width:auto}
+.today #day-talk-obj{flex:0 1 180px}
+
+@media (max-width:600px){
+  .today{padding:16px 16px 48px; gap:18px}
+  .today .brake{padding:14px 14px; gap:12px 20px}
+  .today .brake-num.lead .brake-big{font-size:26px}
+  .today .rail{padding:12px 14px}
+  .today .decision,.today .glance{padding:16px 14px}
+  .today .line-card{padding:12px 14px 4px}
+  .today .cols{gap:24px}
+  .today .lic-row{grid-template-columns:minmax(0,6em) minmax(0,1fr) 2.6em; gap:8px}
+  .today #day-talk-obj{flex:1 1 100%}
+}
