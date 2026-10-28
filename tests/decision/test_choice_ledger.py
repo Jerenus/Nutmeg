@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 
 from nutmeg.decision.choice_ledger import (
-    _shape,
     drop_c_form,
     issue_row,
     machine_form,
@@ -13,6 +12,7 @@ from nutmeg.decision.choice_ledger import (
     render_choices,
     same_money_multiplier,
     settle_form,
+    shape_of,
 )
 
 
@@ -34,7 +34,7 @@ def test_same_money_multiplier_floors_and_never_below_one():
 
 
 def test_shape_counts_singles_doubles_packs():
-    assert _shape({"1": "3", "2": "31", "3": "310", "4": "0"}) == "2单1双1包"
+    assert shape_of({"1": "3", "2": "31", "3": "310", "4": "0"}) == "2单1双1包"
 
 
 def test_settle_form_scales_stake_and_payout_by_multiplier():

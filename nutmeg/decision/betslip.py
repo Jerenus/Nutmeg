@@ -86,6 +86,12 @@ def parse_faces_row(text: str, *, n_matches: int = SFC_MATCHES) -> dict[str, str
     return {str(i + 1): f for i, t in enumerate(tokens) if (f := parse_faces(t))}
 
 
+def format_faces_row(faces: dict[str, str], *, n_matches: int = SFC_MATCHES) -> str:
+    """`{场次: 面集合}` → 位置式整行（500 方案页的写法，`*`＝未选）；`parse_faces_row` 的逆。
+    500 app 照这一行逐格点，抄录不再靠人眼对位（26150 过程三失之一）。"""
+    return " ".join(parse_faces(faces.get(str(i), "")) or "*" for i in range(1, n_matches + 1))
+
+
 # ---------------------------------------------------------------------------
 # 注数算术
 # ---------------------------------------------------------------------------

@@ -26,7 +26,7 @@ FLAT_MARKERS = ("机器默认空仓", "默认空仓")
 DRAFT_LABEL = "初稿"
 
 
-def _shape(faces: dict[str, str]) -> str:
+def shape_of(faces: dict[str, str]) -> str:
     n = {1: 0, 2: 0, 3: 0}
     for f in faces.values():
         n[len(str(f))] = n.get(len(str(f)), 0) + 1
@@ -122,7 +122,7 @@ def settle_form(form: dict | None, issue_obj, *, jun_stake: float) -> dict:
                                                                         "payout": None}
     payout = s.get("payout")
     stake = s.get("stake") or slip.stake_yuan
-    return {"shape": _shape(form["faces"]), "stake": stake, "k": k, "p": form.get("p_all"),
+    return {"shape": shape_of(form["faces"]), "stake": stake, "k": k, "p": form.get("p_all"),
             "payout": payout, "net": None if payout is None else round(payout - stake, 2),
             "hits": s.get("first_notes"), "source": form.get("source")}
 
