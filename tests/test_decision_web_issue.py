@@ -121,3 +121,9 @@ def test_precheck_jczq_has_no_gates_and_shape_from_legs(tmp_path):
     assert body["ok"] is True
     assert body["gates"] == [] and body["shape"] == "2串1" and body["mode"] == "2串1"
     assert body["notes"] == 1 and body["faces_row"] is None
+
+
+def test_issue_static_assets_served(tmp_path):
+    c = _client(tmp_path)
+    for name in ("issue.js", "issue.css"):
+        assert c.get(f"/static/decision/{name}").status_code == 200

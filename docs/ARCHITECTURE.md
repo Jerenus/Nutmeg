@@ -195,7 +195,7 @@ gantt
 | `rsi.sweep` | 每小时 :00 | `rsi sweep` | F5 / F9 / R0 / R1 的前瞻观察义务 | 加场日义务过期成缺口，不能回补 |
 | `account.month` | 每月 1 日 16:10 | `account month --previous --write` | 账房月报 | 月报缺席（可手跑） |
 | `ops.deadcode` | 每周一 09:20 | `python scripts/deadcode_report.py` → `analytics/deadcode/<日>.md` | 工程（`ops-status` 待办行） | 死代码又会攒到上千行才被看见（可手跑） |
-| `decision.web` | 常驻（KeepAlive，2026-10-13 起） | `decision-web --port 8787` | `/observe` `/betslips` `/day` `/verdict` `/runs` 页面 | 页面不可达；此前手工进程 10-08 起跑了 5 天旧代码 |
+| `decision.web` | 常驻（KeepAlive，2026-10-13 起） | `decision-web --port 8787` | `/observe` `/betslips` `/day` `/verdict` `/runs` `/issue/{期}` 页面（期页数据 `/api/issue/{期}`、点格即审 `/api/precheck`） | 页面不可达；此前手工进程 10-08 起跑了 5 天旧代码 |
 
 > **作业包装（2026-10-13）**：多段作业（settle / research / verdict / brief / loop / sweep / backfill / prep ×3）经 `nutmeg ops-run <label> <段>…` 逐段执行并记 `logs/runs.jsonl`（每段 ts / exit / secs / tail），任一段失败整条作业退出 1 且末行 `NUTMEG_FAILED … step=i/n` 带时间戳；`ops-status` 在该行下列出失败段。此前 plist 用 `;` 串联，只有末段退出码进 launchctl（10-12 `results` 段两次 exit 1 被 `settle` 的 0 盖住）。
 
@@ -433,6 +433,7 @@ flowchart TB
 | 月度止损 | 本月净值 ≤ −¥3,000 → 空仓到月底（触发后预审否决、退出码 1；登记不受限，登记是事实） | 宪法 §4，`bankroll.py` |
 | 探索预算 | ≤¥30/日、只给预登记实验，票面 `--note "EXP:<号>"` | 宪法 §4，`account.py` |
 | 偏离登记 | 票面与机器初稿有差异时带理由（自判事实 / 价格直觉 / 资金分配 / 结构偏好 / 其他）+ 一句可证伪预测 | RULEBOOK「九」，`betslip_diagnosis.vs_draft` |
+| 期页（decision-web，2026-10-27） | `/issue/{期}` 表即票：`GET /api/issue/{期}` 组装旁车 + 市场 + 止损块，`POST /api/precheck` 点格即审。P / 注数 / V 码 / 止损 / 刹车 / 死法清单都由 precheck 在服务端算（与 `betslip preview` 同一份），页面从不自己推导；六条件 k/n 只来自分析包旁车 `<期>-packet.json` | `decision_web_issue.py`、`precheck.py`、`packet_doc.py` |
 | 结算口径 | 90 分钟；竞彩 `jc-results.json`（内核结算 `decision-settle` 同源，当日未封存才回落 okooo），足彩官方 gameNo=90 | RUNBOOK A7 / B10，`match_results.py` |
 
 ---
