@@ -265,7 +265,8 @@ def daily_curve(data_dir: Path, month: str, *, today: _date | None = None) -> di
     effective:{day, net}|None}。
 
     points＝`month_net` 的条目按 `ticket_day` 归日、逐日累计（当日净为 0 的日子不出点），末点＝
-    `month_net.net`；line＝当日生效的止损线（正数，画在 −line）。moves＝当月内止损线换档。
+    `month_net.net`；line＝当日生效的止损线（正数，画在 −line；10-01 前无线为 None）。
+    moves＝当月内止损线换档。
     effective＝「实质」点：已结净值减待结注金（`pending_ledger`）；当月取今天（北京），过去的月
     只在仍有待结票时给、取月末；其余 None。"""
     data_dir = Path(data_dir)

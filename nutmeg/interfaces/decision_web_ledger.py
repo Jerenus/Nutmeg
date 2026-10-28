@@ -87,6 +87,23 @@ def _tickets(data_dir: Path, month: str) -> tuple[list[dict], list[dict]]:
     return issues, days
 
 
+def _payout(data_dir: Path, month: str) -> dict:
+    """本月返奖 {payout, missing:[键]}：`month_net` 入账条目的记分牌 payout 之和（与月报净值同一组
+    条目）。投入或返奖不是数字的条目（早期 26129 等）列进 missing，页面据此不出回收率。"""
+    from nutmeg.decision.bankroll import month_net
+    from nutmeg.decision.files import read_json
+
+    tickets = (read_json(Path(data_dir) / "scoreboard.json", {}) or {}).get("tickets") or {}
+    total, missing = 0.0, []
+    for key, _net in sorted(month_net(data_dir, month)["entries"]):
+        doc = tickets.get(key) or {}
+        if not all(isinstance(doc.get(f), int | float) for f in ("stake", "payout")):
+            missing.append(key)
+            continue
+        total += float(doc["payout"])
+    return {"payout": round(total, 2), "missing": missing}
+
+
 def month_issues(data_dir: Path, month: str) -> list[str]:
     """本月的足彩期（`zucai/<期>-issue.json` 的 sale_deadline 归月，含空仓期），升序。"""
     from nutmeg.decision.bankroll import ticket_month
@@ -117,7 +134,7 @@ def _bridges(data_dir: Path, issues: list[str], errors: list[str]) -> list[dict]
 
 
 def ledger_payload(data_dir: Path | str, month: str, *, today: _date | None = None) -> dict:
-    """{month, months, report, curve, issues, jczq_days, choices, bridges, errors}。
+    """{month, months, report, payout, curve, issues, jczq_days, choices, bridges, errors}。
     初稿账不在这里（见 `/api/ledger/{月}/draft`）。"""
     from nutmeg.decision.account import daily_curve
     from nutmeg.decision.choice_ledger import build_choices
@@ -134,6 +151,7 @@ def ledger_payload(data_dir: Path | str, month: str, *, today: _date | None = No
         "month": month,
         "months": _block(errors, "月份列表", lambda: ledger_months(data_dir), []),
         "report": _block(errors, "月报", lambda: _report(data_dir, month, errors), None),
+        "payout": _block(errors, "本月返奖", lambda: _payout(data_dir, month), None),
         "curve": _block(errors, "曲线", lambda: daily_curve(data_dir, month, today=today), None),
         "issues": tickets[0], "jczq_days": tickets[1],
         "choices": choices,

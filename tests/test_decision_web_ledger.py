@@ -131,3 +131,16 @@ def test_draft_failure_is_not_cached_and_not_500(client, monkeypatch):
     tc, _ = client
     r = tc.get("/api/ledger/2026-10/draft")          # fixture 里 draft_board 抛错
     assert r.status_code == 200 and "_error" in r.json()
+
+
+def test_ledger_payout_sums_scoreboard_and_lists_entries_without_numbers(client):
+    """返奖由服务端按记分牌 payout 加总（页面只做 返奖/投入 的展示）；缺投入或返奖的条目点名。"""
+    tc, data = client
+    assert tc.get("/api/ledger/2026-10").json()["payout"] == {"payout": 57.02, "missing": []}
+    sb = data / "scoreboard.json"
+    doc = json.loads(sb.read_text(encoding="utf-8"))
+    doc["tickets"]["26150"] = {"net": -768.0, "stake": None, "payout": None}
+    sb.write_text(json.dumps(doc), encoding="utf-8")
+    body = tc.get("/api/ledger/2026-10").json()
+    assert body["payout"] == {"payout": 57.02, "missing": ["26150"]}
+    assert body["report"]["net"] == -524.98 - 768.0

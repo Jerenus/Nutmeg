@@ -62,8 +62,9 @@ def test_stop_loss_line_steps_on_10_11_and_10_18(tmp_path: Path):
     assert curve["moves"] == [{"day": "2026-10-11", "from": 3000, "to": 6000},
                               {"day": "2026-10-18", "from": 6000, "to": 8000}]
     assert daily_curve(data, "2026-09", today=date(2026, 10, 28))["moves"] == []
-    assert [stop_loss_on(d) for d in ("2026-10-10", "2026-10-11", "2026-10-17", "2026-10-18",
-                                      "2026-11-02")] == [3000, 6000, 6000, 8000, 8000]
+    assert [stop_loss_on(d) for d in ("2026-09-30", "2026-10-10", "2026-10-11", "2026-10-17",
+                                      "2026-10-18", "2026-11-02")] == [None, 3000, 6000, 6000,
+                                                                       8000, 8000]
 
 
 def test_stop_loss_history_ends_at_the_live_line():

@@ -24,9 +24,9 @@ STOP_LOSS_HISTORY = (("2026-10-01", 3000), ("2026-10-11", 6000), ("2026-10-18", 
 `MONTHLY_STOP_LOSS_YUAN`（测试守）；改线时两处一起改。"""
 
 
-def stop_loss_on(day: str) -> int:
-    """某日（YYYY-MM-DD）生效的止损线。10-01 之前没有月度止损，按首档给（曲线只是画线用）。"""
-    line = STOP_LOSS_HISTORY[0][1]
+def stop_loss_on(day: str) -> int | None:
+    """某日（YYYY-MM-DD）生效的止损线；10-01 之前没有月度止损 → None（账房曲线不画线）。"""
+    line = None
     for since, value in STOP_LOSS_HISTORY:
         if str(day)[:10] >= since:
             line = value
