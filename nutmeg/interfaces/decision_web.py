@@ -460,54 +460,33 @@ def create_decision_app(*, output_dir, kernel_state=None,
 
     @app.post("/action/register-betslip")
     def register_betslip(payload: dict = Body(...)) -> Any:  # noqa: B008
-        from nutmeg.decision.betslip import (
-            BetSlip,
-            BetslipError,
-            SlipLeg,
-            first_kickoff,
-            parse_faces_row,
-            register_slip,
-        )
-        from nutmeg.decision.review import review_record
-        from nutmeg.decision.review_runner import review_slip
+        from nutmeg.decision.betslip import BetslipError
+        from nutmeg.decision.precheck import build_slip, register_reviewed
 
         try:
             channel = str(payload.get("channel") or "renjiu")
-            if channel == "jczq":
-                # 竞彩串关有过关方式/让球线/多市场,表单撑不住——显式拒绝而不是半途登记
-                # 一张缺腿的票:半张票入账比不入账更糟,复盘时看不出它是残缺的。
-                raise BetslipError("竞彩串关请用 CLI：nutmeg betslip register --channel jczq")
-            faces = parse_faces_row(str(payload.get("faces") or ""))
-            fair_path = Path(output_dir).parent / "zucai" / \
-                f"{payload.get('issue')}-prep-revision.json"
-            fair: dict = {}
-            if fair_path.exists():
-                import json as _json
-                records = _json.loads(fair_path.read_text("utf-8")).get("records") or {}
-                fair = {k: v.get("fair_had") for k, v in records.items()}
-            legs = [
-                SlipLeg(
-                    key=no, market="had",
-                    selections=tuple(
-                        {"3": "home", "1": "draw", "0": "away"}[c] for c in f),
-                    fair=fair.get(no))
-                for no, f in sorted(faces.items(), key=lambda kv: int(kv[0]))
-            ]
-            slip = BetSlip(
+            legs = payload.get("legs")
+            if channel == "jczq" and not (isinstance(legs, list) and legs
+                                          and all(isinstance(x, dict) for x in legs)):
+                # 竞彩串关有过关方式/让球线/多市场,自由文本撑不住——只收竞彩板生成的结构化腿;
+                # 半张票入账比不入账更糟,复盘时看不出它是残缺的。
+                raise BetslipError("竞彩票请从竞彩板登记：需要逐腿的场次、玩法、选项与赔率，"
+                                   "网页表单不收手填的竞彩票面")
+            # 与 CLI 同一条流水线（precheck）：足彩 fair 取 legs-base 判断概率，
+            # 审票与止损/刹车/日帽码随票入账，偏离理由与赛前预测照收
+            slip = build_slip(
                 slip_id=str(payload.get("slip_id") or "").strip(), channel=channel,
-                placed_at=str(payload.get("placed_at") or "").strip(), legs=legs,
+                placed_at=str(payload.get("placed_at") or "").strip(),
+                faces=str(payload.get("faces") or "") or None,
+                legs=legs if channel == "jczq" else None,
+                combo=(str(payload["combo"]) if payload.get("combo") else None),
                 multiplier=int(payload.get("multiplier") or 1),
                 issue=str(payload.get("issue") or "").strip(),
                 scheme_no=str(payload.get("scheme_no") or "").strip(),
-                purchased=not payload.get("trial"),
-                note=str(payload.get("note") or "").strip(), faces=faces)
-            slip.first_kickoff = first_kickoff(slip, _data_dir())
-            try:   # 审票记录随票入账（与 CLI 同口径）；审票出错不挡登记
-                rv = review_slip(slip, _data_dir())
-                slip.diagnosis = {**rv["diagnosis"], "review": review_record(rv)}
-            except Exception as exc:  # noqa: BLE001
-                slip.diagnosis = {"review": {"error": repr(exc)[:200]}}
-            return {"ok": True, "summary": register_slip(_data_dir(), slip)}
+                trial=bool(payload.get("trial")), note=str(payload.get("note") or "").strip(),
+                deviation=str(payload.get("deviation") or "").strip(),
+                prediction=str(payload.get("prediction") or "").strip(), data_dir=_data_dir())
+            return {"ok": True, **register_reviewed(slip, _data_dir())}
         except (BetslipError, KeyError, ValueError) as error:
             # 登记被拒要说清是哪一条纪律拒的——静默失败会让人以为票已入账。
             return {"ok": False, "error": str(error)}

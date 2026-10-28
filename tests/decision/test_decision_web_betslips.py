@@ -16,9 +16,9 @@ def client(tmp_path):
     (output_dir / "decision").mkdir(parents=True)
     zucai = tmp_path / "zucai"
     zucai.mkdir()
-    (zucai / "26122-prep-revision.json").write_text(json.dumps({"records": {
-        str(i): {"name": f"甲{i}-乙{i}", "match_date": "2026-09-12",
-                 "fair_had": {"home": 0.5, "draw": 0.3, "away": 0.2}}
+    # 足彩 fair 与 CLI 同口径：legs-base 判断概率（data_dir＝output_dir 上一级）
+    (zucai / "26122-legs-base.json").write_text(json.dumps({"legs": {
+        str(i): {"fair": {"home": 0.5, "draw": 0.3, "away": 0.2}}
         for i in range(1, 15)}}, ensure_ascii=False), encoding="utf-8")
     app = create_decision_app(output_dir=output_dir)
     return TestClient(app)
@@ -37,8 +37,8 @@ def test_page_renders_empty_state_before_any_ticket(client):
     assert "尚无登记票面" in page.text
 
 
-def test_registration_computes_notes_and_probability_from_prep_fair(client):
-    """P 由 store 的去水 fair 算，不由页面输入——禁嘴算是宪法第 5 条。"""
+def test_registration_computes_notes_and_probability_from_legs_base_fair(client):
+    """P 由 legs-base 的判断概率算，不由页面输入——禁嘴算是宪法第 5 条。"""
     body = _register(client).json()
     assert body["ok"] is True
     assert "72 注" in body["summary"]           # 2^? 面集合决定的注数
@@ -70,11 +70,11 @@ def test_malformed_row_is_rejected_with_the_reason(client):
     assert "14 个 token" in body["error"]
 
 
-def test_parlay_channel_is_refused_rather_than_half_registered(client):
-    """竞彩串关有过关方式/让球线/多市场，表单撑不住：半张票入账比不入账更糟。"""
+def test_jczq_without_structured_legs_is_refused_rather_than_half_registered(client):
+    """竞彩只收结构化腿（竞彩板生成）；自由文本票面不收：半张票入账比不入账更糟。"""
     body = _register(client, channel="jczq").json()
     assert body["ok"] is False
-    assert "CLI" in body["error"]
+    assert "竞彩板" in body["error"] and "--legs-file" not in body["error"]
 
 
 def test_registration_is_idempotent_by_slip_id(client):
@@ -93,3 +93,33 @@ def test_web_registration_records_the_review_with_the_ticket(client, tmp_path):
     review = row["diagnosis"]["review"]
     assert "error" not in review and set(review) == {"vetoed", "ratio", "codes"}
     assert row["registered_at"]
+
+
+def test_register_keeps_deviation_and_prediction(client, tmp_path):
+    r = _register(client, deviation="fact_self_judged", prediction="门兴赢不了")
+    assert r.json()["ok"] is True
+    row = json.loads((tmp_path / "betslips.jsonl").read_text("utf-8").splitlines()[-1])
+    assert row["deviation"] == "fact_self_judged" and row["prediction"] == "门兴赢不了"
+    assert "codes" in row["diagnosis"]["review"]
+
+
+def test_register_records_day_cap_code_like_the_cli(client, tmp_path):
+    """日帽超帽（宪法 §4）记码不拦登记：72 注 × 14 倍 = ¥2,016 > ¥2,000。"""
+    assert _register(client, multiplier=14).json()["ok"] is True
+    row = json.loads((tmp_path / "betslips.jsonl").read_text("utf-8").splitlines()[-1])
+    review = row["diagnosis"]["review"]
+    assert review["vetoed"] is True and "DAYCAP" in review["codes"]
+
+
+def test_register_jczq_with_structured_legs(client, tmp_path):
+    legs = [{"key": "周日006", "market": "had", "selections": ["home"], "odds": [1.22],
+             "fair": {"home": 0.702, "draw": 0.173, "away": 0.124}},
+            {"key": "周日011", "market": "had", "selections": ["home"], "odds": [1.33],
+             "fair": {"home": 0.622, "draw": 0.205, "away": 0.173}}]
+    r = client.post("/action/register-betslip", json={
+        "slip_id": "20261025-J1", "channel": "jczq", "placed_at": "2026-10-25",
+        "legs": legs, "combo": "2", "multiplier": 5})
+    assert r.json()["ok"] is True, r.json()
+    row = json.loads((tmp_path / "betslips.jsonl").read_text("utf-8").splitlines()[-1])
+    assert [leg["key"] for leg in row["legs"]] == ["周日006", "周日011"]
+    assert row["combo_sizes"] == [2] and row["multiplier"] == 5
