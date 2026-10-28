@@ -1,4 +1,8 @@
-"""期页与竞彩当日板的路由（2026-10-27 产品形态）。只读组装 + 转调 precheck；不产生判断。"""
+"""期页与竞彩当日板的路由（2026-10-27 产品形态）。只读组装 + 转调 precheck / bridge；不产生判断。
+
+§3 桥（2026-10-28 第 3 阶段）：`/api/bridge/{期}/preview` 只读；`/action/bridge` 登记桥后票
+`<期>-B1`（试玩）再写 `zucai/<期>-bridge.jsonl`——登记失败不写桥记录，只走一次由桥记录守。
+"""
 from __future__ import annotations
 
 import re
@@ -30,6 +34,44 @@ def _page_error(message: str) -> str:
     return message
 
 
+def _error_text(error: Exception) -> str:
+    message = error.args[0] if isinstance(error, KeyError) and error.args else error
+    return _page_error(str(message))
+
+
+def _today_bj() -> str:
+    from datetime import datetime
+
+    from nutmeg.decision.bj_time import BJ
+
+    return datetime.now(BJ).date().isoformat()
+
+
+def _picked(faces: dict | None) -> dict[str, str]:
+    """页面传来的 {场号: 面}，空面（未选）去掉。"""
+    return {str(k): str(v) for k, v in (faces or {}).items() if v}
+
+
+def _matrices(data_dir: Path, issue: str, errors: list[str]) -> dict[str, dict]:
+    from nutmeg.decision.counter_matrix import issue_matrices
+
+    try:
+        return {m["no"]: m for m in issue_matrices(data_dir, issue)}
+    except Exception as exc:  # noqa: BLE001 —— 矩阵缺席要看得见，不能读成「没有证据」
+        errors.append(f"反证矩阵失败：{exc!r}"[:200])
+        return {}
+
+
+def _zucai_gates(slip) -> list[dict]:
+    """死法清单前五门（slip 腿上的 fair）。"""
+    from nutmeg.decision.slip_group import death_list, is_coin
+
+    fair = {leg.key: leg.fair for leg in slip.legs if leg.fair}
+    ticket = {no: f for no, f in slip.faces.items() if no in fair}
+    ordered, _ = death_list([ticket], fair, top=5)
+    return [{"no": no, "face": f, "p": p, "coin": is_coin(fair[no])} for no, f, p in ordered[:5]]
+
+
 def _zucai_mode(channel: str, n: int) -> str:
     from nutmeg.decision.betslip import RENJIU_PICK, SFC_MATCHES
 
@@ -50,7 +92,7 @@ def _parlay(sizes: tuple[int, ...], n_legs: int) -> str:
 
 def issue_payload(data_dir: Path, issue: str, *, today: _date) -> dict:
     from nutmeg.decision.bankroll import issue_brake
-    from nutmeg.decision.counter_matrix import issue_matrices
+    from nutmeg.decision.bridge import bridge_record
     from nutmeg.decision.files import read_json
     from nutmeg.decision.lineup_watch import issue_doc, match_names
     from nutmeg.decision.packet_doc import load_packet
@@ -61,11 +103,7 @@ def issue_payload(data_dir: Path, issue: str, *, today: _date) -> dict:
     packet = load_packet(data_dir, issue)
     errors += packet["errors"]
     market = issue_market(data_dir, issue)
-    try:
-        matrices = {m["no"]: m for m in issue_matrices(data_dir, issue)}
-    except Exception as exc:  # noqa: BLE001 —— 矩阵缺席要看得见，不能读成「没有证据」
-        matrices = {}
-        errors.append(f"反证矩阵失败：{exc!r}"[:200])
+    matrices = _matrices(data_dir, issue, errors)
     draft = read_json(Path(data_dir) / "zucai" / f"{issue}-draft.json", None)
     if draft is None:
         errors.append(f"缺 {issue}-draft.json（judgment draft --write 未跑）")
@@ -86,7 +124,49 @@ def issue_payload(data_dir: Path, issue: str, *, today: _date) -> dict:
             "draft_candidates": (draft or {}).get("candidates") or [],
             "brake": {**state, "line": brake_line(data_dir, today.isoformat()),
                       "issue": issue_brake(data_dir, issue)},
-            "errors": errors}
+            "bridge": bridge_record(data_dir, issue), "errors": errors}
+
+
+def bridge_view(data_dir: Path, issue: str, payload: dict, *, slip_id: str = "preview",
+                trial: bool = True, deviation: str = "", prediction: str = "") -> tuple:
+    """桥上一版票的全部读数（preview 与定稿同一份）→ (slip, view)。不写任何文件。
+    任九 9 场之外按 14 场＝胜负彩；`faces` 是页面的 {场号: 面}，丢的场不传。"""
+    from nutmeg.decision.betslip import SFC_MATCHES, format_faces_row
+    from nutmeg.decision.bridge import cite_readout, diff_cells, opening_lines, self_checks
+    from nutmeg.decision.choice_ledger import shape_of
+    from nutmeg.decision.packet_doc import load_packet
+    from nutmeg.decision.precheck import build_slip, precheck
+    from nutmeg.decision.review_runner import issue_market
+
+    faces = _picked(payload.get("faces"))
+    channel = "shengfucai" if len(faces) == SFC_MATCHES else "renjiu"
+    slip = build_slip(slip_id=slip_id, channel=channel, placed_at=_today_bj(),
+                      faces=format_faces_row(faces) if faces else None, issue=issue,
+                      trial=trial, deviation=deviation, prediction=prediction,
+                      data_dir=data_dir)
+    pre = precheck(slip, data_dir, log=False)
+    packet = load_packet(data_dir, issue)
+    errors = list(packet["errors"])
+    gates = _zucai_gates(slip)
+    main = packet["main_shape"] or {}
+    diffs = diff_cells(slip.faces, main.get("faces") or {}, issue_market(data_dir, issue),
+                       {str(k): v for k, v in (payload.get("cites") or {}).items()},
+                       {str(k): v for k, v in (payload.get("outs") or {}).items()},
+                       _matrices(data_dir, issue, errors))
+    signed = [str(no) for no in payload.get("signed_bold") or []]
+    return slip, {"opening": opening_lines(packet, slip.faces, gates),
+                  "checks": self_checks(packet, slip.faces, pre, signed_bold=signed),
+                  "diffs": diffs, "readout": cite_readout(diffs), "gates": gates,
+                  "shape": shape_of(slip.faces), "stake": pre["stake"], "p": pre["p"],
+                  "main_label": main.get("label"), "errors": errors}
+
+
+def _walked(record: dict) -> str:
+    from nutmeg.decision.bj_time import parse_bj
+
+    at = parse_bj(record.get("at"))
+    return (f"本期桥已走过（{at.strftime('%H:%M') if at else '时刻不明'}），"
+            "再想改就照抄 §2 主形")
 
 
 def register_issue_routes(app: FastAPI, templates) -> None:
@@ -106,12 +186,11 @@ def register_issue_routes(app: FastAPI, templates) -> None:
         from nutmeg.decision.betslip import BetslipError, format_faces_row
         from nutmeg.decision.choice_ledger import shape_of
         from nutmeg.decision.precheck import build_slip, precheck
-        from nutmeg.decision.slip_group import death_list, is_coin
 
         data_dir = app.state.data_dir
         try:
             channel = str(payload.get("channel") or "renjiu")
-            faces = {str(k): str(v) for k, v in (payload.get("faces") or {}).items() if v}
+            faces = _picked(payload.get("faces"))
             row = format_faces_row(faces) if channel != "jczq" and faces else None
             legs = payload.get("legs") if channel == "jczq" else None
             combo = payload.get("combo") or (len(legs) if legs else None)
@@ -126,14 +205,49 @@ def register_issue_routes(app: FastAPI, templates) -> None:
             if channel == "jczq":
                 out["mode"] = out["shape"] = _parlay(slip.combo_sizes, len(slip.legs))
             else:
-                fair = {leg.key: leg.fair for leg in slip.legs if leg.fair}
-                ticket = {no: f for no, f in slip.faces.items() if no in fair}
-                ordered, _ = death_list([ticket], fair, top=5)
-                gates = [{"no": no, "face": f, "p": p, "coin": is_coin(fair[no])}
-                         for no, f, p in ordered[:5]]
+                gates = _zucai_gates(slip)
                 out["mode"] = _zucai_mode(channel, len(slip.faces))
                 out["shape"] = shape_of(slip.faces)
             return {"ok": True, **out, "faces_row": row, "gates": gates}
         except (BetslipError, KeyError, ValueError) as error:
-            message = error.args[0] if isinstance(error, KeyError) and error.args else error
-            return {"ok": False, "error": _page_error(str(message))}
+            return {"ok": False, "error": _error_text(error)}
+
+    @app.post("/api/bridge/{issue}/preview")
+    def bridge_preview_api(issue: str, payload: dict = Body(...)) -> Any:  # noqa: B008
+        """桥上每改一格就对照一次：五条自检 + 差异格 + 读数。只读——不留预审痕、不登记。"""
+        try:
+            _, view = bridge_view(app.state.data_dir, _check_issue(issue), payload)
+        except (KeyError, ValueError) as error:   # BetslipError 是 ValueError
+            return {"ok": False, "error": _error_text(error)}
+        return {"ok": True, **view}
+
+    @app.post("/action/bridge")
+    def bridge_action(payload: dict = Body(...)) -> Any:  # noqa: B008
+        """定稿：登记桥后票 `<期>-B1`（试玩），成功后才写桥记录。只走一次。
+        等价命令：`betslip preview-set --plan` + `betslip register --slip-id <期>-B1 --trial`。"""
+        from nutmeg.decision.bridge import append_bridge, bridge_record
+        from nutmeg.decision.precheck import register_reviewed
+
+        data_dir = app.state.data_dir
+        issue = _check_issue(str(payload.get("issue") or ""))
+        if (old := bridge_record(data_dir, issue)) is not None:
+            return {"ok": False, "error": _walked(old)}
+        try:
+            # 偏离理由不在封闭枚举里时 precheck 的诊断抛 ValueError——登记之前就挡回
+            slip, view = bridge_view(data_dir, issue, payload, slip_id=f"{issue}-B1",
+                                     deviation=str(payload.get("deviation") or ""),
+                                     prediction=str(payload.get("prediction") or ""))
+            done = register_reviewed(slip, data_dir)
+            whys = {str(k): str(v) for k, v in (payload.get("whys") or {}).items() if v}
+            checks = [{**c, "why": whys[str(c["id"])]} if str(c["id"]) in whys else c
+                      for c in view["checks"]]
+            append_bridge(data_dir, issue, {
+                "slip_id": slip.slip_id, "channel": slip.channel,
+                "draft0": _picked(payload.get("draft0")), "faces": slip.faces,
+                "main_label": view["main_label"], "diffs": view["diffs"],
+                "readout": view["readout"], "checks": checks,
+                "deviation": slip.deviation, "prediction": slip.prediction})
+        except (KeyError, ValueError) as error:
+            return {"ok": False, "error": _error_text(error)}
+        return {"ok": True, "at": bridge_record(data_dir, issue)["at"],
+                "summary": done["summary"], "lines": done["lines"], "readout": view["readout"]}

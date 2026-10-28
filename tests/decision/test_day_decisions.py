@@ -141,3 +141,27 @@ def test_rsi_inbox_items_keep_their_stable_id_age_and_default(tmp_path):
             if r["kind"] == "rsi"]
     assert [r["id"] for r in rows] == ["rsi:RSI-1a2b3c"]
     assert "积压 7 天" in rows[0]["subject"] and rows[0]["default_action"] == "下一版 rubric 改上限"
+
+
+def test_zucai_subject_names_bridge_b1_trial_but_status_stays_open(tmp_path: Path):
+    """桥后票 B1 是试玩票：主语改「已登记（试玩），未确认实购」，状态仍按未登记实票算。"""
+    from nutmeg.decision.betslip import BetSlip, register_slip
+    from nutmeg.decision.day_decisions import live_register_decisions
+
+    _zucai(tmp_path)
+    (tmp_path / "zucai" / "26132-draft.json").write_text(json.dumps({"candidates": [
+        {"label": "初稿", "faces": {"1": "3"}, "stake_yuan": 64,
+         "review": {"vetoed": True}}]}), encoding="utf-8")
+    faces = {str(i): "3" for i in range(1, 10)}
+    register_slip(tmp_path, BetSlip(slip_id="26132-B1", channel="renjiu", placed_at="2026-09-23",
+                                    legs=[], issue="26132", faces=faces, purchased=False))
+    z = {r["id"]: r for r in live_register_decisions(tmp_path, "2026-09-23", now=NOW)}[
+        "register:zucai:26132"]
+    assert z["subject"] == ("足彩 26132 桥后票 B1 已登记（试玩），未确认实购"
+                            "；机器初稿 ¥64（审票 ⛔否决）")
+    assert z["status"] == "open"
+    register_slip(tmp_path, BetSlip(slip_id="26132-T1", channel="renjiu", placed_at="2026-09-23",
+                                    legs=[], issue="26132", faces=faces))
+    z = {r["id"]: r for r in live_register_decisions(tmp_path, "2026-09-23", now=NOW)}[
+        "register:zucai:26132"]
+    assert z["status"] == "done" and "B1" not in z["subject"]

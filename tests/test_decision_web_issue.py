@@ -149,3 +149,113 @@ def test_issue_api_carries_matrix_rows(tmp_path):
     assert expected["rows"], "造的研究件要至少产出一行有区分力的证据"
     assert any(r["source_url"] and r["priced_in"] is False for r in expected["rows"])
     assert body["matches"][0]["matrix"] == {"no": "1", "name": "甲1-乙1", "missing": True}
+
+
+# —— §3 桥（2026-10-28 第 3 阶段 Task 3.2）——
+
+_MAIN = {**_FACES, "10": "3"}   # 主形与 _FACES 只差场 10（3 → 31）
+
+
+def _bridge_client(tmp_path: Path) -> TestClient:
+    client = _client(tmp_path)
+    (tmp_path / "data" / "zucai" / "26151-packet.json").write_text(json.dumps({
+        "issue": "26151",
+        "rows": [{"no": no, "tier": "B", "k": 4, "n": 6, "default": f} for no, f in _MAIN.items()],
+        "main_shape": {"label": "W4 4单5双", "faces": _MAIN}}, ensure_ascii=False))
+    return client
+
+
+def _files(root: Path) -> dict[str, float]:
+    return {str(p): p.stat().st_mtime for p in root.rglob("*") if p.is_file()}
+
+
+_BRIDGE = {"issue": "26151", "draft0": _MAIN, "faces": _FACES, "cites": {"10": "out"},
+           "outs": {"10": "停售前看到客队主力回归"}, "whys": {"2": "13 这条单我认"},
+           "deviation": "fact_self_judged", "prediction": "场 10 开平"}
+
+
+def test_bridge_preview_returns_checks_diffs_readout_and_writes_nothing(tmp_path):
+    client = _bridge_client(tmp_path)
+    before = _files(tmp_path / "data")
+    body = client.post("/api/bridge/26151/preview", json={
+        "faces": _FACES, "cites": {"10": "out"}, "outs": {"10": "客队主力回归"}}).json()
+    assert body["ok"] is True
+    assert [c["id"] for c in body["checks"]] == [1, 2, 3, 4, 5]
+    assert [d["no"] for d in body["diffs"]] == ["10"]
+    assert body["diffs"][0]["mine"] == "31" and body["diffs"][0]["main"] == "3"
+    assert body["diffs"][0]["reason"] == {"kind": "out", "text": "客队主力回归"}
+    assert body["readout"] == {"diffs": 1, "matrix": 0, "outside": 1, "blank": 0}
+    assert body["opening"][-1]["label"] == "死法清单第一门"
+    assert body["shape"] == "3单6双" and body["stake"] == 128 and 0 < body["p"] < 1
+    assert body["gates"] and all("p" in g for g in body["gates"])
+    assert _files(tmp_path / "data") == before
+
+
+def test_bridge_preview_errors_read_as_page_words(tmp_path):
+    client = _bridge_client(tmp_path)
+    body = client.post("/api/bridge/26151/preview", json={"faces": {"1": "3"}}).json()
+    assert body["ok"] is False and "还差 8 场" in body["error"]
+    assert client.post("/api/bridge/2615x/preview", json={"faces": _FACES}).status_code == 400
+
+
+def test_bridge_action_registers_b1_trial_and_writes_record(tmp_path):
+    from nutmeg.decision.betslip import load_slips
+    from nutmeg.decision.bridge import bridge_ledger, bridge_record
+
+    client = _bridge_client(tmp_path)
+    data = tmp_path / "data"
+    assert client.get("/api/issue/26151").json()["bridge"] is None
+    body = client.post("/action/bridge", json=_BRIDGE).json()
+    assert body["ok"] is True and body["at"]
+    assert "26151-B1" in body["summary"] and "试玩" in body["summary"]
+    assert body["readout"] == {"diffs": 1, "matrix": 0, "outside": 1, "blank": 0}
+    assert isinstance(body["lines"], list)
+    slip = {s.slip_id: s for s in load_slips(data, issue="26151")}["26151-B1"]
+    assert slip.purchased is False and slip.channel == "renjiu"
+    assert slip.deviation == "fact_self_judged" and slip.prediction == "场 10 开平"
+    rec = bridge_record(data, "26151")
+    assert rec["slip_id"] == "26151-B1" and rec["channel"] == "renjiu"
+    assert rec["faces"]["10"] == "31" and rec["draft0"] == _MAIN
+    assert rec["main_label"] == "W4 4单5双"
+    assert rec["diffs"][0]["reason"]["text"] == "停售前看到客队主力回归"
+    assert {c["id"]: c.get("why") for c in rec["checks"]}[2] == "13 这条单我认"
+    assert rec["deviation"] == "fact_self_judged" and rec["prediction"] == "场 10 开平"
+    assert bridge_ledger(data, "26151")["readout"] == body["readout"]
+    assert client.get("/api/issue/26151").json()["bridge"]["slip_id"] == "26151-B1"
+
+
+def test_bridge_action_twice_refused(tmp_path):
+    client = _bridge_client(tmp_path)
+    assert client.post("/action/bridge", json=_BRIDGE).json()["ok"] is True
+    again = client.post("/action/bridge", json={**_BRIDGE, "faces": _MAIN}).json()
+    assert again["ok"] is False
+    assert again["error"].startswith("本期桥已走过（")
+    assert again["error"].endswith("），再想改就照抄 §2 主形")
+    lines = (tmp_path / "data" / "zucai" / "26151-bridge.jsonl").read_text("utf-8").splitlines()
+    assert len(lines) == 1
+
+
+def test_bridge_action_failed_registration_writes_no_record(tmp_path):
+    client = _bridge_client(tmp_path)
+    data = tmp_path / "data"
+    short = client.post("/action/bridge", json={**_BRIDGE, "faces": {"1": "3", "2": "31"}})
+    assert short.json()["ok"] is False and "还差 7 场" in short.json()["error"]
+    bad = client.post("/action/bridge", json={**_BRIDGE, "deviation": "gut"}).json()
+    assert bad["ok"] is False and "gut" in bad["error"]
+    assert not (data / "zucai" / "26151-bridge.jsonl").exists()
+    assert not (data / "betslips.jsonl").exists()
+
+
+def test_bridge_action_fourteen_matches_is_shengfucai(tmp_path):
+    from nutmeg.decision.bridge import bridge_record
+
+    client = _bridge_client(tmp_path)
+    faces = {str(i): _FACES.get(str(i), "3") for i in range(1, 15)}
+    body = client.post("/action/bridge", json={**_BRIDGE, "faces": faces}).json()
+    assert body["ok"] is True and "胜负彩" in body["summary"]
+    assert bridge_record(tmp_path / "data", "26151")["channel"] == "shengfucai"
+
+
+def test_bridge_action_rejects_bad_issue(tmp_path):
+    r = _bridge_client(tmp_path).post("/action/bridge", json={**_BRIDGE, "issue": "../x"})
+    assert r.status_code == 400

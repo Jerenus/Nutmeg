@@ -88,9 +88,13 @@ def live_register_decisions(data_dir: Path | str, date: str, *, now: datetime) -
                     draft_hint = f"；机器初稿 ¥{first['stake_yuan']}（审票 {verdict}）"
             except (OSError, ValueError):
                 draft_hint = ""
+        # 桥后票 B1 是试玩票（§3 桥在期页登记）：主语点名它，状态仍按未登记实票算
+        bridged = not purchased and any(s.slip_id == f"{issue}-B1" and not s.purchased
+                                        for s in slips)
+        what = "桥后票 B1 已登记（试玩），未确认实购" if bridged else "停售前仍无已登记实票"
         rows.append({
             "id": f"register:zucai:{issue}", "kind": "register_zucai",
-            "subject": f"足彩 {issue} 停售前仍无已登记实票{draft_hint}",
+            "subject": f"足彩 {issue} {what}{draft_hint}",
             "deadline": deadline, "default_action": REGISTER_DEFAULT,
             "status": _status(deadline, purchased, now), "source": "betslips",
         })
