@@ -123,6 +123,45 @@ def judgment_counter_matrix(
     _cli.typer.echo(text)
 
 
+@judgment_app.command("bridge")
+def judgment_bridge(
+    issue: str = _cli.typer.Option(..., "--issue", help="足彩期号 如 26151"),
+    data_dir: Path = _DATA_DIR,
+) -> None:
+    """§5⑪ 桥后改动账（2026-10-28）：本期桥的走过时刻、差异格与理由、引用读数、实票与 B1 差异格。"""
+    from nutmeg.decision.bridge import bridge_ledger, bridge_record
+
+    ledger = bridge_ledger(data_dir, issue)
+    if not ledger["walked"]:
+        _cli.typer.echo(f"## 桥后改动账 · 足彩 {issue}\n\n本期没走桥")
+        return
+    record = bridge_record(data_dir, issue) or {}
+    lines = [f"## 桥后改动账 · 足彩 {issue}", "",
+             f"走桥 {str(ledger['at'])[:16].replace('T', ' ')}"
+             + (f" · 对照主形 {record['main_label']}" if record.get("main_label") else ""), ""]
+    diffs = record.get("diffs") or []
+    if diffs:
+        lines += ["| 格 | 我的 | 主形 | 理由 |", "|---|---|---|---|"]
+        for d in diffs:
+            why = d.get("reason") or {}
+            text = (f"矩阵行 {why['row']}：{why.get('evidence') or '（行不存在）'}"
+                    if why.get("kind") == "matrix"
+                    else f"矩阵外：{why['text']}" if why.get("kind") == "out" else "未写")
+            lines.append(f"| {d['no']} | {d['mine'] or '丢'} | {d['main'] or '丢'} | {text} |")
+    else:
+        lines.append("与主形无差异格")
+    r = ledger["readout"]
+    lines += ["", f"读数：差异格 {r['diffs']} · 指到矩阵行 {r['matrix']} · "
+                  f"矩阵外 {r['outside']} · 未写 {r['blank']}", ""]
+    if not ledger["real"]:
+        lines.append("实票：本期无实购票")
+    for row in ledger["real"]:
+        changed = "、".join(row["changed"])
+        lines.append(f"实票 {row['slip_id']} vs B1：改 {len(row['changed'])} 格"
+                     + (f"（{changed}）" if changed else "") + "；活/死按开奖串手填")
+    _cli.typer.echo("\n".join(lines))
+
+
 @judgment_app.command("draft")
 def judgment_draft(
     issue: str = _cli.typer.Option(..., "--issue", help="足彩期号 如 26135"),
