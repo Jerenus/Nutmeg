@@ -8,6 +8,11 @@
 - `register_jczq`：当天有 `betslip preview` 预审过的竞彩方案、却没有登记实票，
   截止＝预审腿里最早开球。
 这两类在每次播报时现算（`live_register_decisions`），不等 12:00/14:20/18:35 的报告。
+
+空仓登记（2026-10-28 Jun 定）：今天页「登记空仓」写当日 `daily/<日>/passes.jsonl`，**不进
+`betslips.jsonl`**（零注票没有票面，账房 / 选择账 / retro 都得逐处排除）。pass 只做两件事：
+把对应登记截止标成 done（主语「… 空仓·已登记 HH:MM」），并在停售前留下理由与时间戳。
+有实购票时照旧按实票算。
 """
 from __future__ import annotations
 
@@ -24,6 +29,45 @@ DEFAULT_EMPTY = "空仓"
 REGISTER_KINDS = ("register_zucai", "register_jczq")
 OBSOLETE_KINDS = ("approve_read", "plan_choose_commit")
 REGISTER_DEFAULT = "未登记＝空仓（不买）"
+PASSES = "passes.jsonl"
+
+
+def read_passes(data_dir: Path | str, date: str) -> list[dict]:
+    path = day_dir(data_dir, date) / PASSES
+    if not path.exists():
+        return []
+    out = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            continue
+    return out
+
+
+def append_pass(data_dir: Path | str, date: str, *, channel: str, target: str, reason: str,
+                at: str) -> tuple[dict, bool]:
+    """登记一次空仓 → (row, existed)。同一天同 channel+target 已有就原样返回、不重写——
+    停售前留下的是第一次的理由与时刻。"""
+    old = _pass_for(read_passes(data_dir, date), channel, target)
+    if old is not None:
+        return old, True
+    row = {"channel": channel, "target": str(target), "reason": reason, "at": at}
+    path = day_dir(data_dir, date) / PASSES
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    return row, False
+
+
+def _pass_for(passes: list[dict], channel: str, target: str) -> dict | None:
+    return next((p for p in passes
+                 if p.get("channel") == channel and str(p.get("target")) == str(target)), None)
+
+
+def _passed(subject: str, row: dict) -> str:
+    at = parse_bj(row.get("at"))
+    return f"{subject} 空仓·已登记 {at.strftime('%H:%M') if at else '时刻不明'}"
 
 
 def log_preview(data_dir: Path | str, *, placed_at: str, channel: str, issue: str,
@@ -70,6 +114,7 @@ def live_register_decisions(data_dir: Path | str, date: str, *, now: datetime) -
     except Exception:  # noqa: BLE001 —— 登记簿坏了也要发截止提醒
         slips = []
     rows: list[dict] = []
+    passes = read_passes(data_dir, date)
     zdir = data_dir / "zucai"
     issue = current_issue(zdir, now=now) if zdir.exists() else None
     if issue:
@@ -92,12 +137,17 @@ def live_register_decisions(data_dir: Path | str, date: str, *, now: datetime) -
         bridged = not purchased and any(s.slip_id == f"{issue}-B1" and not s.purchased
                                         for s in slips)
         what = "桥后票 B1 已登记（试玩），未确认实购" if bridged else "停售前仍无已登记实票"
-        rows.append({
+        row = {
             "id": f"register:zucai:{issue}", "kind": "register_zucai",
             "subject": f"足彩 {issue} {what}{draft_hint}",
             "deadline": deadline, "default_action": REGISTER_DEFAULT,
             "status": _status(deadline, purchased, now), "source": "betslips",
-        })
+        }
+        passed = None if purchased else _pass_for(passes, "zucai", str(issue))
+        if passed is not None:
+            row |= {"subject": _passed(f"足彩 {issue}", passed), "status": "done",
+                    "pass": passed}
+        rows.append(row)
     previews = [p for p in _previews(data_dir, date) if p.get("channel") == "jczq"]
     if previews:
         registered = any(s.purchased and s.channel == "jczq" and str(s.placed_at)[:10] == date
@@ -117,12 +167,17 @@ def live_register_decisions(data_dir: Path | str, date: str, *, now: datetime) -
                            if k is not None and k > now)
         if kicks:
             deadline = kicks[0].isoformat(timespec="seconds")
-            rows.append({
+            row = {
                 "id": f"register:jczq:{date}", "kind": "register_jczq",
                 "subject": f"竞彩：今天预审过 {len(previews)} 次方案，还没有登记实票",
                 "deadline": deadline, "default_action": REGISTER_DEFAULT,
                 "status": _status(deadline, registered, now), "source": "previews",
-            })
+            }
+            passed = None if registered else _pass_for(passes, "jczq", date)
+            if passed is not None:
+                row |= {"subject": _passed(f"竞彩 {date}", passed), "status": "done",
+                        "pass": passed}
+            rows.append(row)
     return rows
 
 

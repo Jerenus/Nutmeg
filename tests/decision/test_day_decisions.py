@@ -165,3 +165,49 @@ def test_zucai_subject_names_bridge_b1_trial_but_status_stays_open(tmp_path: Pat
     z = {r["id"]: r for r in live_register_decisions(tmp_path, "2026-09-23", now=NOW)}[
         "register:zucai:26132"]
     assert z["status"] == "done" and "B1" not in z["subject"]
+
+
+def test_append_pass_is_idempotent_per_channel_and_target(tmp_path: Path):
+    from nutmeg.decision.day_decisions import append_pass, read_passes
+
+    first, existed = append_pass(tmp_path, "2026-09-23", channel="zucai", target="26132",
+                                 reason="同意机器默认空仓", at="2026-09-23T11:42:00+08:00")
+    assert existed is False and first["reason"] == "同意机器默认空仓"
+    again, existed = append_pass(tmp_path, "2026-09-23", channel="zucai", target="26132",
+                                 reason="改主意了", at="2026-09-23T12:00:00+08:00")
+    assert existed is True and again == first                      # 原样返回，不重写
+    append_pass(tmp_path, "2026-09-23", channel="jczq", target="2026-09-23", reason="",
+                at="2026-09-23T12:01:00+08:00")
+    rows = read_passes(tmp_path, "2026-09-23")
+    assert [(r["channel"], r["target"]) for r in rows] == [("zucai", "26132"),
+                                                          ("jczq", "2026-09-23")]
+    assert read_passes(tmp_path, "2026-09-24") == []
+
+
+def test_pass_marks_register_deadlines_done_until_a_real_slip_exists(tmp_path: Path):
+    """空仓登记（passes.jsonl）把两类登记截止置 done；主语带登记时刻。有实购票时照旧。"""
+    from nutmeg.decision.betslip import BetSlip, register_slip
+    from nutmeg.decision.day_decisions import append_pass, live_register_decisions, log_preview
+
+    _zucai(tmp_path)
+    _board(tmp_path)
+    log_preview(tmp_path, placed_at="2026-09-23", channel="jczq", issue="", keys=["周三003"],
+                stake=40, vetoed=False, now=NOW)
+    append_pass(tmp_path, "2026-09-23", channel="zucai", target="26132",
+                reason="同意机器默认空仓", at="2026-09-23T11:42:00+08:00")
+    append_pass(tmp_path, "2026-09-23", channel="jczq", target="2026-09-23",
+                reason="不打", at="2026-09-23T11:43:00+08:00")
+    by_id = {r["id"]: r for r in live_register_decisions(tmp_path, "2026-09-23", now=NOW)}
+    z, j = by_id["register:zucai:26132"], by_id["register:jczq:2026-09-23"]
+    assert z["status"] == "done" and z["subject"] == "足彩 26132 空仓·已登记 11:42"
+    assert z["pass"]["reason"] == "同意机器默认空仓"
+    assert j["status"] == "done" and j["subject"] == "竞彩 2026-09-23 空仓·已登记 11:43"
+    # 另一天的 pass 不算
+    other = {r["id"]: r for r in live_register_decisions(tmp_path, "2026-09-24", now=NOW)}
+    assert "pass" not in other["register:zucai:26132"]
+    register_slip(tmp_path, BetSlip(slip_id="26132-T1", channel="renjiu", placed_at="2026-09-23",
+                                    legs=[], issue="26132",
+                                    faces={str(i): "3" for i in range(1, 10)}))
+    z = {r["id"]: r for r in live_register_decisions(tmp_path, "2026-09-23", now=NOW)}[
+        "register:zucai:26132"]
+    assert z["status"] == "done" and "pass" not in z and "空仓" not in z["subject"]

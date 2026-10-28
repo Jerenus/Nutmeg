@@ -1230,6 +1230,92 @@ def bridge_ledger(data_dir: Path, issue: str) -> dict:
 - **待你决定**：`decisions.json`（`day_decisions.build_decisions` 已产出）每行加链接到 `/issue/<期>` 或 `/jczq/<日>`；「登记空仓」按钮调第 4 阶段端点登记零注空仓记录——**先确认 `betslips.jsonl` 是否接受零注票**；不接受就改记 `daily/<日>/decisions` 的 `pass` 动作（开工前定，写进细计划）。
 - **验收**：`test_decision_web_day.py` 加「刹车带文本 = `status_line`」与「在售期链接存在」两条。
 
+#### 第 6 阶段细计划（2026-10-28 开工）
+
+**Jun 定（10-28）**：空仓登记写当日 `daily/<日>/passes.jsonl`，**不进 `betslips.jsonl`**（零注票没有票面，账房 / 选择账 / retro 都得逐处排除）。pass 只做两件事：把「待你决定」那条登记截止标成 done，并在停售前留下理由与时间戳。
+
+**改正（相对上面规格）**：
+- 外壳不做成 Jinja 继承链。改为一段可 include 的导航 `decision/_nav.html`，数据来自 Jinja 全局函数 `shell()`。这样路由一条都不用改，`/day` `/issue` `/jczq` 只各加一行 include。
+- 月度刹车只用 `precheck.month_brake` + `bankroll.status_line`。这和期页、竞彩页的止损块是同一份数；`month_report` 的 effective 口径是同一推导，不再读第二遍。
+- 导航上的刹车只放一枚紧凑标记。大号刹车带只在今天页出现；期页、竞彩页头部已有各自的止损块，不重复。
+- 账房、实验室链接在第 7、8 阶段落地前，先分别指向 `/betslips`、`/observe`。
+
+##### Task 6.1：pass 记录 + 外壳数据 + 导航 + 今天页数据
+
+- `nutmeg/decision/day_decisions.py`
+  - 加 `PASSES = "passes.jsonl"`、`read_passes(data_dir, date)`、`append_pass(data_dir, date, *, channel, target, reason, at) -> (row, existed)`。同一天同 `channel+target` 已有记录就原样返回，不重写。
+  - `live_register_decisions` 处理 pass：
+    - 当日有该期（足彩）或该日（竞彩）的 pass，且没有实购票时，`status="done"`。
+    - 主语改为「足彩 <期> 空仓·已登记 HH:MM」，行内带 `"pass": row`。
+    - 有实购票时照旧。
+- 新模块 `nutmeg/interfaces/decision_web_shell.py`
+  - 入口是 `register_shell(app, templates)`，`decision_web.py` 调一次。
+  - **`shell_state(data_dir, now)`**：返回
+    - `today`
+    - `issues: [{issue, deadline}]`：取自 `lineup_watch.active_issues` 与 `<期>-issue.json` 的 `sale_deadline`
+    - `brake: {line, net, effective_net, stop_loss, room, tripped, pending}`：`month_brake` 加上 `status_line`
+    - `issue_brake: {期: bankroll.issue_brake(...)}`
+    - `errors`
+    - 每块各自 try，失败只进 `errors`。
+  - **`now` 的取法**：有 `app.state.now` 用它，否则用北京时间当前时刻。
+  - **Jinja 全局 `shell()`**：调用 `shell_state`。
+  - **`GET /api/shell`**：返回同一份 `shell_state`。
+  - **`POST /action/pass`**
+    - 请求体：`{channel: "zucai"|"jczq", target, reason}`。
+    - 校验：`zucai` 的 target 必须是在售期，`jczq` 的 target 必须是 `YYYY-MM-DD`；不合格返回 400。
+    - 理由为空时写「同意机器默认空仓」。
+    - 写入 `append_pass(data_dir, today_bj(), ...)`，返回 `{ok, pass, existed}`。
+  - **`today_extras(data_dir, date, now)`**：并进 `/api/day/{date}`，内容如下。
+    - `shell`
+    - `passes`：`read_passes(date)`
+    - `glance`：每个在售期一份
+      - 字段：`issue`、`deadline`、`default`、`tiers{A,B,b,C,D: 计数}`、`license_rows`、`main_shape{label, price, p, note}`、`alternatives[{label, role, price, p, note}]`、`errors`。
+      - `default` 取自 `packet.default`。
+      - `license_rows` 取 A/B/b 档行：`[{no, name, tier, k, n}]`，队名用 `decision_web_issue._names`。
+      - 全部来自 `packet_doc.load_packet`，页面不计数。
+    - `decisions` 每行补字段：
+      - `href`：`register_zucai` 指向 `/issue/<期>`，`register_jczq` 指向 `/jczq/<日>`。
+      - `pass_target{channel, target}`：仅登记类。
+- 模板 `templates/decision/_nav.html` + `static/decision/shell.css`
+  - 导航条依次为：NUTMEG · 今天 · 期 <n>（每个在售期一枚，带停售时刻）· 竞彩 · 账房 · 实验室。
+  - 右侧是刹车标记：「⛔ 实质 −9,170 / 线 −8,000」或「余 ¥x」，`title` 放 `brake.line` 全文。
+  - 当前页由 include 前的 `{% set nav_active = ... %}` 标明。
+  - 配色是 issue.css 的同一组 token，写在 `.nm-nav` 下，含浅色和深色。
+  - `day.html`、`issue.html`、`jczq.html` 各 include 一次。
+- 测试：
+  - `tests/decision/test_day_decisions.py`：pass 把登记截止置为 done；`append_pass` 幂等。
+  - `tests/test_decision_web_day.py`：
+    - `/day`、`/issue/<期>`、`/jczq/<日>` 三页都有导航，且在售期链接存在。
+    - 刹车标记的 `title` 等于 `status_line(month_brake(...))`。
+    - `/action/pass` 写一次，第二次返回 `existed`。
+    - 非在售期返回 400。
+    - `/api/day` 的 decisions 带 `href` 和 `pass_target`。
+    - glance 的档计数与旁车一致。
+
+##### Task 6.2：今天页换皮（按画布 Today 板）
+
+- `day.html` 改为继承 `decision/layout.html`，不再加载 echarts。仍挂 `day.js` 和 `Day.mount`。
+- 页面自上而下：
+  - **刹车带**
+    - 大数字依次是本月实质、止损线、越线或余量、刹车档（`issue_brake`），下接 `brake.line` 全文。
+    - 按钮「登记本期空仓」只在有在售期、登记截止未 done 时出现。点开是理由输入框，预填 `glance.default.reason`，确认后调 `/action/pass`。
+    - 另有「看账房」按钮。
+  - **两栏**
+    - 左栏：
+      - 今日时间轴：已跑作业、各截止、首场开球、「现在」，只做排序。
+      - 待你决定：卡片显示截止倒计时和机器默认，带 `href` 按钮与「同意空仓并登记」；已 done 的显示「空仓·已登记 HH:MM」。
+    - 右栏：
+      - 期一眼：档计数、A/B/b 行 k/n 小条、主形和并排参考形（¥ / P）、默认动作与理由、链接到期页。
+      - 竞彩一行：场数，链接到竞彩页。
+      - 运维一行：告警数，链接 `/runs/<日>`。
+  - **折叠区**：竞彩卡、昨日、RSI、会话入口、讨论五块原样保留。讨论输入保持可用。
+- 视觉：与 issue.css 同一套 token；只用 `textContent`；每 60 秒刷新；390px 无整页横滚。
+- 浏览器验收在沙盒 10-28 做：
+  - 刹车带数字与 `status_line` 一致。
+  - 点「登记本期空仓」后，待你决定变为 done，`passes.jsonl` 多一行。
+  - 导航在三页都能互相跳转。
+  - 浅色、深色都要看。
+
 ### 第 7 阶段：账房 `/ledger/{月}`
 
 - **数据**：`account.month_report(data_dir, month)`（净、注金、分渠道、待结、理由账、否决仍买、初稿账）+ `choice_ledger.build_choices(data_dir, start=…)`（选择账）+ `bridge.bridge_ledger`（桥后改动账）。

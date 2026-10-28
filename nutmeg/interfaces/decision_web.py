@@ -49,7 +49,7 @@ def create_decision_app(*, output_dir, kernel_state=None,
     _assets = [
         web_root / "static" / "decision" / name
         for name in ("app.js", "observe.js", "observe.css", "day.js", "runs.js", "runs.css",
-                     "issue.js", "issue.css", "jczq.js", "jczq.css")
+                     "issue.js", "issue.css", "jczq.js", "jczq.css", "shell.css")
     ]
     _mtimes = [asset.stat().st_mtime for asset in _assets if asset.exists()]
     templates.env.globals["asset_v"] = str(int(max(_mtimes))) if _mtimes else "0"
@@ -294,7 +294,14 @@ def create_decision_app(*, output_dir, kernel_state=None,
 
     @app.get("/api/day/{date}")
     def day_api(date: str) -> dict:
-        return _day_payload(date)
+        # 第 6 阶段：外壳 / 空仓登记 / 在售期一眼并进来；今天的待人决定按当前文件现算
+        from nutmeg.interfaces.decision_web_shell import app_now, today_extras
+
+        payload = _day_payload(date)
+        extras = today_extras(app.state.data_dir, date, app_now(app),
+                              decisions=payload["decisions"])
+        payload["errors"] += extras.pop("errors")
+        return payload | extras
 
     @app.post("/action/day-note")
     def day_note(payload: dict = Body(...)) -> Any:  # noqa: B008
@@ -494,7 +501,9 @@ def create_decision_app(*, output_dir, kernel_state=None,
 
     from nutmeg.interfaces.decision_web_issue import register_issue_routes
     from nutmeg.interfaces.decision_web_jczq import register_jczq_routes
+    from nutmeg.interfaces.decision_web_shell import register_shell
 
     register_issue_routes(app, templates)
     register_jczq_routes(app, templates)
+    register_shell(app, templates)
     return app

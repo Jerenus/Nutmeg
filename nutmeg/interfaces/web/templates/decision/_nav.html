@@ -1,0 +1,21 @@
+{#- 统一导航（2026-10-28 第 6 阶段）：数据来自 Jinja 全局 shell()；include 前用
+    {% set nav_active = "day"|"issue"|"jczq" %} 标当前页。刹车只放一枚紧凑标记，title 是 status_line 全文。 -#}
+{%- set sh = shell() -%}
+{%- set active = nav_active | default("") -%}
+<nav class="nm-nav" aria-label="主导航">
+  <a class="nm-brand" href="/day">NUTMEG</a>
+  <div class="nm-links">
+    <a href="/day"{% if active == "day" %} aria-current="page"{% endif %}>今天</a>
+    {%- for it in sh.issues %}
+    <a href="/issue/{{ it.issue }}"{% if active == "issue" and issue == it.issue %} aria-current="page"{% endif %}>期 {{ it.issue }}{% if it.close %} <small>停售 {{ it.close }}</small>{% endif %}</a>
+    {%- endfor %}
+    <a href="/jczq"{% if active == "jczq" %} aria-current="page"{% endif %}>竞彩</a>
+    <a href="/betslips">账房</a>
+    <a href="/observe">实验室</a>
+  </div>
+  {%- if sh.brake %}
+  <span class="nm-brake{% if sh.brake.tripped %} veto{% endif %}" title="{{ sh.brake.line }}">{{ sh.brake.chip }}</span>
+  {%- elif sh.errors %}
+  <span class="nm-brake" title="{{ sh.errors | join('；') }}">刹车读不出</span>
+  {%- endif %}
+</nav>

@@ -1,6 +1,8 @@
 {% extends "decision/observe/layout.html" %}
 {% block body %}
 <link rel="stylesheet" href="/static/decision/day.css?v={{ asset_v }}">
+<link rel="stylesheet" href="/static/decision/shell.css?v={{ asset_v }}">
+{% set nav_active = "day" %}{% include "decision/_nav.html" %}
 <header class="obs-topbar">
   <div><span class="obs-mark">DAY</span><strong>当日 {{ date }}</strong><span class="obs-sub">先跑完、再对话</span></div>
   <nav class="day-nav"><a href="/observe">观察台</a><a href="/betslips">实票</a><a href="/">工作台</a></nav>

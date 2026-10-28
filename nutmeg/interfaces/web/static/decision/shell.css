@@ -1,0 +1,32 @@
+/* 统一导航（2026-10-28 产品形态第 6 阶段）。token 全挂在 .nm-nav 下，与 issue.css 同一组色，
+   不依赖所在页面的样式；窄屏链接在条内横向滚动，不撑出整页横向滚动。 */
+
+.nm-nav{
+  --nm-ink:#15181B; --nm-paper:#FFFFFF; --nm-line:#DADDD7; --nm-muted:#565E66; --nm-show:#7A828A;
+  --nm-focus:#EEF2FD; --nm-link:#2348C9; --nm-veto:#B23A0E; --nm-veto-bg:#FBEDE6;
+  --nm-sans:"Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+  --nm-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  box-sizing:border-box; display:flex; flex-wrap:wrap; align-items:center; gap:6px 16px;
+  width:100%; max-width:100%; padding:8px 16px; background:var(--nm-paper); color:var(--nm-ink);
+  border-bottom:1px solid var(--nm-line); font-family:var(--nm-sans); font-size:14px; line-height:1.4;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .nm-nav{
+  --nm-ink:#E4E7E3; --nm-paper:#1A1E22; --nm-line:#2E343A; --nm-muted:#9AA2AA; --nm-show:#8A929A;
+  --nm-focus:#1C2540; --nm-link:#8EA6F5; --nm-veto:#F08A63; --nm-veto-bg:#3A1D12;
+}}
+:root[data-theme="dark"] .nm-nav{
+  --nm-ink:#E4E7E3; --nm-paper:#1A1E22; --nm-line:#2E343A; --nm-muted:#9AA2AA; --nm-show:#8A929A;
+  --nm-focus:#1C2540; --nm-link:#8EA6F5; --nm-veto:#F08A63; --nm-veto-bg:#3A1D12;
+}
+.nm-nav *{box-sizing:border-box}
+.nm-nav a{text-decoration:none}
+.nm-nav a:focus-visible{outline:2px solid var(--nm-link); outline-offset:2px}
+.nm-nav .nm-brand{font-weight:700; font-size:13px; letter-spacing:.08em; color:var(--nm-ink); white-space:nowrap}
+.nm-nav .nm-links{display:flex; gap:2px; flex:1 1 auto; min-width:0; overflow-x:auto; white-space:nowrap; scrollbar-width:thin}
+.nm-nav .nm-links a{padding:6px 10px; border-radius:4px; color:var(--nm-muted)}
+.nm-nav .nm-links a:hover{color:var(--nm-ink); background:var(--nm-focus)}
+.nm-nav .nm-links a[aria-current="page"]{color:var(--nm-link); background:var(--nm-focus); font-weight:700}
+.nm-nav .nm-links small{font-family:var(--nm-mono); font-size:11px; color:var(--nm-show); font-weight:400}
+.nm-nav .nm-brake{margin-left:auto; padding:4px 10px; border:1px solid var(--nm-line); border-radius:4px;
+  font-family:var(--nm-mono); font-variant-numeric:tabular-nums; font-size:12px; color:var(--nm-muted); white-space:nowrap; cursor:help}
+.nm-nav .nm-brake.veto{color:var(--nm-veto); background:var(--nm-veto-bg); border-color:var(--nm-veto); font-weight:700}

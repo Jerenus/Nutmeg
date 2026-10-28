@@ -1,6 +1,8 @@
 {% extends "decision/layout.html" %}
 {% block body %}
 <link rel="stylesheet" href="/static/decision/jczq.css?v={{ asset_v }}">
+<link rel="stylesheet" href="/static/decision/shell.css?v={{ asset_v }}">
+{% set nav_active = "jczq" %}{% include "decision/_nav.html" %}
 <main id="jczq" data-day="{{ day }}" class="jczq">
   <header class="jczq-head"><h1>竞彩 {{ day }}</h1><p id="brake" class="brake"></p></header>
   <p id="errors" class="errors" hidden></p>
