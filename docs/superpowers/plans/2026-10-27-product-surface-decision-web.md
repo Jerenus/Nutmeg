@@ -1070,6 +1070,95 @@ git commit -m "feat(decision-web): 期页行内取证抽屉（§1c 反证矩阵 
 - **SOP 同步**：RUNBOOK B5e 与 `.claude/commands/zucai-packet.md` §3 写明「桥在 `/issue/<期>` 走，B1 由页面登记」；retro §5⑪ 改读 `bridge_ledger`。
 - **验收**：`tests/decision/test_bridge.py`——①–⑤ 各一个用例（③ 断言来源是 V5 行而非自算）；`test_bridge_twice_refused`；B1 落 `betslips.jsonl` 且 `purchased is False`。
 
+#### 第 3 阶段细计划（2026-10-28 开工）
+
+**勘察结论**：§5⑪（桥后改动账、理由引用矩阵行 k/n）至今全靠 retro 手数，代码里没有任何读桥的地方；停售播报（`day_decisions.live_register_decisions`）只认 `purchased` 实票，SOP 写的「桥后票 B1 未确认实购」从没实现。两件都在本阶段补。
+
+**判定口径（写进 `bridge.py` 文档串）**：
+- ① 硬币场：票内出现旁车 `tier == "D"` 的场 → ✗（列场号与面）。「无机制 C 档」旁车没有可机读字段，本阶段不判，detail 写明。
+- ② 单的许可：单选场 `n == 6 and k >= 5` 才算许可；不在 `signed_bold`（旁车 + 桥上本次签的）里的其余单 → ✗。C 档（n=5）的单按定义是博胆；A 档七项口径未定，按不许可处理并在 detail 写明。
+- ③ 博胆 ≤1 / 包只给硬币：**只读** `precheck` 的 `verdicts` 里 `code == "V5"` 的行（`review.structure_notes`），有就 ✗，detail 原样抄 V5 文字——不自算。
+- ④ 跨票：读 `verdicts` 里 `code == "V2"` 的行（共享裸单 / 共享排除面，含与已购票）；无则「无跨票共享」✓。
+- ⑤ 刹车档：`discipline` 里含「刹车」或「日帽」的 ⛔ 行 → ✗。月度止损不在五条里（审票卡已单独显示）。
+- 开场复述：每条单一行 = 场号 · 旁车 `unknowable`（缺则 `首发 lineup_at（停售前/后）`）；外加死法清单第一门（`gates[0]`，带 ·D档）。
+
+**Files:**
+- Create: `nutmeg/decision/bridge.py`、`tests/decision/test_bridge.py`
+- Modify: `nutmeg/interfaces/cli/judgment.py`（加 `judgment bridge --issue <期>`：打印 `bridge_ledger`，retro §5⑪ 用）
+- Modify: `nutmeg/interfaces/decision_web_issue.py`（`POST /api/bridge/{期}/preview`、`POST /action/bridge`；`/api/issue` 加 `bridge` 字段）
+- Modify: `nutmeg/decision/day_decisions.py`（无实票但有 `<期>-B1` 试玩票时，截止行主语改「桥后票 B1 已登记（试玩），未确认实购」）
+- Modify: `nutmeg/interfaces/web/static/decision/issue.js` / `issue.css`（桥面板）
+- Modify: `docs/sop/RUNBOOK.md` B5e、`.claude/commands/zucai-packet.md` §3（桥在 `/issue/<期>` 走；§5⑪ 读 `judgment bridge`）
+- Test: `tests/test_decision_web_issue.py`、`tests/decision/test_day_decisions.py`（若无则新建）
+
+##### Task 3.1：`decision/bridge.py`（纯函数 + 桥记录读写 + 账）
+
+接口（全部同名用于 3.2/3.3）：
+
+```python
+BRIDGE_SUFFIX = "-bridge.jsonl"
+
+def self_checks(packet: dict, faces: dict[str, str], pre: dict, *,
+                signed_bold: list[str] = ()) -> list[dict]:
+    """→ [{id: 1..5, ok: bool, title, detail}]。pre＝precheck() 的输出。"""
+
+def opening_lines(packet: dict, faces: dict[str, str], gates: list[dict]) -> list[dict]:
+    """→ [{label, text}]：每条单「靠什么成立、停售前拿不到什么」+ 死法清单第一门。"""
+
+def diff_cells(faces: dict[str, str], main: dict[str, str], fair: dict[str, dict],
+               cites: dict[str, int | str], outs: dict[str, str],
+               matrices: dict[str, dict]) -> list[dict]:
+    """和主形不同的格 → [{no, mine, main, cover_mine, cover_main, excl_mine, excl_main,
+    reason: {kind: "matrix", row, evidence} | {kind: "out", text} | None}]；'丢' 记作空面。"""
+
+def cite_readout(diffs: list[dict]) -> dict:
+    """{diffs, matrix, outside, blank}——§5⑪「理由引用矩阵行」的读数。"""
+
+def bridge_record(data_dir: Path, issue: str) -> dict | None:
+    """本期已走过的桥（只走一次：有记录即返回第一条）。"""
+
+def append_bridge(data_dir: Path, issue: str, record: dict) -> Path:
+    """追加 zucai/<期>-bridge.jsonl；已有记录则抛 BridgeError（只走一次由服务端守）。"""
+
+def bridge_ledger(data_dir: Path, issue: str) -> dict:
+    """§5⑪：{walked, at, b1_faces, readout, real: [{slip_id, changed: [no…], alive_unknown}]}
+    real＝本期实购票与 B1 的差异格（实票登记后才有）。"""
+```
+
+测试（`tests/decision/test_bridge.py`）至少覆盖：
+- `self_checks`：①（票里有 D 档场 → ✗）、②（4/6 的单 → ✗；5/6 → ✓；`signed_bold` 里的 C 档单 → ✓）、③（`pre["verdicts"]` 放一条 V5 → ✗ 且 detail 等于那条文字；没有 V5 → ✓）、④（放一条 V2 → ✗）、⑤（`discipline` 含「⛔刹车」→ ✗）。
+- `diff_cells`：相同面集（`"10"` vs `"10"`）不算差；`丢` vs `"31"` 算差；`cites={"13": 2}` 带出 `matrices["13"]["rows"][1]["evidence"]`；`cites={"9": "out"}` 带出 `outs["9"]`。
+- `cite_readout`：3 格（1 矩阵 / 1 矩阵外 / 1 空）→ `{diffs:3, matrix:1, outside:1, blank:1}`。
+- `append_bridge` 两次 → 第二次抛 `BridgeError`；`bridge_record` 读回第一条。
+- `bridge_ledger`：写 B1 记录 + 一张 `purchased` 实票（与 B1 差 2 格）→ `real[0]["changed"] == [两格]`。
+
+`judgment bridge --issue <期>` 输出一段 markdown（走过时刻、差异格与理由、读数 k/n、实票与 B1 差异格）；没走过打印「本期没走桥」。
+
+##### Task 3.2：桥路由 + B1 登记 + 播报主语
+
+- `POST /api/bridge/{期}/preview` body `{faces, cites, outs, signed_bold?}` → `precheck(..., log=False)` → `{ok, opening, checks, diffs, readout, gates, shape, stake, p}`。只读不写。
+- `POST /action/bridge` body `{issue, draft0, faces, cites, outs, whys, deviation, prediction}`：
+  1. `bridge_record` 已有 → `{ok: false, error: "本期桥已走过（HH:MM），再想改就照抄 §2 主形"}`。
+  2. `build_slip(slip_id=f"{issue}-B1", channel=任九 9 场 / 胜负彩 14 场, trial=True, deviation, prediction)` → `register_reviewed`；失败直接返回错误、**不写桥记录**。
+  3. `append_bridge`：`{issue, at, slip_id, draft0, faces, main_label, diffs（含 reason）, readout, checks（含 whys[id]）, deviation, prediction}`。
+  4. 返回 `{ok, at, summary, lines, readout}`。
+- `/api/issue` 加 `bridge: bridge_record(...)`（页面重载后直接进「已走桥」态）。
+- `day_decisions.live_register_decisions`：无实票但 `load_slips` 里有 `slip_id == f"{issue}-B1"` 且 `purchased is False` → 主语「足彩 {期} 桥后票 B1 已登记（试玩），未确认实购」；状态仍按「未登记实票」算（B1 不是实票）。
+- 测试：preview 不写任何文件；第一次 `/action/bridge` 成功且 `betslips.jsonl` 出现 `<期>-B1`、`purchased: false`；第二次被拒；B1 登记失败（如 >9 场任九被 V4 之外的解析错误拒）时没有 `-bridge.jsonl`；`live_register_decisions` 的主语断言。
+
+##### Task 3.3：桥面板前端
+
+- 状态：`draft`（默认）→ 点「带着这版走 §3 桥 →」记 `draft0 = picks`、进 `bridge` → 每次点格或改引用都调 `/api/bridge/{期}/preview`（防抖、丢旧响应）→ 「定稿 · 登记桥后票 B1（试玩）」调 `/action/bridge` → `walked`（显示记录：时刻、差异格与理由、读数、「B1 已登记（试玩），停售播报会报未确认实购」）。`/api/issue` 带 `bridge` 时直接进 `walked`。
+- 面板位置：主行（表 + 侧栏）下方整宽；顺序 = 开场复述 → 五条自检（✗ 的带「我为什么仍然这样」输入，内容随定稿进 `whys`）→ 差异格表（每格「去取证」= 打开该场抽屉并滚过去；「矩阵外」= 切换并出一句输入框；抽屉里点「引用」即写入该格理由）→ 死法清单五门 → 读数行「差异格 n · 指到矩阵行 k · 矩阵外 m · 未写 b」。
+- 偏离理由五选一 + 一句预测：放在桥面板底部、定稿按钮上方（`deviation` 用 `fact_self_judged | price_instinct | stake_allocation | structure_preference | other`，中文标签同画布）。
+- 「再想改就照抄主形」按钮：把 `picks` 设成 `main_shape.faces`。
+- 全部 `textContent`；按钮 ≥44px；375px 下面板单列。
+
+##### Task 3.4：SOP 同步 + 浏览器验收 + 提交
+
+- RUNBOOK B5e 与 zucai-packet.md「B 桥」段各加一句：桥在 `/issue/<期>` 走（页面登记 `<期>-B1` 试玩票并写 `zucai/<期>-bridge.jsonl`）；§5⑪ 用 `uv run nutmeg judgment bridge --issue <期>` 读。
+- 沙盒浏览器：26151 点 W4 → 走桥 → 改 10 为 31 → 抽屉引用场 10 某行 → 定稿；`judgment bridge --issue 26151 --data-dir <沙盒>` 打印出同一读数；再点定稿被拒；`/api/issue` 重载进 walked 态。
+
 ### 第 4 阶段：实票登记 + 500 抄录卡
 
 - **路由**：复用第 0 阶段改好的 `POST /action/register-betslip`（`slip_id=<期>-T1`、`deviation`、`prediction`）；返回里加 `faces_row`（`format_faces_row`）。

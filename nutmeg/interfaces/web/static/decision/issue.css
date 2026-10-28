@@ -5,7 +5,7 @@
   --ink:#15181B; --ground:#F3F4F1; --paper:#FFFFFF; --line:#DADDD7; --line-soft:#ECEEE9;
   --muted:#565E66; --sub:#3A4148; --show:#7A828A; --focus:#EEF2FD; --coin-bg:#FAFAF8;
   --veto:#B23A0E; --veto-bg:#FBEDE6; --ok:#17734A; --ok-bg:#E6F2EB; --link:#2348C9;
-  --drawer:#F7F8F5; --drawer-line:#C9CDC6; --cited:#EEF2FD; --on-link:#FFFFFF;
+  --drawer:#F7F8F5; --drawer-line:#C9CDC6; --cited:#EEF2FD; --on-link:#FFFFFF; --on-veto:#FFFFFF;
   --sans:"Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
   display:block; max-width:1360px; margin:0 auto; padding:28px 24px 64px;
@@ -16,13 +16,13 @@
   --ink:#E4E7E3; --ground:#111417; --paper:#1A1E22; --line:#2E343A; --line-soft:#24292E;
   --muted:#9AA2AA; --sub:#B7BEC4; --show:#8A929A; --focus:#1C2540; --coin-bg:#16191C;
   --veto:#F08A63; --veto-bg:#3A1D12; --ok:#5CC793; --ok-bg:#16301F; --link:#8EA6F5;
-  --drawer:#15191C; --drawer-line:#3A4148; --cited:#1C2540; --on-link:#111417;
+  --drawer:#15191C; --drawer-line:#3A4148; --cited:#1C2540; --on-link:#111417; --on-veto:#111417;
 }}
 :root[data-theme="dark"] .issue{
   --ink:#E4E7E3; --ground:#111417; --paper:#1A1E22; --line:#2E343A; --line-soft:#24292E;
   --muted:#9AA2AA; --sub:#B7BEC4; --show:#8A929A; --focus:#1C2540; --coin-bg:#16191C;
   --veto:#F08A63; --veto-bg:#3A1D12; --ok:#5CC793; --ok-bg:#16301F; --link:#8EA6F5;
-  --drawer:#15191C; --drawer-line:#3A4148; --cited:#1C2540; --on-link:#111417;
+  --drawer:#15191C; --drawer-line:#3A4148; --cited:#1C2540; --on-link:#111417; --on-veto:#111417;
 }
 body:has(> .issue){background:#F3F4F1}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) body:has(> .issue){background:#111417}}
@@ -153,6 +153,76 @@ body:has(> .issue){background:#F3F4F1}
 .issue .blk.show{padding:10px 12px; border:1px dashed var(--show); border-radius:4px}
 .issue .blk.show > span:nth-of-type(1){font-weight:500}
 
+/* ---- §3 桥（第 3 阶段，画布 Issue.dc.html 桥板）：主行下方整宽；窄屏单列，差异格表框内横滚 ---- */
+.issue .bridge{margin-top:24px; background:var(--paper); border:1px solid var(--line); border-radius:8px; padding:24px;
+  display:flex; flex-direction:column; gap:22px; min-width:0}
+.issue .bridge[hidden]{display:none}
+.issue .bridge p{margin:0}
+.issue .bridge h3{margin:0; font-size:16px; font-weight:700}
+.issue .bridge .sub{color:var(--sub)}
+.issue .bridge .strong{font-weight:600}
+.issue .b-head{display:flex; flex-wrap:wrap; gap:8px 20px; align-items:baseline}
+.issue .b-head h2{margin:0; font-size:22px; font-weight:700}
+.issue .b-head .muted{font-size:13px}
+.issue .b-status{font-size:12px; color:var(--muted)}
+.issue .b-error{padding:10px 14px; border:1px solid var(--veto); background:var(--veto-bg); color:var(--veto); border-radius:6px; font-weight:700; overflow-wrap:anywhere}
+.issue .b-walked{padding:10px 12px; background:var(--cited); border:1px solid var(--link); border-radius:6px; font-size:13px; line-height:1.6}
+.issue .b-opening{display:flex; flex-direction:column; gap:8px; padding:14px 16px; background:var(--drawer); border-radius:6px; font-size:13px; line-height:1.6}
+.issue .b-open-row{display:flex; gap:10px}
+.issue .b-open-label{flex:0 0 120px; font-weight:500}
+.issue .b-open-text{min-width:0; color:var(--sub); overflow-wrap:anywhere}
+.issue .b-cols{display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start}
+.issue .b-col{flex:1 1 520px; min-width:0; display:flex; flex-direction:column; gap:10px}
+.issue .b-sec-head{display:flex; flex-wrap:wrap; gap:4px 16px; align-items:baseline}
+.issue .b-sec-head .muted{font-size:12px}
+
+/* 五条自检：✓ 绿 · ✗ 朱框 */
+.issue .b-check{display:flex; flex-direction:column; gap:8px; padding:12px; border-radius:6px; border:1px solid var(--line)}
+.issue .b-check.fail{border:1px solid var(--veto)}
+.issue .b-check-line{display:flex; gap:10px; align-items:flex-start}
+.issue .b-mark{flex:0 0 28px; height:28px; display:flex; align-items:center; justify-content:center; border-radius:4px; font-weight:700;
+  background:var(--ok-bg); color:var(--ok)}
+.issue .b-check.fail .b-mark{background:var(--veto); color:var(--on-veto)}
+.issue .b-check-body{display:flex; flex-direction:column; gap:2px; min-width:0}
+.issue .b-check-title{font-size:14px; font-weight:500}
+.issue .b-check-detail{font-size:13px; line-height:1.5; color:var(--sub); overflow-wrap:anywhere}
+.issue .b-why{display:flex; flex-direction:column; gap:4px; padding-left:38px; font-size:12px; color:var(--muted)}
+.issue .b-dev .b-why{padding-left:0; font-size:13px}
+.issue .b-why-done{padding-left:38px; font-size:13px; line-height:1.5; overflow-wrap:anywhere}
+.issue .b-why-done.blank{color:var(--muted)}
+.issue .b-input{min-height:44px; padding:0 12px; border:1px solid var(--line); border-radius:4px; background:var(--paper); color:var(--ink);
+  font-family:inherit; font-size:14px; width:100%; min-width:0}
+.issue .b-input:focus-visible{outline:2px solid var(--link); outline-offset:1px}
+
+/* 差异格表 */
+.issue .b-diff{border:1px solid var(--line); border-radius:6px; min-width:0}
+.issue .b-diff-scroll{overflow-x:auto}
+.issue .b-diff-row{display:grid; grid-template-columns:110px 52px 52px 132px minmax(200px,1fr); gap:8px; padding:10px 12px; min-width:600px;
+  font-size:13px; align-items:start; border-bottom:1px solid var(--line-soft)}
+.issue .b-diff-row:last-child{border-bottom:none}
+.issue .b-diff-head{font-size:12px; color:var(--muted); border-bottom:1px solid var(--line); padding:8px 12px}
+.issue .b-cell-no{font-weight:500; overflow-wrap:anywhere}
+.issue .b-cover{display:flex; flex-direction:column; font-size:12px; line-height:1.5}
+.issue .b-why-cell{display:flex; flex-direction:column; gap:6px; min-width:0}
+.issue .b-reason{line-height:1.5; overflow-wrap:anywhere}
+.issue .b-reason.blank{color:var(--veto); font-weight:500}
+.issue .b-tools{display:flex; flex-wrap:wrap; gap:6px}
+.issue .b-btn{min-height:44px; padding:0 12px; border-radius:4px; font-size:13px; cursor:pointer; background:var(--paper); color:var(--ink); border:1px solid var(--line)}
+.issue .b-btn.link{color:var(--link); border-color:var(--link)}
+.issue .b-btn.on{background:var(--ink); color:var(--paper); border-color:var(--ink)}
+.issue .b-diff-empty{margin:0; padding:12px; font-size:13px}
+.issue .b-readout{display:flex; flex-wrap:wrap; gap:8px 20px; padding:10px 12px; background:var(--focus); border-radius:6px; font-size:13px; line-height:1.6}
+
+/* 偏离理由 + 预测 + 定稿 */
+.issue .b-dev{display:flex; flex-direction:column; gap:12px; padding-top:4px; border-top:1px solid var(--line-soft)}
+.issue .b-chips{display:flex; flex-wrap:wrap; gap:8px}
+.issue .b-chip{min-height:44px; padding:0 16px; border-radius:999px; font-size:14px; cursor:pointer; background:var(--paper); color:var(--ink); border:1px solid var(--line)}
+.issue .b-chip.on{background:var(--ink); color:var(--paper); border-color:var(--ink)}
+.issue .b-dev-done{font-size:13px; line-height:1.6; overflow-wrap:anywhere}
+.issue .b-actions{display:flex; flex-wrap:wrap; gap:10px; align-items:center}
+.issue .b-actions .btn{flex:0 1 auto}
+.issue .b-actions .foot{flex:1 1 100%}
+
 /* 按钮 */
 .issue .actions{display:flex; flex-direction:column; gap:10px}
 .issue .btn{min-height:48px; padding:0 16px; border-radius:6px; font-size:15px; cursor:pointer; background:var(--paper); color:var(--ink); border:1px solid var(--ink)}
@@ -164,4 +234,11 @@ body:has(> .issue){background:#F3F4F1}
   .issue .issue-head h1{font-size:26px}
   .issue .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
   .issue .drawer{margin:0 8px 12px; left:8px; width:calc(100cqw - 16px); padding:14px 12px}
+  .issue .bridge{padding:16px 12px; gap:18px}
+  .issue .b-head h2{font-size:19px}
+  .issue .b-col{flex-basis:100%}
+  .issue .b-open-row{flex-direction:column; gap:0}
+  .issue .b-open-label{flex:none}
+  .issue .b-why,.issue .b-why-done{padding-left:0}
+  .issue .b-actions .btn{flex:1 1 100%}
 }

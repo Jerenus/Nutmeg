@@ -1,6 +1,7 @@
 // static/decision/issue.js —— 期页：决策表即票（2026-10-27 产品形态第 1 阶段）。
 // 推导一律在服务端：注数 / P / V 码 / 止损 / 刹车 / 死法清单来自 /api/precheck，
 // 档 / 条件 k/n / 翻车面 / 默认 / 死门 / 首发来自分析包旁车（/api/issue）。这里只渲染。
+// §3 桥（第 3 阶段）：五条自检 / 差异格 / 理由读数来自 /api/bridge/{期}/preview，定稿走 /action/bridge。
 // 研究文本是不可信输入：全部 textContent，不用 innerHTML。
 (() => {
   "use strict";
@@ -12,8 +13,17 @@
   const KEY = { 3: "home", 1: "draw", 0: "away" };
   const MARK = { veto: "⛔", warn: "⚠️", info: "ℹ️" };
   const COLS = ["场", "对阵", "档", "胜 · 平 · 负", "条件", "翻车面", "机器默认", "死门 P", "首发"];
-  // cites：{场号: 矩阵行号 k}——第 2 阶段只在前端，第 3 阶段随桥记录落盘
-  const state = { data: null, picks: {}, open: null, review: null, seq: 0, pending: false, cites: {} };
+  // cites：{场号: 矩阵行号 k | "out"}——抽屉「引用」写行号，桥上「矩阵外」写 "out"，定稿随桥记录落盘
+  // mode：draft（默认）→ bridge（进桥时记 draft0）→ walked（B1 已登记；/api/issue 带 bridge 时直接进）
+  const state = {
+    data: null, picks: {}, open: null, review: null, seq: 0, pending: false, cites: {},
+    mode: "draft", draft0: null, bview: null, bpending: false, bseq: 0, outs: {}, whys: {},
+    deviation: "", prediction: "", record: null, registered: null, berror: "", submitting: false,
+  };
+  // 偏离理由封闭枚举 = betslip_diagnosis.DEVIATION_REASONS；空串也收（账上记「偏离初稿未登记理由」）
+  const DEVIATIONS = [["fact_self_judged", "自判事实"], ["price_instinct", "价格直觉"],
+    ["stake_allocation", "资金分配"], ["structure_preference", "结构偏好"], ["other", "其他"]];
+  const WALKABLE = [9, 14];   // 任九 9 场 / 胜负彩 14 场——其余张数服务端也会报错，进桥前先挡
 
   const el = (tag, cls, text) => {
     const n = document.createElement(tag);
@@ -30,12 +40,27 @@
   const pct = (x, digits = 0) => (x == null || Number.isNaN(Number(x)) ? "—" : (Number(x) * 100).toFixed(digits));
   const faceProb = (fair, k) => (fair ? (fair[KEY[k]] ?? fair[k]) : null);
 
+  async function postJSON(url, payload, label) {
+    try {
+      const r = await fetch(url, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
+      });
+      return r.ok ? await r.json() : { ok: false, error: `${label} ${r.status}` };
+    } catch (exc) {
+      return { ok: false, error: `${label}不可达：${exc.message || exc}` };
+    }
+  }
+
   // ---- 载入 ----------------------------------------------------------
+  async function fetchIssue() {
+    const r = await fetch(`/api/issue/${encodeURIComponent(issue)}`);
+    if (!r.ok) throw new Error(`/api/issue ${r.status}`);
+    return r.json();
+  }
+
   async function load() {
     try {
-      const r = await fetch(`/api/issue/${encodeURIComponent(issue)}`);
-      if (!r.ok) throw new Error(`/api/issue ${r.status}`);
-      state.data = await r.json();
+      state.data = await fetchIssue();
     } catch (exc) {
       showErrors([`期页数据读不出：${exc.message || exc}`]);
       return;
@@ -43,7 +68,13 @@
     renderBrake();
     showErrors(state.data.errors || []);
     renderActions();
-    render();
+    if (state.data.bridge) {              // 本期桥已走过：直接进 walked，表上摆 B1
+      state.mode = "walked";
+      state.record = state.data.bridge;
+      setPicks(state.record.faces);
+    } else {
+      render();
+    }
   }
 
   function showErrors(list) {
@@ -71,6 +102,7 @@
     if (faces) state.picks[no] = faces; else delete state.picks[no];
     render();
     review();
+    bridgeRefresh();
   }
 
   function setPicks(faces) {
@@ -78,6 +110,7 @@
     for (const [no, f] of Object.entries(faces || {})) if (f) state.picks[String(no)] = String(f);
     render();
     review();
+    bridgeRefresh();
   }
 
   let timer = null;
@@ -90,16 +123,7 @@
     }
     state.pending = true; renderSide();
     timer = setTimeout(async () => {
-      let body;
-      try {
-        const r = await fetch("/api/precheck", {
-          method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ channel: "renjiu", issue, faces: state.picks }),
-        });
-        body = r.ok ? await r.json() : { ok: false, error: `审票接口 ${r.status}` };
-      } catch (exc) {
-        body = { ok: false, error: `审票接口不可达：${exc.message || exc}` };
-      }
+      const body = await postJSON("/api/precheck", { channel: "renjiu", issue, faces: state.picks }, "审票接口");
       if (seq !== state.seq) return;       // 过期回应丢掉
       state.review = body; state.pending = false;
       renderSide();
@@ -186,6 +210,7 @@
       if (again) again.focus();
     }
     renderSide();
+    renderBridge();
   }
 
   // ---- 侧栏：草案卡 / 审票卡 / 死法清单 ---------------------------------
@@ -216,6 +241,7 @@
     head.append(el("span", "card-title", "我的草案"),
       el("span", "card-sub", state.pending ? "审票中…" : (r && r.ok ? r.mode : "")));
     draft.append(head);
+    renderGo();
 
     if (!r) {
       const dflt = (state.data && state.data.default) || {};
@@ -251,21 +277,24 @@
     }
 
     const gates = r.gates || [];
-    if (gates.length) {
-      const sec = el("div", "gates-wrap");
-      sec.append(el("h3", null, "死法清单 · 先要过的门"));
-      const ol = el("ol", "gates");
-      gates.forEach((g, i) => {
-        const li = el("li", "gate" + (g.p >= 0.3 ? " hot" : "") + (g.coin ? " coin" : ""));
-        li.append(el("span", "label", `第 ${i + 1} 道门`),
-          el("span", "what", `${g.no} 开 ${g.face}` + (g.coin ? " ·D档" : "")),
-          el("span", "p mono", `${pct(g.p)}%`));
-        ol.append(li);
-      });
-      sec.append(ol, el("span", "foot", "红框＝≥30% 的排除面；·D档＝硬币场"));
-      rev.append(sec);
-    }
+    if (gates.length) rev.append(gatesSection(gates, "死法清单 · 先要过的门"));
     rev.append(el("span", "foot", "⛔ 只表示审票不同意；登记永远可以，否决会随票入账。"));
+  }
+
+  // 死法清单五门：侧栏审票卡与桥面板同一份排版（门本身来自服务端 death_list）
+  function gatesSection(gates, title) {
+    const sec = el("div", "gates-wrap");
+    sec.append(el("h3", null, title));
+    const ol = el("ol", "gates");
+    gates.forEach((g, i) => {
+      const li = el("li", "gate" + (g.p >= 0.3 ? " hot" : "") + (g.coin ? " coin" : ""));
+      li.append(el("span", "label", `第 ${i + 1} 道门`),
+        el("span", "what", `${g.no} 开 ${g.face}` + (g.coin ? " ·D档" : "")),
+        el("span", "p mono", `${pct(g.p)}%`));
+      ol.append(li);
+    });
+    sec.append(ol, el("span", "foot", "红框＝≥30% 的排除面；·D档＝硬币场"));
+    return sec;
   }
 
   // ---- 取证抽屉（第 2 阶段）：§1c 反证矩阵 + 翻车面 + §1d 格 + 引用按钮 ------
@@ -330,6 +359,7 @@
       const cite = button("cite" + (on ? " on" : ""), on ? "已引用" : "引用", () => {
         if (on) delete st.cites[m.no]; else st.cites[m.no] = k;
         render();
+        bridgeRefresh();                   // 桥上：该格理由随引用即时重对照
       });
       cite.setAttribute("aria-pressed", String(on));
       cite.setAttribute("aria-label", `引用场 ${m.no} 矩阵行 ${k} 作为理由`);
@@ -355,6 +385,7 @@
     const p = m.packet || {};
     const hasMatrix = !mx.missing && Array.isArray(mx.rows);
     const box = el("div", "drawer");
+    box.dataset.focus = `drawer-${m.no}`;   // 桥上「去取证」按它滚到抽屉
     box.setAttribute("role", "region");
     box.setAttribute("aria-label", `取证 · 场 ${m.no}`);
 
@@ -406,18 +437,409 @@
   };
 
   // ---- 按钮 ------------------------------------------------------------
+  let goBtn = null;
+  let goNote = null;
   function renderActions() {
     const host = document.getElementById("actions");
     host.replaceChildren();
     host.className = "actions";
+    goBtn = button("btn primary", "带着这版走 §3 桥 →", enterBridge);
+    goBtn.dataset.focus = "go-bridge";
+    goNote = el("span", "foot");
     const main = state.data.main_shape;
-    const copy = button("btn primary", main ? `照抄主形 ${main.label || ""}`.trim() : "照抄主形（旁车无主形）",
+    const copy = button("btn", main ? `照抄主形 ${main.label || ""}`.trim() : "照抄主形（旁车无主形）",
       () => main && setPicks(main.faces));
     copy.disabled = !main || !main.faces;
     if (main) copy.setAttribute("aria-label", `照抄分析包 §2 主形 ${main.label || ""}`);
     const clear = button("btn", "清空", () => setPicks({}));
     clear.setAttribute("aria-label", "清空所有已选的格");
-    host.append(copy, clear);
+    host.append(goBtn, goNote, copy, clear);
+    renderGo();
+  }
+
+  const nPicks = () => Object.keys(state.picks).length;
+  const walkable = () => WALKABLE.includes(nPicks());
+  const hhmm = (at) => {
+    const m = /T(\d\d:\d\d)/.exec(String(at || ""));
+    return m ? m[1] : "时刻不明";
+  };
+
+  function renderGo() {
+    if (!goBtn) return;
+    if (state.mode === "draft") {
+      goBtn.textContent = "带着这版走 §3 桥 →";
+      goBtn.disabled = !walkable();
+      goNote.textContent = walkable()
+        ? "桥只走一次：对照一次、改一次、定稿。"
+        : `选满 9 场（任九）或 14 场（胜负彩）才能走桥 · 已选 ${nPicks()} 场`;
+    } else if (state.mode === "bridge") {
+      goBtn.textContent = "桥上 · 见下方 §3 面板";
+      goBtn.disabled = true;
+      goNote.textContent = "改格、引用、写理由都在桥上即时对照；定稿按钮在面板底部。";
+    } else {
+      goBtn.textContent = `桥已走过 · ${hhmm((state.record || {}).at)}`;
+      goBtn.disabled = true;
+      goNote.textContent = "B1 已登记（试玩）。表仍可改；之后的实票由账房在 §5⑪ 和 B1 比。";
+    }
+  }
+
+  // ---- §3 桥（第 3 阶段）：进桥 → 每改一格重对照 → 定稿登记 B1 ----------------
+  function scrollToBridge() {
+    const host = document.getElementById("bridge");
+    if (host && typeof host.scrollIntoView === "function") host.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+
+  function enterBridge() {
+    if (state.mode !== "draft" || !walkable()) return;
+    state.mode = "bridge";
+    state.draft0 = { ...state.picks };
+    state.bview = null;
+    state.berror = "";
+    renderGo();
+    renderBridge();
+    bridgeRefresh();
+    scrollToBridge();
+  }
+
+  const outsFor = () => {
+    const out = {};
+    for (const [no, t] of Object.entries(state.outs)) if (String(t).trim()) out[no] = String(t).trim();
+    return out;
+  };
+
+  let btimer = null;
+  function bridgeRefresh() {
+    if (state.mode !== "bridge") return;
+    clearTimeout(btimer);
+    const seq = ++state.bseq;              // 新改动让在途的旧对照作废
+    state.bpending = true;
+    setBridgeStatus();
+    btimer = setTimeout(async () => {
+      const body = await postJSON(`/api/bridge/${encodeURIComponent(issue)}/preview`,
+        { faces: { ...state.picks }, cites: { ...state.cites }, outs: outsFor() }, "桥对照接口");
+      if (seq !== state.bseq || state.mode !== "bridge") return;   // 过期回应丢掉
+      state.bpending = false;
+      if (body.ok) {
+        state.bview = body;
+        state.berror = "";
+      } else {
+        state.berror = body.error || "桥对照失败";   // 保留上一版对照，横幅说明
+      }
+      renderBridge();
+    }, 150);
+  }
+
+  let statusEl = null;
+  function setBridgeStatus() {
+    if (!statusEl) return;
+    statusEl.textContent = state.submitting ? "登记中…" : state.bpending ? "对照中…" : state.bview ? "已对照" : "";
+  }
+
+  async function finalize() {
+    if (state.mode !== "bridge" || state.submitting) return;
+    clearTimeout(btimer);
+    state.bseq++;                          // 定稿后到的对照一律丢掉
+    state.bpending = false;
+    state.submitting = true;
+    state.berror = "";
+    renderBridge();
+    const v = state.bview || {};
+    const failing = v.checks ? new Set(v.checks.filter((c) => !c.ok).map((c) => String(c.id))) : null;
+    const whys = {};
+    for (const [id, t] of Object.entries(state.whys)) {
+      if (String(t).trim() && (!failing || failing.has(String(id)))) whys[id] = String(t).trim();
+    }
+    const payload = {
+      issue, draft0: { ...(state.draft0 || {}) }, faces: { ...state.picks }, cites: { ...state.cites },
+      outs: outsFor(), whys, deviation: state.deviation, prediction: state.prediction.trim(),
+    };
+    const body = await postJSON("/action/bridge", payload, "定稿接口");
+    state.submitting = false;
+    if (!body.ok) {
+      state.berror = body.error || "定稿失败";
+      renderBridge();
+      return;
+    }
+    let record = null;
+    try {
+      record = (await fetchIssue()).bridge;   // 以落盘的桥记录为准
+    } catch {
+      record = null;
+    }
+    state.record = record || {
+      at: body.at, slip_id: `${issue}-B1`, draft0: payload.draft0, faces: payload.faces,
+      main_label: v.main_label, diffs: v.diffs || [], readout: body.readout,
+      checks: (v.checks || []).map((c) => (whys[c.id] ? { ...c, why: whys[c.id] } : c)),
+      deviation: payload.deviation, prediction: payload.prediction,
+    };
+    state.registered = { summary: body.summary, lines: body.lines || [] };
+    state.mode = "walked";
+    renderGo();
+    renderBridge();
+  }
+
+  function gotoEvidence(no) {
+    state.open = String(no);
+    render();
+    const table = document.getElementById("table");
+    const drawer = table.querySelector(`[data-focus="drawer-${no}"]`);
+    const name = table.querySelector(`[data-focus="name-${no}"]`);
+    if (name) name.focus({ preventScroll: true });
+    if (drawer && typeof drawer.scrollIntoView === "function") drawer.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+
+  function toggleOut(no) {
+    if (state.cites[no] === "out") delete state.cites[no]; else state.cites[no] = "out";
+    render();                              // 抽屉里该场「已引用」随之熄灭
+    bridgeRefresh();
+  }
+
+  const nameOf = (no) => ((state.data.matches || []).find((m) => m.no === String(no)) || {}).name || "";
+  const faceText = (f) => f || "丢";
+  const coverText = (face, x) => (face ? `${pct(x)}%` : "丢");
+
+  function textInput(focusKey, value, label, placeholder, onInput) {
+    const input = el("input", "b-input");
+    input.type = "text";
+    input.value = value || "";
+    input.placeholder = placeholder;
+    input.setAttribute("aria-label", label);
+    input.dataset.focus = focusKey;
+    input.addEventListener("input", (e) => onInput(e.target.value));
+    return input;
+  }
+
+  function sectionTitle(text, sub) {
+    const head = el("div", "b-sec-head");
+    head.append(el("h3", null, text));
+    if (sub) head.append(el("span", "muted", sub));
+    return head;
+  }
+
+  function openingBox(lines) {
+    const box = el("div", "b-opening");
+    box.append(el("strong", null, "先复述：每条单靠什么成立、停售前拿不到什么"));
+    for (const line of lines || []) {
+      const row = el("div", "b-open-row");
+      row.append(el("span", "b-open-label", line.label), el("span", "b-open-text", line.text));
+      box.append(row);
+    }
+    return box;
+  }
+
+  function checksList(checks, editable) {
+    const sec = el("div", "b-col");
+    sec.append(sectionTitle("§3a 五条自检", editable ? "✗ 不拦定稿：写一句为什么仍然这样" : null));
+    for (const c of checks || []) {
+      const box = el("div", "b-check" + (c.ok ? " ok" : " fail"));
+      const line = el("div", "b-check-line");
+      const mark = el("span", "b-mark", c.ok ? "✓" : "✗");
+      mark.setAttribute("aria-label", c.ok ? "通过" : "不通过");
+      const body = el("div", "b-check-body");
+      body.append(el("span", "b-check-title", `${c.id} · ${c.title}`), el("span", "b-check-detail", c.detail));
+      line.append(mark, body);
+      box.append(line);
+      if (!c.ok && editable) {
+        const why = el("label", "b-why");
+        why.append(el("span", null, "我为什么仍然这样（停售前写，赛后对账）"),
+          textInput(`b-why-${c.id}`, state.whys[c.id], `第 ${c.id} 条：我为什么仍然这样`, "一句话",
+            (t) => { state.whys[c.id] = t; }));
+        box.append(why);
+      } else if (!c.ok) {
+        box.append(el("span", "b-why-done" + (c.why ? "" : " blank"), c.why ? `我为什么仍然这样：${c.why}` : "没写为什么仍然这样"));
+      }
+      sec.append(box);
+    }
+    return sec;
+  }
+
+  function reasonNode(d) {
+    const r = d.reason;
+    if (r && r.kind === "matrix") {
+      return el("span", "b-reason", `场 ${d.no}·矩阵行 ${r.row}：${r.evidence || "（该行已不在矩阵里）"}`);
+    }
+    if (r && r.kind === "out") return el("span", "b-reason", `矩阵外：${r.text}`);
+    return el("span", "b-reason blank", "还没写理由");
+  }
+
+  function diffTable(diffs, editable) {
+    const box = el("div", "b-diff");
+    box.setAttribute("role", "table");
+    box.setAttribute("aria-label", "差异格 · 和主形不同的格");
+    const scroll = el("div", "b-diff-scroll");
+    const head = el("div", "b-diff-row b-diff-head");
+    head.setAttribute("role", "row");
+    for (const t of ["格", "我的", "主形", "盖住 → / 排除 →", "理由"]) {
+      const h = el("span", null, t);
+      h.setAttribute("role", "columnheader");
+      head.append(h);
+    }
+    scroll.append(head);
+    if (!(diffs || []).length) scroll.append(el("p", "b-diff-empty muted", "和主形一格不差。"));
+    for (const d of diffs || []) {
+      const row = el("div", "b-diff-row");
+      row.setAttribute("role", "row");
+      const cover = cell("b-cover mono");
+      cover.append(el("span", null, `盖住 ${coverText(d.main, d.cover_main)} → ${coverText(d.mine, d.cover_mine)}`),
+        el("span", null, `排除 ${coverText(d.main, d.excl_main)} → ${coverText(d.mine, d.excl_mine)}`));
+      const why = cell("b-why-cell");
+      why.append(reasonNode(d));
+      if (editable) {
+        const out = state.cites[d.no] === "out";
+        const tools = el("div", "b-tools");
+        const ev = button("b-btn link", "去取证", () => gotoEvidence(d.no));
+        ev.dataset.focus = `b-ev-${d.no}`;
+        ev.setAttribute("aria-label", `打开场 ${d.no} 取证抽屉去引用矩阵行`);
+        const tog = button("b-btn" + (out ? " on" : ""), "矩阵外", () => toggleOut(d.no));
+        tog.dataset.focus = `b-out-${d.no}`;
+        tog.setAttribute("aria-pressed", String(out));
+        tog.setAttribute("aria-label", `场 ${d.no} 的理由在矩阵外`);
+        tools.append(ev, tog);
+        why.append(tools);
+        if (out) {
+          why.append(textInput(`b-outtext-${d.no}`, state.outs[d.no], `场 ${d.no} 矩阵外理由`, "矩阵外：一句话",
+            (t) => { state.outs[d.no] = t; bridgeRefresh(); }));
+        }
+      }
+      row.append(cell("b-cell-no", `${d.no} ${nameOf(d.no)}`.trim()), cell("mono strong", faceText(d.mine)),
+        cell("mono sub", faceText(d.main)), cover, why);
+      scroll.append(row);
+    }
+    box.append(scroll);
+    return box;
+  }
+
+  function readoutLine(r) {
+    const box = el("div", "b-readout");
+    const x = r || {};
+    box.append(el("span", "mono", `差异格 ${x.diffs ?? "—"} · 指到矩阵行 ${x.matrix ?? "—"} · 矩阵外 ${x.outside ?? "—"} · 未写 ${x.blank ?? "—"}`),
+      el("span", "sub", "进 §5⑪ 计数"));
+    return box;
+  }
+
+  function deviationBox() {
+    const sec = el("div", "b-dev");
+    sec.append(sectionTitle("偏离机器默认的理由", "五选一；不选也能登记，账上记「偏离初稿未登记理由」"));
+    const chips = el("div", "b-chips");
+    for (const [code, label] of DEVIATIONS) {
+      const on = state.deviation === code;
+      const chip = button("b-chip" + (on ? " on" : ""), label, () => {
+        state.deviation = on ? "" : code;
+        renderBridge();
+      });
+      chip.dataset.focus = `b-dev-${code}`;
+      chip.setAttribute("aria-pressed", String(on));
+      chips.append(chip);
+    }
+    const pred = el("label", "b-why");
+    pred.append(el("span", null, "一句可证伪的预测"),
+      textInput("b-pred", state.prediction, "一句可证伪的预测", "写一句赛后能判对错的话",
+        (t) => { state.prediction = t; }));
+    sec.append(chips, pred);
+    return sec;
+  }
+
+  function errorBanner(host) {
+    if (!state.berror) return;
+    const banner = el("p", "b-error", state.berror);
+    banner.setAttribute("role", "alert");
+    host.append(banner);
+  }
+
+  function bridgePanel(host) {
+    const v = state.bview;
+    const main = (v && v.main_label) || (state.data.main_shape || {}).label || "—";
+    const head = el("div", "b-head");
+    const h = el("h2", null, "§3 桥 · 对照一次、改一次");
+    h.id = "bridge-h";
+    const changed = Object.keys({ ...state.picks, ...(state.draft0 || {}) })
+      .filter((no) => (state.picks[no] || "") !== ((state.draft0 || {})[no] || "")).length;
+    statusEl = el("span", "b-status");
+    head.append(h, el("span", "muted",
+      `对照对象：§2 主形 ${main}` + (v ? ` · 本版 ${v.shape || "—"} ¥${v.stake ?? "—"} · P ${v.p != null ? pct(v.p, 2) + "%" : "—"}` : "")
+      + ` · 桥上已改 ${changed} 格`), statusEl);
+    host.append(head);
+    errorBanner(host);
+    const known = new Set(state.data.errors || []);       // 页顶横幅已报的不重复
+    const fresh = v ? (v.errors || []).filter((e) => !known.has(e)) : [];
+    if (fresh.length) host.append(el("p", "foot", "旁车提示：" + fresh.join("；")));
+    if (!v) {
+      host.append(el("p", "muted", state.bpending ? "对照中…" : "还没有对照结果。"));
+    } else {
+      host.append(openingBox(v.opening));
+      const cols = el("div", "b-cols");
+      const right = el("div", "b-col");
+      right.append(sectionTitle("§3b 差异格 · 和主形不同的格", "抽屉里点「引用」即写成该格理由"),
+        diffTable(v.diffs, true), readoutLine(v.readout));
+      cols.append(checksList(v.checks, true), right);
+      host.append(cols);
+      if ((v.gates || []).length) host.append(gatesSection(v.gates, "§3c 死法清单 · 先要过的门"));
+    }
+    host.append(deviationBox());
+
+    const acts = el("div", "b-actions");
+    const fails = v ? (v.checks || []).filter((c) => !c.ok).length : 0;
+    const fin = button("btn primary", state.submitting ? "登记中…" : "定稿 · 登记桥后票 B1（试玩）", finalize);
+    fin.dataset.focus = "b-final";
+    fin.disabled = state.submitting;
+    const mainShape = state.data.main_shape;
+    const copy = button("btn", `再想改就照抄主形 ${main}`, () => mainShape && setPicks(mainShape.faces));
+    copy.dataset.focus = "b-copy";
+    copy.disabled = !mainShape || !mainShape.faces || state.submitting;
+    const notes = [];
+    if (fails) notes.push(`五条自检 ✗ ${fails} 条——不拦定稿，写的「为什么」随桥记录入账`);
+    if (!state.deviation) notes.push("未选偏离理由：照样可登记，账上记「偏离初稿未登记理由」");
+    notes.push("⛔ 只表示审票不同意；登记永远可以，否决会随票入账。桥只走一次。");
+    acts.append(fin, copy, el("span", "foot", notes.join("；")));
+    host.append(acts);
+  }
+
+  function walkedPanel(host) {
+    const rec = state.record || {};
+    const head = el("div", "b-head");
+    const h = el("h2", null, "§3 桥 · 已走过（只走一次）");
+    h.id = "bridge-h";
+    statusEl = null;
+    head.append(h, el("span", "muted", `对照对象：§2 主形 ${rec.main_label || "—"}`));
+    host.append(head,
+      el("p", "b-walked", `已走桥 · ${hhmm(rec.at)} · ${rec.slip_id || "B1"} 已登记（试玩）· 停售播报会报「未确认实购」`));
+    errorBanner(host);
+    if (state.registered) {
+      host.append(el("p", "foot", state.registered.summary || ""));
+      for (const line of state.registered.lines || []) host.append(el("p", "foot", line));
+    }
+    const cols = el("div", "b-cols");
+    const right = el("div", "b-col");
+    right.append(sectionTitle("§3b 差异格 · 和主形不同的格"), diffTable(rec.diffs, false), readoutLine(rec.readout));
+    cols.append(checksList(rec.checks, false), right);
+    host.append(cols);
+    const dev = (DEVIATIONS.find(([code]) => code === rec.deviation) || [null, null])[1];
+    host.append(el("p", "b-dev-done", `偏离理由：${dev || (rec.deviation || "未选")} · 预测：${rec.prediction || "没写"}`),
+      el("p", "foot", "表仍可改；之后登记的实票由账房在 §5⑪ 和 B1 逐格比，页面不另记。"));
+  }
+
+  function renderBridge() {
+    const host = document.getElementById("bridge");
+    if (!host || !state.data) return;
+    renderGo();
+    const active = document.activeElement;
+    const key = active && active.dataset ? active.dataset.focus : null;
+    const sel = active && typeof active.selectionStart === "number" ? [active.selectionStart, active.selectionEnd] : null;
+    host.replaceChildren();
+    host.hidden = state.mode === "draft";
+    if (state.mode === "draft") {
+      statusEl = null;
+      return;
+    }
+    if (state.mode === "walked") walkedPanel(host); else bridgePanel(host);
+    setBridgeStatus();
+    if (key && key.startsWith("b-")) {      // 重画不丢焦点与光标（输入框边打边对照）
+      const again = host.querySelector(`[data-focus="${key}"]`);
+      if (again) {
+        again.focus();
+        if (sel && typeof again.setSelectionRange === "function") again.setSelectionRange(sel[0], sel[1]);
+      }
+    }
   }
 
   load();
