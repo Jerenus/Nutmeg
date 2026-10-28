@@ -112,20 +112,28 @@ def day_cap_line(slip: BetSlip, data_dir: Path, *, extra_yuan: int = 0) -> str |
     return day_cap_check(day, slip.stake_yuan, already_yuan=bought + extra_yuan)
 
 
-def brake_line(data_dir: Path, placed_at: str) -> str:
-    """月度止损状态（宪法 §4，2026-10-01）：只打印，不阻断——登记是事实。"""
+def month_brake(data_dir: Path, placed_at: str) -> dict:
+    """月度止损的「实质余量」状态（`bankroll.brake_state`）：待结实购票按全损计（2026-10-28）。
+    CLI 止损行与期页止损块同一份数。"""
     from nutmeg.decision.account import pending_ledger
-    from nutmeg.decision.bankroll import brake_state, status_line
+    from nutmeg.decision.bankroll import brake_state
 
     try:
         when = _date.fromisoformat(placed_at)
     except ValueError:
         when = _date.today()
-    try:   # 待结实购票按全损计（2026-10-28）；登记簿读不出就退回已结账口径
+    try:   # 登记簿读不出就退回已结账口径
         pending = pending_ledger(data_dir, when.strftime("%Y-%m"))
     except Exception:  # noqa: BLE001
         pending = None
-    return status_line(brake_state(data_dir, when, pending=pending))
+    return brake_state(data_dir, when, pending=pending)
+
+
+def brake_line(data_dir: Path, placed_at: str) -> str:
+    """月度止损状态（宪法 §4，2026-10-01）：只打印，不阻断——登记是事实。"""
+    from nutmeg.decision.bankroll import status_line
+
+    return status_line(month_brake(data_dir, placed_at))
 
 
 def log_preview_safe(data_dir: Path, slip: BetSlip, vetoed: bool) -> str | None:

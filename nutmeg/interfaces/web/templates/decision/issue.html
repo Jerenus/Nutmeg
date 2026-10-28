@@ -1,0 +1,13 @@
+{% extends "decision/layout.html" %}
+{% block body %}
+<link rel="stylesheet" href="/static/decision/issue.css?v={{ asset_v }}">
+<main id="issue" data-issue="{{ issue }}" class="issue">
+  <header class="issue-head"><h1>{{ issue }} 决策表</h1><p id="brake" class="brake"></p></header>
+  <p id="errors" class="errors" hidden></p>
+  <div class="issue-grid">
+    <section class="board" aria-label="决策表"><div id="table" role="table"></div></section>
+    <aside class="side"><div id="draft"></div><div id="review"></div><div id="actions"></div></aside>
+  </div>
+</main>
+<script src="/static/decision/issue.js?v={{ asset_v }}"></script>
+{% endblock %}

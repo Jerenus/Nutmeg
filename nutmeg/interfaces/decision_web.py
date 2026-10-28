@@ -48,7 +48,8 @@ def create_decision_app(*, output_dir, kernel_state=None,
     # 硬刷新才出来。没有版本号的 <script src> 等于让用户替我们清缓存。
     _assets = [
         web_root / "static" / "decision" / name
-        for name in ("app.js", "observe.js", "observe.css", "day.js", "runs.js", "runs.css")
+        for name in ("app.js", "observe.js", "observe.css", "day.js", "runs.js", "runs.css",
+                     "issue.js", "issue.css")
     ]
     _mtimes = [asset.stat().st_mtime for asset in _assets if asset.exists()]
     templates.env.globals["asset_v"] = str(int(max(_mtimes))) if _mtimes else "0"
@@ -491,4 +492,7 @@ def create_decision_app(*, output_dir, kernel_state=None,
             # 登记被拒要说清是哪一条纪律拒的——静默失败会让人以为票已入账。
             return {"ok": False, "error": str(error)}
 
+    from nutmeg.interfaces.decision_web_issue import register_issue_routes
+
+    register_issue_routes(app, templates)
     return app
