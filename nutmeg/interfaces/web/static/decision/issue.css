@@ -5,6 +5,7 @@
   --ink:#15181B; --ground:#F3F4F1; --paper:#FFFFFF; --line:#DADDD7; --line-soft:#ECEEE9;
   --muted:#565E66; --sub:#3A4148; --show:#7A828A; --focus:#EEF2FD; --coin-bg:#FAFAF8;
   --veto:#B23A0E; --veto-bg:#FBEDE6; --ok:#17734A; --ok-bg:#E6F2EB; --link:#2348C9;
+  --drawer:#F7F8F5; --drawer-line:#C9CDC6; --cited:#EEF2FD; --on-link:#FFFFFF;
   --sans:"Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
   display:block; max-width:1360px; margin:0 auto; padding:28px 24px 64px;
@@ -15,11 +16,13 @@
   --ink:#E4E7E3; --ground:#111417; --paper:#1A1E22; --line:#2E343A; --line-soft:#24292E;
   --muted:#9AA2AA; --sub:#B7BEC4; --show:#8A929A; --focus:#1C2540; --coin-bg:#16191C;
   --veto:#F08A63; --veto-bg:#3A1D12; --ok:#5CC793; --ok-bg:#16301F; --link:#8EA6F5;
+  --drawer:#15191C; --drawer-line:#3A4148; --cited:#1C2540; --on-link:#111417;
 }}
 :root[data-theme="dark"] .issue{
   --ink:#E4E7E3; --ground:#111417; --paper:#1A1E22; --line:#2E343A; --line-soft:#24292E;
   --muted:#9AA2AA; --sub:#B7BEC4; --show:#8A929A; --focus:#1C2540; --coin-bg:#16191C;
   --veto:#F08A63; --veto-bg:#3A1D12; --ok:#5CC793; --ok-bg:#16301F; --link:#8EA6F5;
+  --drawer:#15191C; --drawer-line:#3A4148; --cited:#1C2540; --on-link:#111417;
 }
 body:has(> .issue){background:#F3F4F1}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) body:has(> .issue){background:#111417}}
@@ -114,6 +117,42 @@ body:has(> .issue){background:#F3F4F1}
 .issue .gate .what{font-size:15px; font-weight:500}
 .issue .gate .p{font-size:18px; font-weight:600}
 
+/* ---- 取证抽屉（第 2 阶段，画布 Issue.dc.html 取证板）----
+   抽屉在 #table（min-width 960）里；宽度钉到 .board 的可见宽度并横向 sticky，
+   窄屏时不随表横滚，矩阵自己在框内横滚，侧栏落到矩阵下面。 */
+.issue .board{container-type:inline-size}
+.issue .drawer{margin:0 16px 16px; padding:18px 20px; background:var(--drawer); border:1px solid var(--drawer-line); border-radius:6px;
+  display:flex; flex-direction:column; gap:14px; width:calc(100cqw - 32px); position:sticky; left:16px}
+.issue .drawer .sub{color:var(--sub)}
+.issue .drawer-head{display:flex; flex-wrap:wrap; gap:8px 16px; align-items:baseline}
+.issue .drawer-head strong{font-size:16px; font-weight:700}
+.issue .drawer-head .sub{font-size:13px}
+.issue .drawer .chip{font-size:12px; padding:2px 8px; border-radius:3px; color:var(--sub)}
+.issue .drawer .chip.show{border:1px dashed var(--show)}
+.issue .drawer-grid{display:flex; flex-wrap:wrap; gap:20px; align-items:flex-start}
+.issue .mx{flex:999 1 644px; min-width:0; background:var(--paper); border:1px solid var(--line); border-radius:6px}
+.issue .mx-scroll{overflow-x:auto}
+.issue .mx-row{display:grid; grid-template-columns:24px minmax(120px,1fr) 72px 150px 44px 32px 32px 76px; gap:8px; align-items:center;
+  padding:8px 12px; min-width:620px; font-size:13px; border-bottom:1px solid var(--line-soft)}
+.issue .mx-head{font-size:12px; color:var(--muted); border-bottom:1px solid var(--line)}
+.issue .mx-row.cited{background:var(--cited)}
+.issue .mx-ev{line-height:1.5; overflow-wrap:anywhere}
+.issue .mx-src{color:var(--sub); overflow-wrap:anywhere}
+.issue .mx-src a{color:var(--link); text-underline-offset:3px}
+.issue .unpriced{font-weight:700; color:var(--veto)}
+.issue .sign{font-weight:600}
+.issue .cite{min-height:32px; padding:0 8px; border-radius:4px; font-size:12px; cursor:pointer;
+  background:var(--paper); color:var(--link); border:1px solid var(--link)}
+.issue .cite.on{background:var(--link); color:var(--on-link); border-color:var(--link)}
+.issue .mx-empty{margin:0; padding:10px 12px; font-size:13px}
+.issue .mx-foot{margin:0; padding:10px 12px; font-size:12px; line-height:1.6; color:var(--sub); border-top:1px solid var(--line)}
+.issue .drawer-side{flex:1 1 300px; min-width:0; display:flex; flex-direction:column; gap:12px; font-size:13px; line-height:1.6}
+.issue .blk{display:flex; flex-direction:column; gap:2px; overflow-wrap:anywhere}
+.issue .blk small{font-size:12px; color:var(--muted)}
+.issue .blk.c1 > span:nth-of-type(1){font-weight:500}
+.issue .blk.show{padding:10px 12px; border:1px dashed var(--show); border-radius:4px}
+.issue .blk.show > span:nth-of-type(1){font-weight:500}
+
 /* 按钮 */
 .issue .actions{display:flex; flex-direction:column; gap:10px}
 .issue .btn{min-height:48px; padding:0 16px; border-radius:6px; font-size:15px; cursor:pointer; background:var(--paper); color:var(--ink); border:1px solid var(--ink)}
@@ -124,4 +163,5 @@ body:has(> .issue){background:#F3F4F1}
   .issue{padding:20px 16px 48px}
   .issue .issue-head h1{font-size:26px}
   .issue .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .issue .drawer{margin:0 8px 12px; left:8px; width:calc(100cqw - 16px); padding:14px 12px}
 }

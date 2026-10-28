@@ -12,7 +12,8 @@
   const KEY = { 3: "home", 1: "draw", 0: "away" };
   const MARK = { veto: "⛔", warn: "⚠️", info: "ℹ️" };
   const COLS = ["场", "对阵", "档", "胜 · 平 · 负", "条件", "翻车面", "机器默认", "死门 P", "首发"];
-  const state = { data: null, picks: {}, open: null, review: null, seq: 0, pending: false };
+  // cites：{场号: 矩阵行号 k}——第 2 阶段只在前端，第 3 阶段随桥记录落盘
+  const state = { data: null, picks: {}, open: null, review: null, seq: 0, pending: false, cites: {} };
 
   const el = (tag, cls, text) => {
     const n = document.createElement(tag);
@@ -266,6 +267,143 @@
     }
     rev.append(el("span", "foot", "⛔ 只表示审票不同意；登记永远可以，否决会随票入账。"));
   }
+
+  // ---- 取证抽屉（第 2 阶段）：§1c 反证矩阵 + 翻车面 + §1d 格 + 引用按钮 ------
+  // 矩阵是 counter_matrix.issue_matrices 的原样输出，这里只排版；研究里的 URL 是不可信输入，
+  // 只有 http(s) 才成链接，链接文字只写站点名。
+  const SIGN = (v) => (v >= 2 ? "++" : v > 0 ? "+" : v <= -2 ? "−−" : v < 0 ? "−" : "·");
+  const MX_COLS = ["行", "证据", "类", "来源", "价态", "H1", "H2", "引用"];
+
+  function safeHref(u) {
+    try {
+      const x = new URL(String(u));
+      return /^https?:$/.test(x.protocol) ? x : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function block(label, lines, cls) {
+    const b = el("div", "blk" + (cls ? " " + cls : ""));
+    b.append(el("small", null, label));
+    for (const t of lines) if (t) b.append(el("span", null, t));
+    return b;
+  }
+
+  function sourceCell(r) {
+    const src = el("span", "mx-src");
+    src.setAttribute("role", "cell");
+    const url = r.source_url ? safeHref(r.source_url) : null;
+    if (url) {
+      const a = el("a", null, url.hostname);
+      a.href = url.href;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.title = url.href;
+      src.append(a);
+    } else {
+      src.textContent = r.source_text || "—";
+    }
+    return src;
+  }
+
+  function matrixTable(m, mx, st) {
+    const table = el("div", "mx");
+    table.setAttribute("role", "table");
+    table.setAttribute("aria-label", `场 ${m.no} 反证矩阵`);
+    const scroll = el("div", "mx-scroll");
+    const head = el("div", "mx-row mx-head");
+    head.setAttribute("role", "row");
+    for (const t of MX_COLS) {
+      const h = el("span", null, t);
+      h.setAttribute("role", "columnheader");
+      head.append(h);
+    }
+    scroll.append(head);
+    if (!mx.rows.length) scroll.append(el("p", "mx-empty muted", "研究没有一条有区分力的证据"));
+    mx.rows.forEach((r, i) => {
+      const k = i + 1;
+      const on = st.cites[m.no] === k;
+      const row = el("div", "mx-row" + (on ? " cited" : ""));
+      row.setAttribute("role", "row");
+      const price = r.priced_in == null ? "—" : r.priced_in ? "价内" : "未价";
+      const cite = button("cite" + (on ? " on" : ""), on ? "已引用" : "引用", () => {
+        if (on) delete st.cites[m.no]; else st.cites[m.no] = k;
+        render();
+      });
+      cite.setAttribute("aria-pressed", String(on));
+      cite.setAttribute("aria-label", `引用场 ${m.no} 矩阵行 ${k} 作为理由`);
+      cite.dataset.focus = `cite-${m.no}-${k}`;
+      const citeCell = cell("mx-cite");
+      citeCell.append(cite);
+      row.append(cell("mono muted", k), cell("mx-ev", r.evidence), cell("sub", r.kind), sourceCell(r),
+        cell(r.priced_in === false ? "unpriced" : "sub", price),
+        cell("mono sign", SIGN(r.h1)), cell("mono sign", SIGN(r.h2)), citeCell);
+      scroll.append(row);
+    });
+    table.append(scroll);
+    const inc = mx.inconsistent || {};
+    table.append(el("p", "mx-foot",
+      `不一致数 H1 ${inc.h1 ?? "—"} · H2 ${inc.h2 ?? "—"}（少者为 ACH 首选，只排序不推概率）`
+      + (mx.loose ? ` · 区分力行 ${mx.rows.length} > 5：打分偏松` : "")
+      + ` · 无区分力 ${mx.hidden ?? 0} 条不显示 · 引用＝把这一行写成该格的理由`));
+    return table;
+  }
+
+  window.renderDrawer = (m, st) => {
+    const mx = m.matrix || {};
+    const p = m.packet || {};
+    const hasMatrix = !mx.missing && Array.isArray(mx.rows);
+    const box = el("div", "drawer");
+    box.setAttribute("role", "region");
+    box.setAttribute("aria-label", `取证 · 场 ${m.no}`);
+
+    const head = el("div", "drawer-head");
+    head.append(el("strong", null, `取证 · 场 ${m.no} ${m.name || ""}`.trim()));
+    if (hasMatrix) {
+      const hyp = el("span", "sub");
+      hyp.append("H1 锚方面 ", el("b", "mono", mx.h1), " 对 H2 翻车面 ", el("b", "mono", mx.h2));
+      const cov = mx.coverage && mx.coverage !== "—";
+      head.append(hyp, el("span", "chip show", cov
+        ? `研究收敛 ${mx.coverage}` + (mx.stop_reason && mx.stop_reason !== "coverage" ? `（${mx.stop_reason}）` : "")
+        : "研究收敛 — · 引用制前落盘，只有来源名"));
+    } else {
+      head.append(el("span", "muted", "这场没有研究件（无反证矩阵）"));
+    }
+    box.append(head);
+
+    const grid = el("div", "drawer-grid");
+    if (hasMatrix) grid.append(matrixTable(m, mx, st));
+
+    const side = el("div", "drawer-side");
+    const lineup = p.lineup_at ? `首发 ${p.lineup_at}${p.lineup_before_close ? "（停售前可见）" : "（停售后）"}` : null;
+    const researchUnk = hasMatrix && mx.unknowable_before_close && mx.unknowable_before_close !== "—"
+      ? `研究：${mx.unknowable_before_close}` : null;
+    side.append(block("停售前拿不到", [p.unknowable || lineup || (researchUnk ? null : "—"), researchUnk]));
+    if (p.c1) {
+      side.append(block("翻车面 · §1c", [p.c1.path, `固定招：${p.c1.move || "—"}`,
+        `弱方能进球：${p.c1.q3a || "—"}`, `热门零封：${p.c1.fav || "—"}`,
+        p.c1.weak_check && `标弱加查：${p.c1.weak_check}`], "c1"));
+    } else {
+      side.append(block("翻车面 · §1c", [p.tier === "D" ? "D 档硬币场：§1c 不列" : "旁车未给 §1c"]));
+    }
+    if (p.d1) {
+      const d = p.d1;
+      const diff = d.diff == null ? "—" : `${d.diff > 0 ? "+" : ""}${d.diff}pp`;
+      side.append(block("历史同类格 · §1d · 只展示", [d.cell,
+        `${d.layer || "—"} · n=${d.n ?? "—"} · 开 热/平/冷 ${d.open || "—"} · 热门开 ${d.hot_pct ?? "—"}%`
+        + ` 对市场 ${d.p1 ?? "—"} · 差 ${diff}`], "show"));
+    }
+    if (hasMatrix) side.append(block("翻盘证据（研究自己写的）", [mx.falsifier || "（研究未写）"]));
+    if (p.anchor || p.hole) side.append(block("锚方中轴 · 洞", [p.anchor, p.hole]));
+    if (p.watch || p.consistency || p.crowd) {
+      side.append(block("赛前看谁 · 一致性 · 人群", [p.watch && `看：${p.watch}`,
+        p.consistency && `一致性：${p.consistency}`, p.crowd && `人群：${p.crowd}`]));
+    }
+    grid.append(side);
+    box.append(grid);
+    return box;
+  };
 
   // ---- 按钮 ------------------------------------------------------------
   function renderActions() {

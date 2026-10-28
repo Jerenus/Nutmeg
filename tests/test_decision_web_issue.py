@@ -127,3 +127,25 @@ def test_issue_static_assets_served(tmp_path):
     c = _client(tmp_path)
     for name in ("issue.js", "issue.css"):
         assert c.get(f"/static/decision/{name}").status_code == 200
+
+
+def test_issue_api_carries_matrix_rows(tmp_path):
+    """取证抽屉的数据 = counter_matrix.issue_matrices 的结果原样透传（页面与 API 都不另算）。"""
+    from nutmeg.decision.counter_matrix import issue_matrices
+
+    client = _client(tmp_path)
+    data = tmp_path / "data"
+    (data / "zucai" / "26151-research-m13.json").write_text(json.dumps({
+        "anchor_side": "home",
+        "hole_location": {"unit": "goalkeeper", "side": "home", "priced_in": True,
+                          "detail": "门将伤缺"},
+        "strength_balance": {"events": [
+            {"event": "中场核心停赛", "side": "home", "direction": "down", "grade": "moderate",
+             "priced_in": False, "source": "https://example.com/a 原句"}]},
+        "stance": {"falsifier": "主队不胜"}}, ensure_ascii=False))
+    body = client.get("/api/issue/26151").json()
+    expected = {m["no"]: m for m in issue_matrices(data, "26151")}["13"]
+    assert body["matches"][12]["matrix"] == expected
+    assert expected["rows"], "造的研究件要至少产出一行有区分力的证据"
+    assert any(r["source_url"] and r["priced_in"] is False for r in expected["rows"])
+    assert body["matches"][0]["matrix"] == {"no": "1", "name": "甲1-乙1", "missing": True}
