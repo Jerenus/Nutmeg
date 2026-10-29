@@ -210,7 +210,7 @@ def test_draft_board_replays_the_month_issues_without_the_stop_loss(tmp_path: Pa
 
     def fake_run_gym(**kwargs):
         calls.append(kwargs)
-        return SimpleNamespace(per_policy={
+        return SimpleNamespace(ledger=[], per_policy={
             "real": {"slips": 3, "stake": 1288, "net": -1288.0, "roi": -1.0, "keys": 1},
             "zucai_draft": {"slips": 1, "stake": 324, "net": -324.0, "roi": -1.0, "keys": 1},
             "flat": {"slips": 0, "stake": 0, "net": 0.0, "roi": 0.0, "keys": 0}})

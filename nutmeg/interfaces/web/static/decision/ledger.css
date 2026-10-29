@@ -6,7 +6,7 @@
   --ink:#15181B; --ground:#F3F4F1; --paper:#FFFFFF; --line:#DADDD7; --line-soft:#ECEEE9;
   --muted:#565E66; --sub:#3A4148; --show:#7A828A; --focus:#EEF2FD;
   --veto:#B23A0E; --veto-bg:#FBEDE6; --ok:#17734A; --ok-bg:#E6F2EB; --link:#2348C9;
-  --warn:#8A5300; --warn-bg:#FBF1DE; --drawer:#F7F8F5; --on-ink:#FFFFFF; --bar:#15181B;
+  --warn:#8A5300; --warn-bg:#FBF1DE; --drawer:#F7F8F5; --on-ink:#FFFFFF; --bar:#15181B; --draft:#7A3FB0;
   --sans:"Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
   display:flex; flex-direction:column; gap:24px; max-width:1280px; margin:0 auto; padding:24px 24px 64px;
@@ -17,13 +17,13 @@
   --ink:#E4E7E3; --ground:#111417; --paper:#1A1E22; --line:#2E343A; --line-soft:#24292E;
   --muted:#9AA2AA; --sub:#B7BEC4; --show:#8A929A; --focus:#1C2540;
   --veto:#F08A63; --veto-bg:#3A1D12; --ok:#5CC793; --ok-bg:#16301F; --link:#8EA6F5;
-  --warn:#E9B565; --warn-bg:#33260F; --drawer:#15191C; --on-ink:#111417; --bar:#B7BEC4;
+  --warn:#E9B565; --warn-bg:#33260F; --drawer:#15191C; --on-ink:#111417; --bar:#B7BEC4; --draft:#C39BEB;
 }}
 :root[data-theme="dark"] .ledger{
   --ink:#E4E7E3; --ground:#111417; --paper:#1A1E22; --line:#2E343A; --line-soft:#24292E;
   --muted:#9AA2AA; --sub:#B7BEC4; --show:#8A929A; --focus:#1C2540;
   --veto:#F08A63; --veto-bg:#3A1D12; --ok:#5CC793; --ok-bg:#16301F; --link:#8EA6F5;
-  --warn:#E9B565; --warn-bg:#33260F; --drawer:#15191C; --on-ink:#111417; --bar:#B7BEC4;
+  --warn:#E9B565; --warn-bg:#33260F; --drawer:#15191C; --on-ink:#111417; --bar:#B7BEC4; --draft:#C39BEB;
 }
 body:has(> .ledger){background:#F3F4F1}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) body:has(> .ledger){background:#111417}}
@@ -80,6 +80,7 @@ body:has(> .ledger){background:#F3F4F1}
 .ledger .lg-key .k-flat{border-top:2px solid var(--show)}
 .ledger .lg-key .k-line{border-top:2px dashed var(--veto)}
 .ledger .lg-key .k-eff{border-top:2px dotted var(--ink)}
+.ledger .lg-key .k-draft{border-top:2px dashed var(--draft)}
 .ledger .lg-chart{width:100%; min-width:0}
 .ledger .lg-chart svg{display:block; width:100%; height:auto}
 .ledger .lg-chart .c-grid{stroke:var(--line-soft); stroke-width:1}
@@ -90,11 +91,14 @@ body:has(> .ledger){background:#F3F4F1}
 .ledger .lg-chart .c-dot{fill:var(--ink)}
 .ledger .lg-chart .c-dot.veto{fill:var(--veto)}
 .ledger .lg-chart .c-hollow{fill:var(--paper); stroke:var(--ink); stroke-width:2}
+.ledger .lg-chart .c-draft{fill:none; stroke:var(--draft); stroke-width:2; stroke-dasharray:9 4; stroke-linejoin:round}
+.ledger .lg-chart .c-draft-dot{fill:var(--draft)}
 .ledger .lg-chart .c-mark{fill:var(--paper); stroke:var(--veto); stroke-width:1.5}
 .ledger .lg-chart text{font-family:var(--mono); font-size:11px; fill:var(--muted)}
 .ledger .lg-chart text.c-mark-n{fill:var(--veto); font-size:11px; font-weight:600}
 .ledger .lg-chart text.c-veto{fill:var(--veto); font-weight:600}
 .ledger .lg-chart text.c-ink{fill:var(--ink); font-weight:600; font-size:12px}
+.ledger .lg-chart text.c-draft-ink{fill:var(--draft); font-weight:600; font-size:12px}
 .ledger .lg-moves{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px;
   font-size:14px; color:var(--veto); overflow-wrap:anywhere}
 .ledger .lg-moves .mono{font-weight:600}

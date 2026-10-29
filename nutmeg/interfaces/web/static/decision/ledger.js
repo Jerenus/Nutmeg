@@ -1,7 +1,7 @@
 // static/decision/ledger.js —— 账房页（2026-10-28 产品形态第 7 阶段 Task 7.2，画布 Ledger.dc.html）。
 // 数全来自 /api/ledger/{月}（Task 7.1）：月报 report、返奖 payout、曲线 curve、逐期 issues、
 // 竞彩出票日 jczq_days、选择账 choices、桥后改动账 bridges；初稿账（gym 回放）懒加载
-// /api/ledger/{月}/draft。页面不累计、不推导金额：只画 / 印服务端给的数（千分位、正负号、
+// /api/ledger/{月}/draft（含反事实曲线 curve，到了就叠在净值图上，Task 7.3）。页面不累计、不推导金额：只画 / 印服务端给的数（千分位、正负号、
 // 回收率＝返奖/投入 只是排版）。文本一律 textContent / createElement，不用 innerHTML。
 (function () {
   "use strict";
@@ -164,8 +164,9 @@
     return out;
   }
 
-  // ---- 曲线：阶梯净值、0 线、止损线（含换线标注）、实质点 ----
-  var chartBox = null, chartWidth = 0;
+  // ---- 曲线：阶梯净值、0 线、止损线（含换线标注）、实质点；初稿账到了再叠反事实虚线 ----
+  var chartBox = null, chartWidth = 0, legendBox = null, draftCurve = null;
+  var DRAFT_KEY = "足彩换成机器初稿（竞彩照实际·不套止损）";
 
   function daysIn(m) { return new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0).getDate(); }
   function niceStep(span) {
@@ -210,6 +211,7 @@
     points.forEach(function (p) { vals.push(p.net); if (isNum(p.line)) vals.push(-p.line); });
     moves.forEach(function (mv) { vals.push(-mv.from, -mv.to); });
     if (eff && isNum(eff.net)) vals.push(eff.net);
+    (draftCurve || []).forEach(function (p) { vals.push(p.net); });   // 反事实线出界 → 放大值域，不裁
     vals = vals.filter(isNum);
     var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
     var step = niceStep(Math.max(hi - lo, 1));
@@ -223,10 +225,12 @@
     function y(v) { return padT + (yHi - v) / (yHi - yLo) * (H - padT - padB); }
     function f(n) { return Math.round(n * 10) / 10; }
 
+    var cfLast = draftCurve && draftCurve.length ? draftCurve[draftCurve.length - 1] : null;
     var label = "本月累计净值阶梯线" + (points.length ? "，末点 " + signed(points[points.length - 1].net) : "，无入账") +
       (moves.length ? "；止损线换档 " + moves.map(function (mv) {
         return mmdd(mv.day) + " " + negLine(mv.from) + "→" + negLine(mv.to);
-      }).join("、") : "") + (eff ? "；实质 " + signed(eff.net) + "（" + mmdd(eff.day) + "，含待结票全损）" : "");
+      }).join("、") : "") + (eff ? "；实质 " + signed(eff.net) + "（" + mmdd(eff.day) + "，含待结票全损）" : "") +
+      (cfLast ? "；" + DRAFT_KEY + " 末点 " + signed(cfLast.net) : "");
     var s = svg("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": label });
 
     // 网格 + y 轴
@@ -265,8 +269,22 @@
       add(s, svg("text", { x: f(x(first) + 4), y: f(y(-startLine) - 5), "class": "c-veto" }, "线 " + negLine(startLine)));
     }
 
-    // 实际净值（阶梯，实线）
+    // 反事实线（阶梯，虚线；画在实际线下面）：服务端逐日累计点，末点标数，与实际线同延到实质日
     var lastPt = points.length ? points[points.length - 1] : null;
+    if (cfLast) {
+      var dc = "M" + f(x(first)) + "," + f(y(0));
+      draftCurve.forEach(function (p) { dc += " H" + f(x(p.day)) + " V" + f(y(p.net)); });
+      if (eff && eff.day > cfLast.day) dc += " H" + f(x(eff.day));
+      add(s, svg("path", { d: dc, "class": "c-draft" }));
+      var cx = x(cfLast.day), cy = y(cfLast.net);
+      add(s, svg("circle", { cx: f(cx), cy: f(cy), r: 4, "class": "c-draft-dot" }));
+      var cRoom = W - padR - cx > 90;
+      var under = !lastPt || cfLast.net < lastPt.net;   // 在实际末点下方就标在点下，免得压住实际末点数
+      add(s, svg("text", { x: f(cRoom ? cx + 8 : cx - 8), y: f(under ? cy + 16 : cy - 8),
+        "text-anchor": cRoom ? "start" : "end", "class": "c-draft-ink" }, "初稿 " + signed(cfLast.net)));
+    }
+
+    // 实际净值（阶梯，实线）
     if (points.length) {
       var dn = "M" + f(x(first)) + "," + f(y(0));
       points.forEach(function (p) { dn += " H" + f(x(p.day)) + " V" + f(y(p.net)); });
@@ -315,6 +333,7 @@
       add(el("span", "lg-key"), el("i", "k-line"), el("span", null, "止损线")));
     if (curve.effective) add(legend, add(el("span", "lg-key"), el("i", "k-eff"), el("span", null, "实质（待结票按全损）")));
     add(sec, legend);
+    legendBox = legend;
     if (!(curve.points || []).length && !curve.effective) add(sec, el("p", "lg-note", "本月无入账（空仓）。"));
     chartBox = put(sec, el("div", "lg-chart"));
     var moves = curve.moves || [];
@@ -442,8 +461,16 @@
   // ---- 初稿账（懒加载 gym 回放） ----
   var DRAFT_ROWS = [["real", "实际出票"], ["zucai_draft", "机器初稿"], ["flat", "空仓"]];
 
+  function overlayDraft(data) {   // 初稿账到了：反事实线进图例并重画（_error / 无 curve 不画）
+    if (!data || data._error || !(data.curve || []).length || !legendBox) return;
+    draftCurve = data.curve;
+    add(legendBox, add(el("span", "lg-key"), el("i", "k-draft"), el("span", null, DRAFT_KEY)));
+    if (view && view.curve) drawChart(view.curve);
+  }
+
   function renderDraftBody(box, data) {
     clear(box);
+    overlayDraft(data);
     if (!data || data._error) {
       add(box, el("p", "lg-error", "回放失败：" + ((data && data._error) || "无结果")));
       return;
@@ -466,23 +493,14 @@
     var sec = card("初稿账", "实际出票 vs 机器初稿 vs 空仓（gym 回放）");
     var box = put(sec, el("div", null));
     add(box, el("p", "lg-wait", "回放中…"));
-    var started = false;
     function load() {
-      if (started) return;
-      started = true;
       fetch("/api/ledger/" + encodeURIComponent(month) + "/draft", { headers: { Accept: "application/json" } })
         .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)); })
         .then(function (data) { renderDraftBody(box, data); })
         .catch(function (e) { renderDraftBody(box, { _error: String(e && e.message || e) }); });
     }
-    if ("IntersectionObserver" in window) {
-      var io = new IntersectionObserver(function (entries) {
-        if (entries.some(function (e) { return e.isIntersecting; })) { io.disconnect(); load(); }
-      }, { rootMargin: "300px" });
-      io.observe(sec);
-    } else {
-      load();
-    }
+    // 页面画完就在后台取（回放约 0.2 s，进程内缓存）：反事实线在页顶的净值图上，不能等滚到这张卡
+    setTimeout(load, 0);
     return sec;
   }
 
@@ -573,7 +591,7 @@
     Array.prototype.slice.call(root.children).forEach(function (c) {
       if (!c.classList.contains("ledger-head") && c !== errBox) c.remove();
     });
-    chartBox = null;
+    chartBox = null; legendBox = null; draftCurve = null;
     renderMonths(v.months);
     renderKpis(v).forEach(function (n) { add(root, n); });
     add(root, renderCurve(v));

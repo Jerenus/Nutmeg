@@ -270,7 +270,11 @@ def draft_board(data_dir: Path, month: str) -> dict:
     """本月足彩期次回放：实际出票 vs 机器初稿（`zucai_draft`，帽 ¥400 任九）vs 空仓。
 
     人性账（2026-10-06）：9 月有处方的 6 期配对里，真票 −4,043、初稿 −423（evidence
-    2026-10-05-training-pool §7）。两边都不套月度止损（比的是票面，不是止损）。"""
+    2026-10-05-training-pool §7）。两边都不套月度止损（比的是票面，不是止损）。
+
+    另给两项（2026-10-29 Task 7.3）：by_issue＝逐期 {issue, day, real, draft}（gym ledger 按期加总；
+    该期该策略有一行未结 → None；没有行＝没出票 → 0.0；day＝`ticket_day`，与实际曲线同一口径）；
+    curve＝反事实累计线（`draft_curve`）：竞彩照实际、足彩逐期换成机器初稿，不套止损。"""
     try:
         from nutmeg.gym.board import list_issues
         from nutmeg.gym.run import run_gym
@@ -279,6 +283,7 @@ def draft_board(data_dir: Path, month: str) -> dict:
         result = run_gym(data_dir=Path(data_dir), policies=[p for p, _ in DRAFT_POLICIES],
                          days=[], issues=issues, run_id=f"account-draft-{month}",
                          stop_loss=10**9)
+        points = daily_curve(data_dir, month)["points"]
     except Exception as exc:  # noqa: BLE001 —— 账房不能因回放故障整页空白
         return {"_error": repr(exc)[:200]}
     out: dict = {"issues": len(issues)}
@@ -287,6 +292,36 @@ def draft_board(data_dir: Path, month: str) -> dict:
         out[policy] = {"label": label, "slips": row.get("slips", 0), "stake": row.get("stake", 0),
                        "net": row.get("net", 0.0), "roi": row.get("roi", 0.0),
                        "keys": row.get("keys", 0), "pending": row.get("pending", 0)}
+    by_issue = []
+    for issue in issues:
+        row = {"issue": issue, "day": ticket_day(issue, data_dir)}
+        for policy, field in (("real", "real"), ("zucai_draft", "draft")):
+            nets = [r.get("net") for r in result.ledger
+                    if r.get("issue") == issue and r.get("policy") == policy]
+            row[field] = None if None in nets else round(float(sum(nets)), 2)
+        by_issue.append(row)
+    out["by_issue"] = sorted(by_issue, key=lambda r: (r["day"] or "", r["issue"]))
+    out["curve"] = draft_curve(points, out["by_issue"])
+    return out
+
+
+def draft_curve(points: list[dict], by_issue: list[dict]) -> list[dict]:
+    """反事实累计线 [{day, net}]：cf(d) = 实际(d) + Σ_{期日 ≤ d}（初稿净 − 实际净）。
+
+    实际(d)＝`daily_curve` 点里 day ≤ d 的最后一点（没有 → 0）；只计 real 与 draft 都已结算的期
+    （有一边 None＝待结，不进差额）。日子＝实际点日 ∪ 期日。两条线的竞彩部分相同，差距全来自
+    足彩票面。"""
+    deltas = [(r["day"], r["draft"] - r["real"]) for r in by_issue
+              if r.get("day") and r.get("real") is not None and r.get("draft") is not None]
+    days = sorted({p["day"] for p in points} | {r["day"] for r in by_issue if r.get("day")})
+    out = []
+    for day in days:
+        actual = 0.0
+        for p in points:
+            if p["day"] <= day:
+                actual = p["net"]
+        out.append({"day": day,
+                    "net": round(actual + sum(d for when, d in deltas if when <= day), 2)})
     return out
 
 

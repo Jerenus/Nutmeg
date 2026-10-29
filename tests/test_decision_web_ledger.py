@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from nutmeg.decision.account import draft_board as _real_draft_board
 from nutmeg.decision.bj_time import BJ
 from nutmeg.interfaces.decision_web import create_decision_app
 
@@ -144,3 +145,23 @@ def test_ledger_payout_sums_scoreboard_and_lists_entries_without_numbers(client)
     body = tc.get("/api/ledger/2026-10").json()
     assert body["payout"] == {"payout": 57.02, "missing": ["26150"]}
     assert body["report"]["net"] == -524.98 - 768.0
+
+
+def test_draft_carries_counterfactual_curve(client, monkeypatch):
+    """Task 7.3：/draft 带逐期 by_issue 与反事实 curve（竞彩照实际、足彩换成机器初稿）。"""
+    from types import SimpleNamespace
+
+    tc, _ = client
+    ledger = [{"issue": "26145", "key": "2026-10-19", "policy": "real", "net": -384.0},
+              {"issue": "26145", "key": "2026-10-19", "policy": "zucai_draft", "net": 100.0}]
+    monkeypatch.setattr("nutmeg.decision.account.draft_board", _real_draft_board)
+    monkeypatch.setattr("nutmeg.gym.board.list_issues", lambda _d: ["26145", "26150"])
+    monkeypatch.setattr("nutmeg.gym.run.run_gym",
+                        lambda **_k: SimpleNamespace(ledger=ledger, per_policy={}))
+    body = tc.get("/api/ledger/2026-10/draft").json()
+    assert body["by_issue"][0] == {"issue": "26145", "day": "2026-10-19", "real": -384.0,
+                                   "draft": 100.0}
+    # 实际 10-17 −140.98、10-19 −524.98；26145 差额 +484
+    assert body["curve"] == [{"day": "2026-10-17", "net": -140.98},
+                             {"day": "2026-10-19", "net": -40.98},
+                             {"day": "2026-10-25", "net": -40.98}]

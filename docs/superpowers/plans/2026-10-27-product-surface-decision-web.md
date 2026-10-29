@@ -1515,6 +1515,18 @@ def bridge_ledger(data_dir: Path, issue: str) -> dict:
 
 ---
 
+### 追加 Task 7.3：账房曲线加「足彩换成机器初稿」线（2026-10-29）
+
+**勘察**：第 7 阶段说「初稿线需要 gym 的 per-issue 输出」——其实已有：`run_gym(...).ledger` 每行带 `key`（业务日＝`ticket_day`）、`issue`、`policy`、`net`。沙盒 10 月 16 期逐期核对：`real` 策略逐期净 == 记分牌 `tickets[<期>].net`（无票期两边都是 0/缺）。
+
+**画什么**：不是「机器初稿单独一条」（它只有足彩，和含竞彩的实际线比会误导），而是**反事实线**：竞彩照实际，足彩每期把实际净换成机器初稿回放净。
+`cf(d) = actual(d) + Σ_{期日 ≤ d} (draft_net(期) − real_net(期))`，只计两边都已结算的期。两条线竞彩部分相同，差距全来自足彩票面。不套止损（与初稿账一致：比票面，不比止损）。
+
+**落点**
+- `account.draft_board` 结果加 `by_issue:[{issue, day, real, draft}]` 与 `curve:[{day, net}]`（反事实累计，日子＝实际曲线点日 ∪ 期日）；计算只在 account.py 一处。仍走懒加载 `/api/ledger/{月}/draft`，主接口不变。
+- `ledger.js`：初稿账加载完成后在同一张阶梯图上叠一条虚线（独立颜色 token、明暗两套），图例写「足彩换成机器初稿（竞彩照实际·不套止损）」，末点标数；`_error` 或无 curve 时不画。
+- 测试：monkeypatch `run_gym` 的单元测试（有待结期、无票期、竞彩日）；web 测试 `/draft` 带 `curve`。
+
 ## 3. 需要 Jun 定的三件事（不定也能做到第 5 阶段）
 
 1. **旁车由谁写**：计划默认 `/zucai-packet` 会话同写 `<期>-packet.json`（Task 1.1 改命令文件）。替代是把六条件计数做成代码——那是规则定义，要走 RULEBOOK「〇」两段式，不该夹在界面工程里。

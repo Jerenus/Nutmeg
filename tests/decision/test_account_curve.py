@@ -3,7 +3,7 @@ import json
 from datetime import date
 from pathlib import Path
 
-from nutmeg.decision.account import daily_curve
+from nutmeg.decision.account import daily_curve, draft_board, draft_curve
 from nutmeg.decision.bankroll import (
     MONTHLY_STOP_LOSS_YUAN,
     STOP_LOSS_HISTORY,
@@ -90,3 +90,79 @@ def test_ticket_month_is_unchanged_and_derived_from_ticket_day(tmp_path: Path):
     assert ticket_day("jczq-20261002", data) == "2026-10-02"
     assert ticket_day("26140", data) == "2026-10-12"
     assert ticket_day("26133", data) is None
+
+
+# ---- Task 7.3：足彩换成机器初稿的反事实线 ----
+def _pt(day: str, net: float) -> dict:
+    return {"day": day, "net": net, "line": 3000}
+
+
+def test_draft_curve_skips_pending_issues():
+    points = [_pt("2026-10-03", -100.0)]
+    assert draft_curve(points, [{"issue": "26135", "day": "2026-10-03", "real": -100.0,
+                                 "draft": None}]) == [{"day": "2026-10-03", "net": -100.0}]
+    assert draft_curve(points, [{"issue": "26135", "day": "2026-10-03", "real": None,
+                                 "draft": -50.0}]) == [{"day": "2026-10-03", "net": -100.0}]
+
+
+def test_draft_curve_counts_issue_jun_skipped_as_real_zero():
+    """Jun 那期没买（real 0.0）而初稿出了票：差额照计，期日单独出点。"""
+    curve = draft_curve([_pt("2026-10-02", -120.0)],
+                        [{"issue": "26136", "day": "2026-10-05", "real": 0.0, "draft": -324.0}])
+    assert curve == [{"day": "2026-10-02", "net": -120.0}, {"day": "2026-10-05", "net": -444.0}]
+
+
+def test_draft_curve_jczq_only_day_carries_actual_plus_prior_deltas():
+    points = [_pt("2026-10-03", 300.0), _pt("2026-10-07", 250.0)]     # 10-07 只有竞彩 −50
+    curve = draft_curve(points, [{"issue": "26135", "day": "2026-10-03", "real": 300.0,
+                                  "draft": -100.0}])
+    assert curve == [{"day": "2026-10-03", "net": -100.0}, {"day": "2026-10-07", "net": -150.0}]
+
+
+def test_draft_curve_without_issues_is_the_actual_curve():
+    points = [_pt("2026-10-02", -120.0), _pt("2026-10-03", 99.5)]
+    assert draft_curve(points, []) == [{"day": p["day"], "net": p["net"]} for p in points]
+
+
+def test_draft_board_by_issue_and_curve(tmp_path: Path, monkeypatch):
+    from types import SimpleNamespace
+
+    data = _data(tmp_path)
+    ledger = [
+        {"issue": "26135", "key": "2026-10-03", "policy": "real", "net": 300.0},
+        {"issue": "26135", "key": "2026-10-03", "policy": "zucai_draft", "net": -100.0},
+        {"issue": "26135", "key": "2026-10-03", "policy": "flat", "net": 0.0},
+        {"issue": "26140", "key": "2026-10-12", "policy": "real", "net": -1000.0},
+        {"issue": "26140", "key": "2026-10-12", "policy": "real", "net": -1000.0},
+        # 26140 初稿无行＝空仓 → 0.0；26145 初稿待结、26150 实际待结 → 不进差额
+        {"issue": "26145", "key": "2026-10-19", "policy": "real", "net": -1500.25},
+        {"issue": "26145", "key": "2026-10-19", "policy": "zucai_draft", "net": None},
+        {"issue": "26150", "key": "2026-10-25", "policy": "real", "net": None},
+        {"issue": "26150", "key": "2026-10-25", "policy": "zucai_draft", "net": -200.0},
+    ]
+    monkeypatch.setattr("nutmeg.gym.board.list_issues",
+                        lambda _d: ["26134", "26135", "26140", "26145", "26150"])
+    monkeypatch.setattr("nutmeg.gym.run.run_gym",
+                        lambda **_k: SimpleNamespace(ledger=ledger, per_policy={}))
+    board = draft_board(data, "2026-10")
+    assert board["by_issue"] == [
+        {"issue": "26135", "day": "2026-10-03", "real": 300.0, "draft": -100.0},
+        {"issue": "26140", "day": "2026-10-12", "real": -2000.0, "draft": 0.0},
+        {"issue": "26145", "day": "2026-10-19", "real": -1500.25, "draft": None},
+        {"issue": "26150", "day": "2026-10-25", "real": None, "draft": -200.0},
+    ]
+    # 实际 −120 / 99.5 / −1900.5 / −3400.75；差额 10-03 −400、10-12 +2000
+    assert board["curve"] == [
+        {"day": "2026-10-02", "net": -120.0}, {"day": "2026-10-03", "net": -300.5},
+        {"day": "2026-10-12", "net": -300.5}, {"day": "2026-10-19", "net": -1800.75},
+        {"day": "2026-10-25", "net": -1800.75}]
+
+
+def test_draft_board_error_has_no_curve(tmp_path: Path, monkeypatch):
+    def boom(**_k):
+        raise RuntimeError("gym down")
+
+    monkeypatch.setattr("nutmeg.gym.board.list_issues", lambda _d: [])
+    monkeypatch.setattr("nutmeg.gym.run.run_gym", boom)
+    board = draft_board(_data(tmp_path), "2026-10")
+    assert "_error" in board and "curve" not in board
