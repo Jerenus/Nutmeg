@@ -40,6 +40,9 @@ class AppSettings(BaseSettings):
     telegram_api_base_url: str = 'https://api.telegram.org'
     telegram_bot_token: str | None = Field(default=None, repr=False)
     telegram_allowed_chat_ids: str | None = None
+    # 推送里的页面链接前缀（2026-10-29 产品形态 Task 9.1）：空＝不加链接、推送逐字照旧；
+    # 配了才在末行给出 `{base}/issue/<期>` 之类的绝对地址。只管文本，不改服务绑定。
+    decision_web_url: str = ''
 
     @field_validator('production_data_dir')
     @classmethod

@@ -27,7 +27,6 @@ _LICENSE_TIERS = ("A", "B", "b")
 _BRAKE_KEYS = ("net", "effective_net", "stop_loss", "room", "tripped", "pending")
 DEFAULT_PASS_REASON = "同意机器默认空仓"
 _CHANNEL_OF = {"register_zucai": "zucai", "register_jczq": "jczq"}
-_HREF_OF = {"register_zucai": "/issue/{}", "register_jczq": "/jczq/{}"}
 
 
 def app_now(app: FastAPI) -> datetime:
@@ -133,10 +132,11 @@ def glance(data_dir: Path, issue: str, deadline: str | None) -> dict:
 
 def _linked(row: dict) -> dict:
     """登记类截止补去处链接；还开着的再补空仓登记的目标（done / expired 不再给按钮）。"""
-    kind = row.get("kind")
+    from nutmeg.decision.day_decisions import decision_href
+
     target = str(row.get("id") or "").rsplit(":", 1)[-1]
-    href = _HREF_OF[kind].format(target) if kind in _HREF_OF else None
-    channel = _CHANNEL_OF.get(kind)
+    href = decision_href(row)
+    channel = _CHANNEL_OF.get(row.get("kind"))
     pass_target = ({"channel": channel, "target": target}
                    if channel and row.get("status") == "open" else None)
     return {**row, "href": href, "pass_target": pass_target}

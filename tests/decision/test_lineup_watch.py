@@ -241,3 +241,53 @@ def test_find_fixture_falls_back_to_league_and_kickoff_when_teams_unresolved():
                   "kickoff": KICK})
     assert find_fixture(board, "日尔曼", "里昂", KICK, "法甲", none, lg) is None
     assert find_fixture(board, "日尔曼", "里昂", KICK, "", none, lg) is None
+
+
+def test_pushes_carry_issue_link_only_when_configured_and_fingerprint_ignores_it(tmp_path: Path):
+    """Task 9.1：三类推送配了前缀才带 `{base}/issue/<期>`；指纹对加链接前的正文算。"""
+    class FpRecorder(Recorder):
+        def __call__(self, kind, key, fingerprint, text, *, dry_run=False, **_):
+            self.sent.append((kind, fingerprint, text))
+            return "sent"
+
+    def push_all(base_url: str) -> list[tuple[str, str, str]]:
+        tmp = tmp_path / (base_url and "on" or "off")
+        z = _issue(tmp)
+        (z / f"{ISSUE}-packet.md").write_text("## §2\n**机器默认空仓**\n", "utf-8")
+        (z / f"{ISSUE}-diff-afternoon-revision.md").write_text(
+            "| 场 | 对阵 | Δ主 | Δ平 | Δ客 | 现 fair |\n|---|---|---|---|---|---|\n"
+            "| 1 | 主1-客1 | +2.5 | +1.3 | -3.8 | 17.7/18.9/63.4 |\n", "utf-8")
+        rec = FpRecorder()
+        run_countdown(tmp, ISSUE, now=DEADLINE - timedelta(minutes=28), notify_fn=rec,
+                      base_url=base_url)
+        _slip(tmp, {"1": "3"})
+        run_shift_diff(tmp, ISSUE, now=DEADLINE - timedelta(hours=2), notify_fn=rec,
+                       base_url=base_url)
+        run_lineup_check(tmp, ISSUE, now=KICK - timedelta(minutes=60), notify_fn=rec,
+                         fetchers=_fetchers([], [{"team": "H", "xi": ["Marquinhos"],
+                                                  "bench": []}]),
+                         resolve=_RESOLVE, base_url=base_url)
+        return rec.sent
+
+    off, on = push_all(""), push_all("http://mac.local:8787/")
+    kinds = ["zucai.countdown", "zucai.shift", "zucai.lineup"]
+    assert [k for k, _, _ in off] == kinds == [k for k, _, _ in on]
+    assert all("http" not in text for _, _, text in off)
+    for (_, fp_off, t_off), (_, fp_on, t_on) in zip(off, on, strict=True):
+        assert t_on == f"{t_off}\nhttp://mac.local:8787/issue/{ISSUE}"
+        assert fp_on == fp_off
+
+
+def test_watch_reads_link_prefix_from_settings_when_not_passed(tmp_path: Path, monkeypatch):
+    from nutmeg.config.settings import get_settings
+
+    z = _issue(tmp_path)
+    (z / f"{ISSUE}-packet.md").write_text("## §2\n**机器默认空仓**\n", "utf-8")
+    monkeypatch.setenv("NUTMEG_DECISION_WEB_URL", "http://h/")
+    get_settings.cache_clear()
+    try:
+        rec = Recorder()
+        watch(tmp_path, issue=ISSUE, now=DEADLINE - timedelta(minutes=28), notify_fn=rec)
+        assert rec.sent[0][2].endswith(f"\nhttp://h/issue/{ISSUE}")
+    finally:
+        get_settings.cache_clear()

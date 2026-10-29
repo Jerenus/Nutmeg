@@ -298,9 +298,15 @@ def _fp(text: str) -> str:
     return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
 
 
+def _linked(text: str, issue: str, base_url: str) -> str:
+    """配了页面前缀才在末尾加期页链接；指纹一律对加链接前的正文算，改配置不重发。"""
+    return f"{text}\n{base_url.rstrip('/')}/issue/{issue}" if base_url else text
+
+
 def run_lineup_check(data_dir: Path, issue: str, *, now: datetime, notify_fn: Notify,
                      fetchers: tuple[FetchFixtures, FetchLineups] | None,
-                     resolve=None, resolve_league=None, dry_run: bool = False) -> list[dict]:
+                     resolve=None, resolve_league=None, dry_run: bool = False,
+                     base_url: str = "") -> list[dict]:
     doc = issue_doc(data_dir, issue)
     if not doc:
         return []
@@ -357,7 +363,8 @@ def run_lineup_check(data_dir: Path, issue: str, *, now: datetime, notify_fn: No
                     tickets = "；".join(f"票 {sid} 该格 {face}" for sid, face in faces[no])
                     text = f"{issue}·{no} {home}-{away}｜" + "｜".join(parts) + f"｜{tickets}"
                     ev["text"] = text
-                    notify_fn("zucai.lineup", f"{issue}:{no}", _fp(text), text, dry_run=dry_run)
+                    notify_fn("zucai.lineup", f"{issue}:{no}", _fp(text),
+                              _linked(text, issue, base_url), dry_run=dry_run)
                     ev["status"] = "pushed" if not dry_run else "dry_run"
         ev["at"] = now.isoformat(timespec="seconds")
         if not dry_run:
@@ -381,7 +388,7 @@ def default_action(data_dir: Path, issue: str) -> str:
 
 
 def run_countdown(data_dir: Path, issue: str, *, now: datetime, notify_fn: Notify,
-                  dry_run: bool = False) -> list[dict]:
+                  dry_run: bool = False, base_url: str = "") -> list[dict]:
     doc = issue_doc(data_dir, issue)
     deadline = parse_bj((doc or {}).get("sale_deadline")) if doc else None
     if deadline is None:
@@ -401,7 +408,8 @@ def run_countdown(data_dir: Path, issue: str, *, now: datetime, notify_fn: Notif
     action = default_action(data_dir, issue) or "（§2 未写机器默认）"
     text = (f"{issue} 停售前 {int(left)} 分（{deadline.strftime('%H:%M')}）：无登记票；"
             f"机器默认动作 {action}")
-    notify_fn("zucai.countdown", f"{issue}:{mark}", _fp(text), text, dry_run=dry_run)
+    notify_fn("zucai.countdown", f"{issue}:{mark}", _fp(text), _linked(text, issue, base_url),
+              dry_run=dry_run)
     if not dry_run:
         done[mark] = now.isoformat(timespec="seconds")
         save_state(data_dir, issue, state)
@@ -423,7 +431,7 @@ def parse_shift_table(md: str) -> list[dict]:
 
 
 def run_shift_diff(data_dir: Path, issue: str, *, now: datetime, notify_fn: Notify,
-                   dry_run: bool = False) -> list[dict]:
+                   dry_run: bool = False, base_url: str = "") -> list[dict]:
     path = _zucai_dir(data_dir) / f"{issue}-diff-afternoon-revision.md"
     if not path.exists():
         return []
@@ -445,7 +453,7 @@ def run_shift_diff(data_dir: Path, issue: str, *, now: datetime, notify_fn: Noti
     done = state.setdefault("shift", {})
     if fp in done:
         return [{"issue": issue, "status": "already_pushed"}]
-    notify_fn("zucai.shift", issue, fp, text, dry_run=dry_run)
+    notify_fn("zucai.shift", issue, fp, _linked(text, issue, base_url), dry_run=dry_run)
     if not dry_run:
         done[fp] = now.isoformat(timespec="seconds")
         save_state(data_dir, issue, state)
@@ -456,10 +464,15 @@ def watch(data_dir: Path, *, issue: str | None = None, now: datetime | None = No
           notify_fn: Notify | None = None,
           fetchers: tuple[FetchFixtures, FetchLineups] | None = None,
           fetchers_factory: Callable[[], tuple | None] | None = None,
-          resolve=None, dry_run: bool = False) -> dict:
-    """一次巡检：倒计时 → 位移 diff → 首发复核。只在有票内场进窗口时才构造抓取器（不打网）。"""
+          resolve=None, dry_run: bool = False, base_url: str | None = None) -> dict:
+    """一次巡检：倒计时 → 位移 diff → 首发复核。只在有票内场进窗口时才构造抓取器（不打网）。
+    base_url 为 None 时读 settings（`NUTMEG_DECISION_WEB_URL`，默认空＝推送不带链接）。"""
     from nutmeg.notifications.notify import notify as _notify
 
+    if base_url is None:
+        from nutmeg.config.settings import get_settings
+
+        base_url = get_settings().decision_web_url
     data_dir = Path(data_dir)
     now = now or datetime.now(BJ)
     notify_fn = notify_fn or _notify
@@ -468,16 +481,17 @@ def watch(data_dir: Path, *, issue: str | None = None, now: datetime | None = No
     for iss in issues:
         r: dict = {}
         r["countdown"] = run_countdown(data_dir, iss, now=now, notify_fn=notify_fn,
-                                       dry_run=dry_run)
+                                       dry_run=dry_run, base_url=base_url)
         r["shift"] = run_shift_diff(data_dir, iss, now=now, notify_fn=notify_fn,
-                                    dry_run=dry_run)
+                                    dry_run=dry_run, base_url=base_url)
         probe = run_lineup_check(data_dir, iss, now=now, notify_fn=notify_fn, fetchers=None,
                                  resolve=resolve, dry_run=True)
         needs_net = any(e.get("status") == "no_api_key" for e in probe)
         if needs_net and fetchers is None:
             fetchers = (fetchers_factory or default_fetchers)()
         r["lineup"] = (run_lineup_check(data_dir, iss, now=now, notify_fn=notify_fn,
-                                        fetchers=fetchers, resolve=resolve, dry_run=dry_run)
+                                        fetchers=fetchers, resolve=resolve, dry_run=dry_run,
+                                        base_url=base_url)
                        if needs_net else probe)
         report["issues"][iss] = r
     return report

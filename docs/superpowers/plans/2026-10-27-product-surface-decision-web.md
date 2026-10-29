@@ -1485,6 +1485,34 @@ def bridge_ledger(data_dir: Path, issue: str) -> dict:
 - **推送**：`day_broadcast.render_broadcast` 与 `lineup_watch` 的推送文本末尾带页面链接（`/issue/<期>`、`/jczq/<日>`）。**链接能不能在手机上打开取决于 Jun 的决定**：decision-web 现在只绑 127.0.0.1（`_warn_if_exposed` 明说无鉴权）。三选一——不加链接 / 局域网绑定 / 隧道加鉴权——开工前由 Jun 定，计划默认「不加链接」。
 - **验收**：`test_broadcast_link_off_by_default`。
 
+**勘察结论（2026-10-29，沙盒 390×844 实测）**
+
+- 今天 / 期 / 竞彩 / 账房 / 实验室 五页静态态：`scrollWidth == 390`，无越界元素，页内按钮全 ≥44px（第 1–8 阶段各页已带 `max-width:600px` 断点）。期页开抽屉后同样无越界。
+- 真问题有三处：
+  1. **表横滚把票藏起来了**：期页 `#table`（min-width 960）与竞彩 `.tbl`（min-width 1040）在 390 宽只露出 场·对阵·档，3/1/0 格与 SP 格要横滑才看得到——「表即票」在手机上不成立。
+  2. 共享导航 `.nm-nav` 的链接高 32px（<44）。
+  3. 旧页 `/runs` 的筛选 chip 高 30px（`/observe` 顶栏链接 20px，旧页，不在本阶段）。
+- 推送：`day_broadcast.render_group` 末行写死「打开 /day 处理」（相对路径，手机上点不了）；`lineup_watch` 三类推送（zucai.lineup / countdown / shift）不带链接。
+
+**改正**：「表横滚」改为「≤600px 行折成两行卡片」：第一行 场/编号·对阵·档（竞彩加开球），第二行 3/1/0 或 SP 格占满宽；其余列（标签、人群、死门等）留在行内抽屉或下沉为第三行小字，不再横滑。
+
+**Jun 的三选一按默认「不加链接」落地**：推送链接做成配置项，未配置＝不加（现状），配置了才加；绑定地址不动（仍 127.0.0.1）。哪天选局域网或隧道，只需设 `NUTMEG_DECISION_WEB_URL` 并另行处理绑定/鉴权——那一步是对外暴露，单独定。
+
+#### Task 9.1：推送带页面链接（默认关）
+
+- `Settings` 加 `decision_web_url: str = ""`（env `NUTMEG_DECISION_WEB_URL`）。
+- 纯函数只收参数：`render_group(group, *, base_url="")`；有 base_url 时末行换成 `打开 {base}/issue/<期>` 或 `{base}/jczq/<日>` 或 `{base}/day/<日>`（路径取自第 6 阶段给决定配 href 的同一处实现，不另推导）；无 base_url 时输出与现在逐字一致。
+- `lineup_watch` 的三类推送同样在文本末尾加 `{base}/issue/<期>`（仅配置时）；指纹 `_fp` 对加链接前的正文算，配置改动不重发。
+- 调用方（broadcast 作业、lineup 作业）从 settings 读出传入。
+- 测试：`test_broadcast_link_off_by_default`（未配置逐字不变）、配置后带链接且去尾斜杠、lineup 三类同理、指纹不随 base_url 变。
+
+#### Task 9.2：390px 收尾
+
+- 期页、竞彩页：≤600px 行折成卡片（见「改正」），格子 ≥44px，点格入串/切换与桌面同一套 JS 事件（只改 CSS，必要时给行加 class，不改数据流）。
+- `shell.css`：≤600px 导航链接 ≥44px，横滑保留。
+- `runs.css`：≤560px chip ≥44px。
+- 验收：沙盒 390×844 下五页 + 期页抽屉/§3 桥展开 + 竞彩入两腿后，`scrollWidth == innerWidth`，3/1/0 与 SP 格在不横滑时可见，桌面 1440 宽外观不变。
+
 ---
 
 ## 3. 需要 Jun 定的三件事（不定也能做到第 5 阶段）

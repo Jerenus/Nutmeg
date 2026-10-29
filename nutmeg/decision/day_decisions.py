@@ -30,6 +30,15 @@ REGISTER_KINDS = ("register_zucai", "register_jczq")
 OBSOLETE_KINDS = ("approve_read", "plan_choose_commit")
 REGISTER_DEFAULT = "未登记＝空仓（不买）"
 PASSES = "passes.jsonl"
+_HREF_OF = {"register_zucai": "/issue/{}", "register_jczq": "/jczq/{}"}
+
+
+def decision_href(row: dict) -> str | None:
+    """登记类截止的去处页（今天页链接与推送链接同一处）；其它种类没有去处 → None。"""
+    kind = row.get("kind")
+    if kind not in _HREF_OF:
+        return None
+    return _HREF_OF[kind].format(str(row.get("id") or "").rsplit(":", 1)[-1])
 
 
 def read_passes(data_dir: Path | str, date: str) -> list[dict]:

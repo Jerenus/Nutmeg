@@ -83,3 +83,47 @@ def test_naive_zucai_deadline_is_read_as_beijing_time():
          "subject": "26132", "default_action": "空仓"}
     due = due_broadcasts([d], now=datetime(2026, 9, 24, 18, 40, tzinfo=bj), sent=set())
     assert [b.window for b in due] == ["T30"] and due[0].minutes_left == 25
+
+
+REG = {"id": "register:zucai:26152", "kind": "register_zucai", "status": "open",
+       "subject": "足彩 26152 停售前仍无已登记实票", "deadline": "2026-10-28 22:00",
+       "default_action": "未登记＝空仓（不买）"}
+_REG_BODY = ("⏰ 剩 25 分（截止 22:00）\n· 足彩 26152 停售前仍无已登记实票\n"
+             "  未定则默认：未登记＝空仓（不买）\n")
+
+
+def _reg_due():
+    return due_broadcasts([REG], now=datetime(2026, 10, 28, 21, 35, tzinfo=BJ), sent=set())
+
+
+def test_broadcast_link_off_by_default(tmp_path: Path, monkeypatch):
+    """未配置 NUTMEG_DECISION_WEB_URL：推送逐字照旧（Task 9.1）。"""
+    from nutmeg.config.settings import get_settings
+
+    monkeypatch.delenv("NUTMEG_DECISION_WEB_URL", raising=False)
+    monkeypatch.chdir(tmp_path)                       # 不读仓里的 .env
+    get_settings.cache_clear()
+    try:
+        expected = _REG_BODY + "（Nutmeg 只播报时间，不代下单；回复或打开 /day 处理）"
+        assert render_broadcast(_reg_due()[0]) == expected
+        sent: list[str] = []
+        send_all([REG], data_dir=tmp_path, date="2026-10-28",
+                 now=datetime(2026, 10, 28, 21, 35, tzinfo=BJ), sender=sent.append)
+        assert sent == [expected]
+    finally:
+        get_settings.cache_clear()
+
+
+def test_broadcast_link_points_to_decision_page_without_double_slash(tmp_path: Path):
+    text = render_broadcast(_reg_due()[0], base_url="http://mac.local:8787/")
+    assert text == (_REG_BODY + "（Nutmeg 只播报时间，不代下单；回复或打开 "
+                                "http://mac.local:8787/issue/26152 处理）")
+    sent: list[str] = []
+    send_all([REG], data_dir=tmp_path, date="2026-10-28",
+             now=datetime(2026, 10, 28, 21, 35, tzinfo=BJ), sender=sent.append,
+             base_url="http://mac.local:8787")
+    assert sent == [text]
+    # 没有去处的决定 → 截止那天的 /day/<日>
+    b = due_broadcasts(DEC, now=datetime(2026, 9, 23, 19, 5, tzinfo=BJ), sent=set())[0]
+    assert render_broadcast(b, base_url="http://h").endswith(
+        "回复或打开 http://h/day/2026-09-23 处理）")
