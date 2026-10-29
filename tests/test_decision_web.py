@@ -103,3 +103,35 @@ def test_non_loopback_host_warns(tmp_path):
     from nutmeg.interfaces.cli import decision as dweb
     assert dweb._warn_if_exposed("0.0.0.0") is True
     assert dweb._warn_if_exposed("127.0.0.1") is False
+
+
+def test_manifest_and_icons_for_home_screen(tmp_path):
+    """手机主屏幕（Task 9.3）：manifest 从 /day 起、全屏；图标文件真在；页头挂了 manifest。"""
+    client, _, date = _app(tmp_path)
+    r = client.get("/manifest.webmanifest")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("application/manifest+json")
+    m = r.json()
+    assert (m["start_url"], m["display"], m["scope"]) == ("/day", "standalone", "/")
+    for icon in m["icons"]:
+        assert client.get(icon["src"]).status_code == 200
+    assert client.get("/static/decision/icons/apple-touch-icon.png").status_code == 200
+    page = client.get(f"/?date={date}").text
+    assert '<link rel="manifest" href="/manifest.webmanifest">' in page
+    assert 'apple-touch-icon' in page and "/static/decision/pwa.js?v=" in page
+
+
+def test_cross_site_writes_are_refused(tmp_path):
+    """真域名下（Tailscale serve）别的站点不能往账本写；同源与无 Origin 照旧。"""
+    client, _, date = _app(tmp_path)
+    body = {"date": date, "obj_id": "day", "text": "手记"}
+    bad = client.post("/action/note", json=body, headers={"Origin": "https://evil.example"})
+    assert bad.status_code == 403
+    same = client.post("/action/note", json=body,
+                       headers={"Origin": "https://mac.tail1.ts.net", "Host": "mac.tail1.ts.net"})
+    assert same.status_code == 200
+    proxied = client.post("/action/note", json=body,
+                          headers={"Origin": "https://mac.tail1.ts.net", "Host": "127.0.0.1:8787",
+                                   "X-Forwarded-Host": "mac.tail1.ts.net"})
+    assert proxied.status_code == 200
+    assert client.post("/action/note", json=body).status_code == 200

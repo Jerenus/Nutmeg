@@ -1,0 +1,11 @@
+{#- 装到手机主屏幕（2026-10-29 产品形态 Task 9.3）：manifest + 图标 + iOS 全屏；pwa.js 管切回前台的刷新。
+    带 <head> 的三个服务端模板（layout / observe/layout / runs）都 include 这一份；verdict.html 是落盘的独立文件，不挂。 -#}
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/decision/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/decision/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Nutmeg">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1A1E22" media="(prefers-color-scheme: dark)">
+<script src="/static/decision/pwa.js?v={{ asset_v }}" defer></script>

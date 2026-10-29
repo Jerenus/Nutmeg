@@ -1513,6 +1513,18 @@ def bridge_ledger(data_dir: Path, issue: str) -> dict:
 - `runs.css`：≤560px chip ≥44px。
 - 验收：沙盒 390×844 下五页 + 期页抽屉/§3 桥展开 + 竞彩入两腿后，`scrollWidth == innerWidth`，3/1/0 与 SP 格在不横滑时可见，桌面 1440 宽外观不变。
 
+#### Task 9.3：装到手机主屏幕 + Tailscale（2026-10-29 Jun 定：不做微信小程序，走「网页装成 App」）
+
+**为什么不是小程序**：彩票类上架审核不过（2018 十二部门禁止擅自利用互联网销售彩票，页上有登记/审票）；个人主体类目受限；要备案域名的公网 HTTPS 与鉴权；四页要用 WXML 重写＝两套前端，违背「数字只有一处」。
+
+- 页头：`_pwa_head.html`（manifest、图标、iOS 全屏、theme-color 明暗两档、`pwa.js`），由 `layout` / `observe/layout` / `runs` 三个服务端模板 include；`verdict.html` 是落盘独立文件，不挂。
+- `/manifest.webmanifest`：`start_url=/day`、`display=standalone`、`scope=/`；图标 `static/decision/icons/`（`icon.svg` 为源，`rsvg-convert` 出 180/192/512）。
+- `pwa.js`：只在全屏模式生效——切走超过 5 分钟、页上没有未提交输入时，切回前台重载一次（全屏没有下拉刷新，停售倒计时/刹车/首发会停在旧数）。不加 service worker：决策页不该离线显示旧数。
+- 写入同源守卫：带 `Origin` 的非 GET 请求必须与 `Host`（或 `X-Forwarded-Host`）同源，否则 403；无 Origin（CLI/测试/curl）放行。有了真域名后，别的站点里的表单打不进账本。
+- 发布：`scripts/phone_access.sh on|off|status`——`tailscale serve --bg 8787`（只到自己的 tailnet，服务仍绑 127.0.0.1），并把 `https://<机器>.<tailnet>.ts.net` 写进 `.env` 的 `NUTMEG_DECISION_WEB_URL`（Task 9.1 的推送链接就此打开）；`off` 撤发布、删该行。
+- Jun 本人做：Mac 与 iPhone 装 Tailscale、同一账号登录；跑 `on`（首次按提示在后台开 HTTPS 证书）；iPhone Safari 打开 → 分享 → 添加到主屏幕。Mac 睡眠时手机打不开（launchd 作业本来也要求醒着）。
+- 测试：`test_manifest_and_icons_for_home_screen`、`test_cross_site_writes_are_refused`。
+
 ---
 
 ### 追加 Task 7.3：账房曲线加「足彩换成机器初稿」线（2026-10-29）

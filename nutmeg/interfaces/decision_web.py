@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -50,10 +51,38 @@ def create_decision_app(*, output_dir, kernel_state=None,
         web_root / "static" / "decision" / name
         for name in ("app.js", "observe.js", "observe.css", "day.js", "runs.js", "runs.css",
                      "issue.js", "issue.css", "jczq.js", "jczq.css", "shell.css",
-                     "ledger.js", "ledger.css", "lab.js", "lab.css")
+                     "ledger.js", "ledger.css", "lab.js", "lab.css", "pwa.js")
     ]
     _mtimes = [asset.stat().st_mtime for asset in _assets if asset.exists()]
     templates.env.globals["asset_v"] = str(int(max(_mtimes))) if _mtimes else "0"
+    # 手机访问（2026-10-29 Task 9.3）：Tailscale serve 把本机 :8787 发布到自己的 tailnet，页面
+    # 有了真域名。所有写入都是同源 fetch；带 Origin 的写请求必须与 Host 同源，别的站点里的表单
+    # 打不进账本。没有 Origin 的（CLI、测试、curl）照旧放行。
+    @app.middleware("http")
+    async def same_origin_writes(request: Request, call_next):
+        origin = request.headers.get("origin")
+        if request.method not in ("GET", "HEAD", "OPTIONS") and origin:
+            host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+            if origin.split("://", 1)[-1] != host:
+                return JSONResponse({"detail": f"跨站写请求被拒：Origin {origin} ≠ {host}"},
+                                    status_code=403)
+        return await call_next(request)
+
+    @app.get("/manifest.webmanifest")
+    def manifest() -> JSONResponse:
+        icons = "/static/decision/icons/"
+        return JSONResponse({
+            "name": "Nutmeg 决策台", "short_name": "Nutmeg", "lang": "zh",
+            "start_url": "/day", "scope": "/", "display": "standalone",
+            "background_color": "#FFFFFF", "theme_color": "#FFFFFF",
+            "icons": [
+                {"src": icons + "icon-192.png", "sizes": "192x192", "type": "image/png"},
+                {"src": icons + "icon-512.png", "sizes": "512x512", "type": "image/png"},
+                {"src": icons + "icon-512.png", "sizes": "512x512", "type": "image/png",
+                 "purpose": "maskable"},
+            ],
+        }, media_type="application/manifest+json")
+
     app.state.output_dir = Path(output_dir)
     # 足彩物料目录：默认与 betslips.jsonl 同级的 .nutmeg-data/zucai（见 decision-web CLI）。
     app.state.zucai_dir = Path(zucai_dir) if zucai_dir else Path(output_dir).parent / "zucai"
