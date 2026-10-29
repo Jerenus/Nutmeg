@@ -150,18 +150,27 @@
     if (!settled.length) return add(sec, el("p", "lab-wait", "还没有已判决或退役的实验。"));
     var judged = settled.filter(function (r) { return String(r.label || "").indexOf("退役") !== 0; });
     var retired = settled.filter(function (r) { return String(r.label || "").indexOf("退役") === 0; });
-    var list = el("div", "lab-settled");
-    [["已判决", judged], ["退役", retired]].forEach(function (g) {
-      if (!g[1].length) return;
-      add(list, el("div", "lab-settled-group", g[0] + " · " + g[1].length));
-      g[1].forEach(function (r) {
+    function rows(target, group) {
+      group.forEach(function (r) {
         var claim = el("span", "lab-settled-claim", firstSentence(r.claim));
         claim.title = String(r.claim || "");
-        add(list, add(el("div", "lab-settled-row"),
+        add(target, add(el("div", "lab-settled-row"),
           link("/observe/exp/" + encodeURIComponent(r.exp_id), "lab-id", r.exp_id),
           el("span", labelClass(r.label), r.label || "—"), claim));
       });
-    });
+    }
+    var list = el("div", "lab-settled");
+    if (judged.length) {
+      add(list, el("div", "lab-settled-group", "已判决 · " + judged.length));
+      rows(list, judged);
+    }
+    // 退役只会越攒越多、也不再产生读数：默认折起，已判决常开
+    if (retired.length) {
+      var fold = add(el("details", "lab-settled-fold"),
+        el("summary", "lab-settled-group", "退役 · " + retired.length));
+      rows(fold, retired);
+      add(list, fold);
+    }
     return add(sec, list);
   }
 
