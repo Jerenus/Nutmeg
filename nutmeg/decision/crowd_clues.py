@@ -88,7 +88,9 @@ def ticket_faces(betslips: Path, issue: str) -> list[dict[int, set[str]]]:
     for line in path.read_text("utf-8").splitlines():
         if line.strip():
             slip = json.loads(line)
-            if str(slip.get("slip_id", "")).startswith(f"{issue}-"):
+            # 竞彩票也可能用期号前缀登记（26152-T3，key「周三006」），不是本期足彩票面
+            if (str(slip.get("slip_id", "")).startswith(f"{issue}-")
+                    and slip.get("channel") != "jczq"):
                 slips[slip["slip_id"]] = slip
     return [{int(leg["key"]): {_CODE[s] for s in leg.get("selections") or [] if s in _CODE}
              for leg in slip.get("legs") or []}

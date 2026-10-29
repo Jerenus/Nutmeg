@@ -283,6 +283,32 @@ def test_pending_tickets_are_charged_against_the_effective_room(tmp_path: Path,
     assert "→ -8,690｜⛔越线 ¥690" in text
 
 
+def test_slips_older_than_the_ticket_ledger_are_not_pending(tmp_path: Path) -> None:
+    """2026-10-29：9 月 21 张旧票（26122/26126/26128、09-25 前竞彩）在 tickets 起点之前的散文账里
+    结过，没有结构化行，被读成永久待结，账房 9 月「实质」点虚降 ¥2,928。起点按渠道分开取。"""
+    from nutmeg.decision.account import pending_ledger
+
+    data = _data(tmp_path)
+    (data / "scoreboard.json").write_text(json.dumps({"tickets": {
+        "26129": {"net": -100, "stake": 100, "slips": "文字描述"},
+        "jczq-20260926": {"net": 0, "stake": 0, "slips": []},
+    }}), encoding="utf-8")
+    nine = {str(i): "3" for i in range(1, 10)}
+    (data / "betslips.jsonl").write_text("\n".join(json.dumps(r) for r in [
+        {"slip_id": "26122-T1", "channel": "renjiu", "placed_at": "2026-09-14", "purchased": True,
+         "issue": "26122", "faces": nine, "multiplier": 1, "legs": []},
+        {"slip_id": "20260925-J1", "channel": "jczq", "placed_at": "2026-09-25", "purchased": True,
+         "stake_yuan": 32, "legs": []},
+        {"slip_id": "26130-T1", "channel": "renjiu", "placed_at": "2026-09-27", "purchased": True,
+         "issue": "26130", "faces": nine, "multiplier": 1, "legs": []},
+        {"slip_id": "20260927-J1", "channel": "jczq", "placed_at": "2026-09-27", "purchased": True,
+         "stake_yuan": 50, "legs": []},
+    ]) + "\n", encoding="utf-8")
+    pend = pending_ledger(data, "2026-09")
+    assert [r["slip_id"] for r in pend["slips"]] == ["26130-T1", "20260927-J1"]
+    assert pend["pre_ledger"] == 2 and pend["n"] == 2
+
+
 def test_no_pending_tickets_says_so(tmp_path: Path, monkeypatch) -> None:
     data = _data(tmp_path)
     (data / "betslips.jsonl").write_text("", encoding="utf-8")

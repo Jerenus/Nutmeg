@@ -51,15 +51,36 @@ def exploration_spend(data_dir: Path, month: str) -> dict:
     return {"slips": rows, "stake": round(sum(r["stake"] for r in rows), 2)}
 
 
-def _settled_rows(data_dir: Path) -> dict[str, dict]:
-    """记分牌 tickets 里结构化的逐票行（slip_id → {stake, payout}）。"""
+def _scoreboard_tickets(data_dir: Path) -> dict:
     sb = {}
     try:
         sb = json.loads((Path(data_dir) / "scoreboard.json").read_text(encoding="utf-8"))
     except OSError:
         pass  # 没有记分牌＝还没结算过；坏了的记分牌照样抛，不把全部票读成「待结」
+    return sb.get("tickets") or {}
+
+
+def _ledger_floor(tickets: dict) -> tuple[str | None, str | None]:
+    """记分牌 tickets 的起点：(竞彩最早日 YYYY-MM-DD, 足彩最小期号)。比起点早的票在 tickets
+    之前的散文账里结过（2026-09 的 26122/26126/26128 与 09-25 前竞彩），不是「待结」。"""
+    jczq = sorted(f"{k[5:9]}-{k[9:11]}-{k[11:13]}" for k in tickets
+                  if k.startswith("jczq-") and len(k) == 13 and k[5:].isdigit())
+    zucai = sorted(k for k in tickets if k.isdigit())
+    return (jczq[0] if jczq else None), (zucai[0] if zucai else None)
+
+
+def _pre_ledger(slip, floor: tuple[str | None, str | None]) -> bool:
+    jczq_from, zucai_from = floor
+    if slip.channel == "jczq":
+        return jczq_from is not None and str(slip.placed_at)[:10] < jczq_from
+    issue = str(getattr(slip, "issue", "") or "")
+    return zucai_from is not None and issue.isdigit() and issue < zucai_from
+
+
+def _settled_rows(data_dir: Path) -> dict[str, dict]:
+    """记分牌 tickets 里结构化的逐票行（slip_id → {stake, payout}）。"""
     settled: dict[str, dict] = {}
-    for ticket in (sb.get("tickets") or {}).values():
+    for ticket in _scoreboard_tickets(data_dir).values():
         if not isinstance(ticket, dict):
             continue
         for row in ticket.get("slips") or []:
@@ -103,13 +124,22 @@ def pending_ledger(data_dir: Path, month: str) -> dict:
     """本月实购、记分牌尚无派奖的票（待结）：{n, stake, slips:[{slip_id, issue, stake}]}。
 
     「实质余量」把它们按注金全损计（2026-10-26 Tier 1 #6）：26149 两张 8/9 还没官方派奖时
-    账房报「余 ¥766」、实际只剩 ¥78；26150 三张 ¥768 同样在账外。余量先算待结票，不再两套数。"""
+    账房报「余 ¥766」、实际只剩 ¥78；26150 三张 ¥768 同样在账外。余量先算待结票，不再两套数。
+    早于 tickets 起点的票（`_ledger_floor`）不算待结，只在 `pre_ledger` 里计数（2026-10-29：
+    9 月 21 张散文账旧票被读成永久待结，账房 9 月「实质」点虚降 ¥2,928）。"""
     settled = _settled_rows(Path(data_dir))
-    rows = [{"slip_id": slip.slip_id, "issue": getattr(slip, "issue", None),
-             "stake": _slip_stake(slip, settled.get(slip.slip_id))}
-            for slip in _month_slips(Path(data_dir), month)
-            if _is_pending(settled.get(slip.slip_id))]
-    return {"n": len(rows), "stake": round(sum(r["stake"] for r in rows), 2), "slips": rows}
+    floor = _ledger_floor(_scoreboard_tickets(Path(data_dir)))
+    rows, old = [], 0
+    for slip in _month_slips(Path(data_dir), month):
+        if not _is_pending(settled.get(slip.slip_id)):
+            continue
+        if _pre_ledger(slip, floor):
+            old += 1
+            continue
+        rows.append({"slip_id": slip.slip_id, "issue": getattr(slip, "issue", None),
+                     "stake": _slip_stake(slip, settled.get(slip.slip_id))})
+    return {"n": len(rows), "stake": round(sum(r["stake"] for r in rows), 2), "slips": rows,
+            "pre_ledger": old}
 
 
 def _close(bucket: dict) -> dict:

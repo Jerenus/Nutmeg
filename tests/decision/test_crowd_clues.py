@@ -51,6 +51,9 @@ def test_ticket_faces_and_acted(tmp_path):
          "legs": [{"key": "7", "selections": ["draw"]}]},
         {"slip_id": "26136-T9", "purchased": False,
          "legs": [{"key": "8", "selections": ["draw"]}]},
+        # 用期号前缀登记的竞彩票（26152-T3 先例）：键是「周三006」，不属于本期足彩票面
+        {"slip_id": "26136-T3", "purchased": True, "channel": "jczq",
+         "legs": [{"key": "周三006", "selections": ["away"]}]},
     ]), encoding="utf-8")
     tickets = ticket_faces(slips, "26136")
     assert tickets == [{7: {"3", "1"}}]
