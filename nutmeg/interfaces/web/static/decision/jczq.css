@@ -196,6 +196,24 @@ body:has(> .jczq){background:#F3F4F1}
   .jczq .brake{padding:12px 14px}
   .jczq .brake-big{font-size:24px}
   .jczq .filters-note{margin-left:0; flex:1 1 100%}
+  /* 板面表折成卡片（第 9 阶段）：一行 编号·开球·对阵 / 二行 SP 三格占满宽 / 三行小字 让球·表态·旗损耗·关注度。
+     表不再横滚；列头在卡片里没意义，藏掉（各格自带 ::before 小标签）。 */
+  .jczq .tbl{min-width:0}
+  .jczq .row.head{display:none}
+  .jczq .match > .row{display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; padding:8px 12px 10px}
+  .jczq .match > .row > .code{flex:0 0 auto}
+  .jczq .match > .row > .ko{flex:0 0 auto; flex-direction:row; flex-wrap:wrap; align-items:baseline; gap:0 6px; font-size:13px}
+  .jczq .match > .row > .name-cell{flex:1 1 0; min-width:0}
+  .jczq .match > .row > .cells{flex:1 1 100%; gap:6px}
+  .jczq .match > .row .sp{min-width:0; min-height:48px}
+  .jczq .match > .row > :is(.hhad,.stance-cell,.flags-cell,.pm){flex:0 1 auto; min-width:0; font-size:12px}
+  .jczq .match > .row > .flags-cell{flex-direction:row; flex-wrap:wrap; gap:0 8px}
+  .jczq .match > .row > .flags-cell:empty{display:none}
+  .jczq .match > .row .stance{font-size:12px; padding:0 6px}
+  .jczq .match > .row > :is(.hhad,.stance-cell,.pm)::before{color:var(--muted); font-family:var(--sans); margin-right:4px}
+  .jczq .match > .row > .hhad::before{content:"让球"}
+  .jczq .match > .row > .stance-cell::before{content:"表态"}
+  .jczq .match > .row > .pm::before{content:"关注度"}
   .jczq .drawer{margin:0 8px 12px; left:8px; width:calc(100cqw - 16px); padding:14px 12px}
   .jczq .card,.jczq .receipt{padding:14px 12px}
   .jczq .slip-line{flex-direction:column}

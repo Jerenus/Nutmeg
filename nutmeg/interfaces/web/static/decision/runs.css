@@ -180,4 +180,5 @@ button.rn-name:hover{color:var(--pine)}
   .rn-grid{--label:112px}
   .rn-name small{display:none}
   .rn-pick{display:none}
+  .rn-chip{height:auto; min-height:44px; border-radius:22px}
 }

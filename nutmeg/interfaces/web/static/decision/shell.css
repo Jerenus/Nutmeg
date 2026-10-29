@@ -29,4 +29,7 @@
 .nm-nav .nm-links small{font-family:var(--nm-mono); font-size:11px; color:var(--nm-show); font-weight:400}
 .nm-nav .nm-brake{margin-left:auto; padding:4px 10px; border:1px solid var(--nm-line); border-radius:4px;
   font-family:var(--nm-mono); font-variant-numeric:tabular-nums; font-size:12px; color:var(--nm-muted); white-space:nowrap; cursor:help}
+@media (max-width:600px){
+  .nm-nav .nm-links a{display:inline-flex; align-items:center; gap:4px; min-height:44px; padding:0 12px}
+}
 .nm-nav .nm-brake.veto{color:var(--nm-veto); background:var(--nm-veto-bg); border-color:var(--nm-veto); font-weight:700}

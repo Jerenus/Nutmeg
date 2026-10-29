@@ -284,6 +284,27 @@ body:has(> .issue){background:#F3F4F1}
 @media (max-width:600px){
   .issue{padding:20px 16px 48px}
   .issue .issue-head h1{font-size:26px}
+  /* 决策表折成卡片（第 9 阶段）：一行 场·对阵·档 / 二行 3·1·0 格占满宽 / 三行小字 条件·默认·死门·首发 + 翻车面。
+     表不再横滚；列头在卡片里没意义，藏掉（各格自带 ::before 小标签）。 */
+  .issue #table{min-width:0}
+  .issue .row.head{display:none}
+  .issue .match > .row{display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; padding:8px 12px 10px}
+  .issue .match > .row > .no{flex:0 0 auto; min-width:20px}
+  .issue .match > .row > .name-cell{flex:1 1 0; min-width:0}
+  .issue .match > .row > .tier-cell{flex:0 0 auto}
+  .issue .match > .row > .cells{flex:1 1 100%; gap:6px}
+  .issue .match > .row .cell{min-width:0; min-height:48px}
+  .issue .match > .row > .cond,.issue .match > .row > .dflt,.issue .match > .row > .dead,.issue .match > .row > .lineup-cell{
+    flex:0 1 auto; font-size:12px; color:var(--sub)}
+  .issue .match > .row > .flip{order:1; flex:1 1 100%; font-size:12px; line-height:1.5}
+  .issue .match > .row > :is(.flip,.dflt,.dead,.lineup-cell):empty{display:none}
+  .issue .match > .row > :is(.cond,.dflt,.dead,.lineup-cell,.flip)::before{color:var(--muted); font-family:var(--sans); margin-right:4px}
+  .issue .match > .row > .cond::before{content:"条件"}
+  .issue .match > .row > .dflt::before{content:"默认"}
+  .issue .match > .row > .dead::before{content:"死门"}
+  .issue .match > .row > .lineup-cell::before{content:"首发"}
+  .issue .match > .row > .flip::before{content:"翻车面"}
+  .issue .match > .row .lineup{font-size:12px}
   .issue .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
   .issue .drawer{margin:0 8px 12px; left:8px; width:calc(100cqw - 16px); padding:14px 12px}
   .issue .bridge{padding:16px 12px; gap:18px}
