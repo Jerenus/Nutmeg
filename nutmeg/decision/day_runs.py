@@ -92,6 +92,30 @@ def _timeline_runs(job: str) -> Callable[[Path, str], list[Run]]:
     return read
 
 
+def _ops_runs(label: str) -> Callable[[Path, str], list[Run]]:
+    """`ops-run` 包装的作业：读当天 `logs/runs.jsonl` 里该 label 的分段账。
+    段 1 起一轮，任一段非零即这一轮失败。"""
+    def read(data_dir: Path, day: str) -> list[Run]:
+        from nutmeg.decision.ops_run import RUNS_LEDGER, read_ledger
+
+        out: list[Run] = []
+        rounds: list[list[dict]] = []
+        for row in read_ledger(data_dir, day=day):
+            if row.get("label") != label:
+                continue
+            if int(row.get("step") or 1) == 1 or not rounds:
+                rounds.append([])
+            rounds[-1].append(row)
+        for segs in rounds:
+            failed = [s for s in segs if int(s.get("exit") or 0) != 0]
+            last = failed[0] if failed else segs[-1]
+            out.append(Run(at=_hm(segs[0].get("ts")), status="fail" if failed else "ok",
+                           summary=str(last.get("tail") or "")[:160],
+                           evidence=_rel(data_dir / "logs" / RUNS_LEDGER, data_dir)))
+        return out
+    return read
+
+
 def _am(data_dir: Path, day: str) -> list[Run]:
     """早刷新每跑一次在日志里写 ``NUTMEG_OK stage=am run_date=<日>``——带日期的唯一证据。
 
@@ -298,6 +322,15 @@ JOBS: dict[str, JobSpec] = {
         since=_TIMELINE_SINCE),
     "com.nutmeg.jczq.research": JobSpec(
         "竞彩研究", "jczq", "逐场深研，写判读草稿", _research),
+    "com.nutmeg.jczq.research-pm": JobSpec(
+        "竞彩研究·午后", "jczq", "16:30 补研上午没赶上的场，再刷新判读",
+        _ops_runs("jczq.research-pm"), since=lambda _data_dir: "2026-10-26"),
+    "com.nutmeg.schedule.fixtures": JobSpec(
+        "赛程落盘", "system", "按日抓 API-Football 赛程，供损耗台账算休息天数",
+        _ops_runs("schedule.fixtures"), since=lambda _data_dir: "2026-10-26"),
+    "com.nutmeg.zucai.lineups": JobSpec(
+        "足彩首发复核", "zucai", "每 15 分：停售倒计时、位移、票内场首发，有事才推",
+        _ops_runs("zucai.lineups"), since=lambda _data_dir: "2026-10-26"),
     "com.nutmeg.rsi.loop": JobSpec(
         "RSI 闭环", "rsi", "结账、提案、列出待你决定的事", _rsi_loop,
         since=_first_day("analytics/rsi-loop/*.json")),

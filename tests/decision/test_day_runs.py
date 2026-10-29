@@ -218,3 +218,27 @@ def test_monthly_job_is_planned_only_on_its_day_and_reads_the_report_as_evidence
     [run] = _account_runs(tmp_path, "2026-11-01")
     assert run.at == "16:11" and run.summary.startswith("**净值 vs 空仓**：+180")
     assert _account_runs(tmp_path, "2026-11-02") == []
+
+
+def test_ops_run_wrapped_jobs_read_rounds_from_the_segment_ledger(tmp_path: Path):
+    plists, data = tmp_path / "plists", tmp_path / "data"
+    _plist(plists, "com.nutmeg.jczq.research-pm", {"StartCalendarInterval": [
+        {"Hour": 16, "Minute": 30}, {"Hour": 20, "Minute": 0}]})
+    day = "2026-10-27"
+    seg = lambda hm, step, code, tail, label="jczq.research-pm": {  # noqa: E731
+        "ts": f"{day}T{hm}:05+08:00", "label": label, "step": step, "n": 2,
+        "cmd": "x", "exit": code, "secs": 1.0, "tail": tail}
+    _write(data / "logs" / "runs.jsonl", "\n".join(json.dumps(r, ensure_ascii=False) for r in [
+        seg("16:30", 1, 0, "run 9 场"), seg("16:52", 2, 0, "refresh 读 9 条"),
+        seg("17:10", 1, 0, "别的作业", label="zucai.lineups"),
+        seg("18:00", 1, 0, "补跑"), seg("18:20", 2, 1, "refresh 崩了"),
+    ]) + "\n")
+
+    view = day_runs(data_dir=data, plists_dir=plists, day=day,
+                    now=datetime(2026, 10, 27, 19, 0))
+
+    job = _job(view, "jczq.research-pm")
+    assert view["errors"] == []
+    assert [(s["planned"], s["status"], s["at"], s["summary"]) for s in job["slots"]] == [
+        ("16:30", "ok", "16:30", "refresh 读 9 条"), ("20:00", "upcoming", None, ""),
+        (None, "fail", "18:00", "refresh 崩了")]
