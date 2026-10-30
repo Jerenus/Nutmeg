@@ -43,6 +43,7 @@ from nutmeg.interfaces.cli import crowd as crowd  # noqa: E402
 from nutmeg.interfaces.cli import day as day  # noqa: E402
 from nutmeg.interfaces.cli import decision as decision  # noqa: E402
 from nutmeg.interfaces.cli import gym as gym  # noqa: E402
+from nutmeg.interfaces.cli import inbox as inbox  # noqa: E402
 from nutmeg.interfaces.cli import judgment as judgment  # noqa: E402
 from nutmeg.interfaces.cli import load as load  # noqa: E402
 from nutmeg.interfaces.cli import ontology as ontology  # noqa: E402

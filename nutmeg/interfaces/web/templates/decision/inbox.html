@@ -1,0 +1,14 @@
+{% extends "decision/layout.html" %}
+{% block body %}
+<link rel="stylesheet" href="/static/decision/inbox.css?v={{ asset_v }}">
+<link rel="stylesheet" href="/static/decision/shell.css?v={{ asset_v }}">
+{% set nav_active = "inbox" %}{% include "decision/_nav.html" %}
+<main id="inbox" class="ib">
+  <header class="ib-head">
+    <h1>待签</h1>
+    <p class="ib-lede">机器起草、等你答的提案都在这里：签了才执行，你的原话随答复入账。答过的收进「已答」。</p>
+  </header>
+  <p id="errors" class="errors" hidden></p>
+</main>
+<script src="/static/decision/inbox.js?v={{ asset_v }}"></script>
+{% endblock %}

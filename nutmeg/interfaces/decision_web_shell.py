@@ -63,7 +63,7 @@ def _err(errors: list[str], what: str, exc: Exception) -> None:
 def shell_state(data_dir: Path | str, now: datetime) -> dict:
     """{today, issues:[{issue, deadline, close}], brake:{line, chip, net, effective_net, stop_loss,
     room, tripped, pending}|None, issue_brake:{期: issue_brake|None}, drafts:纠正草稿数|None,
-    errors}。每块各自 try。"""
+    inbox:待签数|None, errors}。每块各自 try。"""
     from nutmeg.decision.bankroll import issue_brake, status_line
     from nutmeg.decision.bj_time import parse_bj
     from nutmeg.decision.lineup_watch import active_issues, issue_doc
@@ -96,7 +96,7 @@ def shell_state(data_dir: Path | str, now: datetime) -> dict:
         except Exception as exc:  # noqa: BLE001
             _err(errors, f"期 {item['issue']} 刹车档读取失败", exc)
     return {"today": today, "issues": issues, "brake": brake, "issue_brake": issue_brakes,
-            "drafts": _drafts(data_dir), "errors": errors}
+            "drafts": _drafts(data_dir), "inbox": _pending(data_dir), "errors": errors}
 
 
 def _drafts(data_dir: Path) -> int | None:
@@ -105,6 +105,17 @@ def _drafts(data_dir: Path) -> int | None:
 
     try:
         return draft_count(data_dir)
+    except Exception:  # noqa: BLE001 —— 角标是提示，读不出就不显示，不进 errors
+        return None
+
+
+def _pending(data_dir: Path) -> int | None:
+    """导航「待签」角标：收件箱待签数（proposals.jsonl + 闭环开着的 RSI 项，只读）；
+    读不出 → None。"""
+    from nutmeg.decision.proposals import pending_count
+
+    try:
+        return pending_count(data_dir)
     except Exception:  # noqa: BLE001 —— 角标是提示，读不出就不显示，不进 errors
         return None
 
@@ -209,7 +220,7 @@ def register_shell(app: FastAPI, templates) -> None:
             return shell_state(app.state.data_dir, app_now(app))
         except Exception as exc:  # noqa: BLE001 —— 导航坏了也不能让页面 500
             return {"today": None, "issues": [], "brake": None, "issue_brake": {},
-                    "drafts": None, "errors": [f"外壳读取失败：{exc!r}"[:200]]}
+                    "drafts": None, "inbox": None, "errors": [f"外壳读取失败：{exc!r}"[:200]]}
 
     templates.env.globals["shell"] = _shell
 

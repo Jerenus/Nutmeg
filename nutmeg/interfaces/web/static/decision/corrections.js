@@ -179,7 +179,7 @@
     clear(body);
     var drafts = state.data.summary.drafts || 0;
     // 导航角标是服务端渲染的；页上确认之后用同一份 summary.drafts 跟上，不用刷新整页
-    var badge = document.querySelector(".nm-badge");
+    var badge = document.querySelector('.nm-badge[data-badge="corrections"]');
     if (badge) { if (drafts) badge.textContent = String(drafts); else badge.remove(); }
     add(body,
       add(el("div", "cx-bar"), chips(),

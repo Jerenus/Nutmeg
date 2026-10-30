@@ -1,0 +1,117 @@
+/* 待签收件箱（2026-10-30 产品形态第 10 阶段 Task 10.3，画布手机板「待签」）。
+   token 与 corrections.css 同一组，全部挂在 .ib 下；类名一律 ib- 前缀；不加载网络字体。
+   手机优先：单列卡片、最宽 720px，按钮 ≥44px，不横滚。 */
+
+.ib{
+  --ink:#15181B; --ground:#F3F4F1; --paper:#FFFFFF; --line:#DADDD7; --line-soft:#ECEEE9;
+  --muted:#565E66; --sub:#3A4148; --show:#7A828A; --focus:#EEF2FD;
+  --veto:#B23A0E; --veto-bg:#FBEDE6; --ok:#17734A; --ok-bg:#E6F2EB; --link:#2348C9;
+  --warn:#8A5300; --warn-bg:#FBF1DE;
+  --sans:"Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  display:flex; flex-direction:column; gap:20px; max-width:720px; margin:0 auto; padding:24px 24px 64px;
+  min-height:100vh; background:var(--ground); color:var(--ink);
+  font-family:var(--sans); font-size:15px; line-height:1.55;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .ib{
+  --ink:#E4E7E3; --ground:#111417; --paper:#1A1E22; --line:#2E343A; --line-soft:#24292E;
+  --muted:#9AA2AA; --sub:#B7BEC4; --show:#8A929A; --focus:#1C2540;
+  --veto:#F08A63; --veto-bg:#3A1D12; --ok:#5CC793; --ok-bg:#16301F; --link:#8EA6F5;
+  --warn:#E9B565; --warn-bg:#33260F;
+}}
+:root[data-theme="dark"] .ib{
+  --ink:#E4E7E3; --ground:#111417; --paper:#1A1E22; --line:#2E343A; --line-soft:#24292E;
+  --muted:#9AA2AA; --sub:#B7BEC4; --show:#8A929A; --focus:#1C2540;
+  --veto:#F08A63; --veto-bg:#3A1D12; --ok:#5CC793; --ok-bg:#16301F; --link:#8EA6F5;
+  --warn:#E9B565; --warn-bg:#33260F;
+}
+body:has(> .ib){background:#F3F4F1}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) body:has(> .ib){background:#111417}}
+:root[data-theme="dark"] body:has(> .ib){background:#111417}
+.ib *{box-sizing:border-box}
+.ib .mono{font-family:var(--mono); font-variant-numeric:tabular-nums}
+.ib p{margin:0}
+.ib a{color:var(--link)}
+.ib a:focus-visible,.ib button:focus-visible,.ib textarea:focus-visible,.ib summary:focus-visible{
+  outline:2px solid var(--link); outline-offset:2px}
+.ib h1{margin:0; font-size:30px; font-weight:700}
+.ib h2{margin:0; font-size:18px; font-weight:700}
+.ib h3{margin:0}
+.ib .errors{margin:0; padding:10px 14px; border:1px solid var(--veto); background:var(--veto-bg); color:var(--veto);
+  border-radius:6px; font-weight:700; overflow-wrap:anywhere; display:flex; flex-direction:column; gap:2px}
+.ib .errors[hidden]{display:none}
+.ib .ib-wait{color:var(--muted)}
+.ib .ib-body{display:flex; flex-direction:column; gap:24px; min-width:0}
+
+/* ---- 头部 ---- */
+.ib .ib-head{display:flex; flex-direction:column; gap:4px}
+.ib .ib-lede{font-size:14px; color:var(--sub); overflow-wrap:anywhere}
+
+/* ---- 段 ---- */
+.ib .ib-section{display:flex; flex-direction:column; gap:12px; min-width:0}
+.ib .ib-sec-head{display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 12px}
+.ib .ib-count{font-size:13px; color:var(--muted)}
+.ib .ib-count.ib-overdue{color:var(--veto); font-weight:700}
+
+/* ---- 卡片 ---- */
+.ib .ib-card{background:var(--paper); border:1px solid var(--line); border-radius:8px; padding:16px 18px;
+  display:flex; flex-direction:column; gap:8px; min-width:0; overflow-wrap:anywhere}
+.ib .ib-card-overdue{box-shadow:inset 3px 0 0 var(--veto)}
+.ib .ib-title{font-size:16px; font-weight:700; line-height:1.4}
+.ib .ib-text{color:var(--sub)}
+.ib .ib-blocks,.ib .ib-deadline{font-size:14px; color:var(--sub)}
+.ib .ib-blocks b,.ib .ib-deadline b{color:var(--ink)}
+.ib .ib-age{font-size:13px; color:var(--muted)}
+.ib .ib-age.ib-overdue{color:var(--veto); font-weight:700}
+.ib .ib-src{font-size:11px; color:var(--show)}
+
+/* ---- 按钮 ---- */
+.ib .ib-actions{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-top:4px}
+.ib .ib-btn{min-height:44px; padding:0 12px; border:1px solid var(--line); border-radius:6px; background:var(--paper);
+  color:var(--ink); font:inherit; font-weight:700; cursor:pointer; white-space:nowrap}
+.ib .ib-btn:hover{background:var(--focus)}
+.ib .ib-btn:disabled{opacity:.5; cursor:wait}
+.ib .ib-v-sign{border-color:var(--ok); color:var(--ok)}
+.ib .ib-v-modify{border-color:var(--link); color:var(--link)}
+.ib .ib-v-reject{border-color:var(--veto); color:var(--veto)}
+.ib .ib-v-stale{color:var(--muted)}
+.ib .ib-btn.on.ib-v-sign,.ib .ib-btn-go.ib-v-sign{background:var(--ok); border-color:var(--ok); color:var(--paper)}
+.ib .ib-btn.on.ib-v-modify,.ib .ib-btn-go.ib-v-modify{background:var(--link); border-color:var(--link); color:var(--paper)}
+.ib .ib-btn.on.ib-v-reject,.ib .ib-btn-go.ib-v-reject{background:var(--veto); border-color:var(--veto); color:var(--paper)}
+.ib .ib-btn.on.ib-v-stale,.ib .ib-btn-go.ib-v-stale{background:var(--muted); border-color:var(--muted); color:var(--paper)}
+
+/* ---- 确认区 ---- */
+.ib .ib-confirm{display:flex; flex-direction:column; gap:6px; padding:12px; border:1px dashed var(--line);
+  border-radius:6px; background:var(--ground)}
+.ib .ib-words-label{font-size:13px; color:var(--sub); font-weight:700}
+.ib .ib-words{width:100%; min-height:64px; padding:8px 10px; border:1px solid var(--line); border-radius:6px;
+  background:var(--paper); color:var(--ink); font:inherit; resize:vertical}
+.ib .ib-confirm-row{display:flex; flex-wrap:wrap; gap:8px}
+.ib .ib-confirm-row .ib-btn-go{flex:1 1 auto}
+.ib .ib-row-err{font-size:13px; color:var(--veto); font-weight:700}
+
+/* ---- 已答 ---- */
+.ib .ib-answered{display:flex; flex-direction:column; gap:12px}
+.ib .ib-answered > summary{min-height:44px; display:flex; align-items:center; gap:4px; cursor:pointer;
+  font-size:18px; font-weight:700; list-style-position:inside}
+.ib .ib-list{display:flex; flex-direction:column; gap:10px; margin-top:12px}
+.ib .ib-card-done{padding:12px 16px; gap:6px}
+.ib .ib-card-done .ib-title{font-size:15px}
+.ib .ib-done-top{display:flex; align-items:baseline; gap:10px}
+.ib .ib-tag{flex:none; font-size:12px; padding:2px 8px; border-radius:3px; border:1px solid var(--line); color:var(--sub);
+  white-space:nowrap; font-weight:700}
+.ib .ib-st-sign{border-color:var(--ok); color:var(--ok); background:var(--ok-bg)}
+.ib .ib-st-modify{border-color:var(--link); color:var(--link)}
+.ib .ib-st-reject{border-color:var(--veto); color:var(--veto); background:var(--veto-bg)}
+.ib .ib-st-stale{color:var(--muted)}
+.ib .ib-st-done{border-color:var(--ok); color:var(--paper); background:var(--ok)}
+.ib .ib-quote{margin:0; padding:2px 0 2px 10px; border-left:3px solid var(--line); color:var(--ink)}
+.ib .ib-when{font-size:12px; color:var(--muted)}
+.ib .ib-result{font-size:13px; color:var(--sub)}
+
+@media (max-width:600px){
+  .ib{padding:16px 16px 48px; gap:16px}
+  .ib h1{font-size:24px}
+  .ib .ib-card{padding:14px}
+  .ib .ib-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
