@@ -43,9 +43,10 @@ def _page(next_path: str, error: str = "") -> HTMLResponse:
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Nutmeg">
 <style>
-:root{{--ink:#15181B;--paper:#FFFFFF;--line:#DADDD7;--muted:#565E66;--link:#2348C9;--veto:#B23A0E}}
+:root{{--ink:#15181B;--paper:#FFFFFF;--line:#DADDD7;--muted:#565E66;--link:#2348C9;--veto:#B23A0E;
+  --on-link:#FFFFFF}}
 @media (prefers-color-scheme:dark){{:root{{--ink:#E4E7E3;--paper:#1A1E22;--line:#2E343A;
-  --muted:#9AA2AA;--link:#8EA6F5;--veto:#F08A63}}}}
+  --muted:#9AA2AA;--link:#8EA6F5;--veto:#F08A63;--on-link:#15181B}}}}
 body{{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--paper);color:var(--ink);
   font-family:"PingFang SC","Hiragino Sans GB",system-ui,sans-serif}}
 form{{width:min(320px,calc(100vw - 32px));display:grid;gap:12px}}
@@ -53,7 +54,7 @@ h1{{margin:0 0 4px;font-size:18px;letter-spacing:.08em}}
 p{{margin:0;color:var(--muted);font-size:13px}} .err{{color:var(--veto)}}
 input,button{{font:inherit;font-size:16px;min-height:44px;border-radius:6px;box-sizing:border-box}}
 input{{padding:0 12px;border:1px solid var(--line);background:transparent;color:var(--ink)}}
-button{{border:0;background:var(--link);color:#fff;font-weight:700}}
+button{{border:0;background:var(--link);color:var(--on-link);font-weight:700}}
 </style></head><body>
 <form method="post" action="/login">
   <h1>NUTMEG</h1><p>决策页对校园网开放，先输密码。</p>{err}
