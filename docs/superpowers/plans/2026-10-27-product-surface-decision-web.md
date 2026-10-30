@@ -1549,6 +1549,27 @@ def bridge_ledger(data_dir: Path, issue: str) -> dict:
 - `ledger.js`：初稿账加载完成后在同一张阶梯图上叠一条虚线（独立颜色 token、明暗两套），图例写「足彩换成机器初稿（竞彩照实际·不套止损）」，末点标数；`_error` 或无 curve 时不画。
 - 测试：monkeypatch `run_gym` 的单元测试（有待结期、无票期、竞彩日）；web 测试 `/draft` 带 `curve`。
 
+### 第 10 阶段：对话与纠正（2026-10-30 设计，画布第四行，未开工）
+
+**依据**：06-13→10-30 共 40 个会话、Jun 约 560 句话分四段并读。约 235 次追问（选面/票形 ≈55、单场深挖 ≈25、统计样本 ≈25、进度状态 ≈25、要不要补跑 ≈10）；约 105 次纠正，记录散在复盘页、记分牌、改判账、证据文档、记忆五处；复发最多：止损余量不含待结票 ≥6 次、截图抄录 ≥8 次、实票开球后登记 ≥5 次、研究前提错且无自纠通路 4 次；同一提案被重复问 3–5 次（K1 修正案、足彩机器 Read 归属、判死面清零口径、26147 三提案）。
+
+**四个新对象**（都只追加、不改原件；页面不推导）
+- 线程 `thread`：锚定 `obj`（`issue:26153/m7/q4`、`ticket:26153-T1`、`ledger:2026-10/26152`、`rule:六条件④`）的问答，复用 `day_session` 的 discussion 记录加 `obj` 与 `reply_to`。
+- 纠正 `correction`：`obj`、`old`、`new`、`kind`（数据·账目｜抄录｜研究前提｜机器自纠｜你改判）、`found_by`、`evidence`（URL/原句/官方）、`dest`（scoreboard｜research override｜premise→store 画像｜RULEBOOK｜无处可写）、`status`（草稿→已确认→已回写）、`recurs_of`。回写复用现有命令（`research override`、`zucai-premise-corrections --apply`、记分牌写入），纠正对象只记账与路由。
+- 提案 `proposal`：编号、正文、拦住了什么、截止、`asked_count`、`status`（待签｜签｜改｜否）＋你的原话；笼统批准展开成覆盖清单。签了才执行，执行结果回挂。
+- 票据收件 `intake`：截图 → 识别格 → 逐格确认（底部注数/金额对上才放行）→ 已购/试玩 → 理由与预测 → `betslip preview` → 登记；开球后提交标「开球后写入」。
+
+**应答员**：页面提问进队列，后台 worker 用 Claude 无头会话（读该对象的研究原件、市场、票、SOP 三件套）作答，写回同一线程，并同步到 Telegram；会改表的回答只能产出纠正草稿或提案草稿。待定：用 `claude -p`（launchd 下登录过期风险，见运维记忆）还是 OpenClaw nutmegbot 的 agent 通道。
+
+**建议顺序**（先做复发最多、最不依赖应答员的）
+1. Task 10.1 各页统一「实质余量」（含待结票）——同一个数只算一处（`account.pending_ledger`），今天/期页/审票/账房都读它。
+2. Task 10.2 纠正对象 + `/corrections` 纠正账 + 格子「修 HH:MM」与「自你上次看过改了 N 处」；旧记录（复盘页、记分牌备注、改判账、证据文档、记忆）做一次回填。
+3. Task 10.3 待签收件箱 `/inbox`（今天页与手机底栏带角标）；CLI `nutmeg inbox propose` 供会话起草。
+4. Task 10.4 应答员 + 行内追问（期页、竞彩板、账房行），快捷问法：要防平吗／钱往哪边／和哪场死法像／要补跑吗／只能单选呢。
+5. Task 10.5 票据收件（截图识别走应答员的看图能力）。
+
+画布：Dialog（蓝图）、AskPhone、IntakePhone、SignPhone、Corrections 五板。
+
 ## 3. 需要 Jun 定的三件事（不定也能做到第 5 阶段）
 
 1. **旁车由谁写**：计划默认 `/zucai-packet` 会话同写 `<期>-packet.json`（Task 1.1 改命令文件）。替代是把六条件计数做成代码——那是规则定义，要走 RULEBOOK「〇」两段式，不该夹在界面工程里。
