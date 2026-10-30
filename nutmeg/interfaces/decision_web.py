@@ -40,7 +40,8 @@ def _day_state(output_dir, date: str, kernel_state=None) -> dict[str, Any]:
 
 def create_decision_app(*, output_dir, kernel_state=None,
                         zucai_dir=None, observe_repo=None,
-                        data_dir=None, launchctl=None, git=None) -> FastAPI:
+                        data_dir=None, launchctl=None, git=None,
+                        web_password: str = "") -> FastAPI:
     app = FastAPI(title="Nutmeg 判读工作台")
     web_root = Path(__file__).parent / "web"
     templates = Jinja2Templates(directory=web_root / "templates")
@@ -67,6 +68,12 @@ def create_decision_app(*, output_dir, kernel_state=None,
                 return JSONResponse({"detail": f"跨站写请求被拒：Origin {origin} ≠ {host}"},
                                     status_code=403)
         return await call_next(request)
+
+    # 对校园网开放时的密码门（2026-10-30）：只有给了密码才装；本机访问不过门。见 decision_web_auth。
+    if web_password:
+        from nutmeg.interfaces.decision_web_auth import register_password_gate
+
+        register_password_gate(app, web_password)
 
     @app.get("/manifest.webmanifest")
     def manifest() -> JSONResponse:

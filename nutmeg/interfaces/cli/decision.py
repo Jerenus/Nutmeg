@@ -182,13 +182,18 @@ def _emit_result(result, *, format: str) -> None:
     _cli.typer.echo(str(result))
 
 
-def _warn_if_exposed(host: str) -> bool:
-    """非 loopback 绑定 → stderr 警告(单人无鉴权假设)。返回是否警告。"""
-    if host not in ("127.0.0.1", "localhost", "::1"):
-        import sys
-        print(f"⚠️ decision-web 绑定 {host}:无鉴权,仅限可信局域网。", file=sys.stderr)
-        return True
-    return False
+def _warn_if_exposed(host: str, password: str = "") -> bool:
+    """非 loopback 绑定 → 必须设 `NUTMEG_DECISION_WEB_PASSWORD`，否则拒绝启动（2026-10-30：
+    校园网上谁都连得到，页面能写账本）；设了就打一行提示。返回是否对外。"""
+    if host in ("127.0.0.1", "localhost", "::1"):
+        return False
+    import sys
+    if not password:
+        print(f"⛔ decision-web 绑定 {host} 需要 NUTMEG_DECISION_WEB_PASSWORD（未设，拒绝启动）。",
+              file=sys.stderr)
+        raise SystemExit(2)
+    print(f"decision-web 绑定 {host}：非本机访问需密码登录。", file=sys.stderr)
+    return True
 
 
 @_cli.app.command("decision-web")
@@ -208,7 +213,8 @@ def decision_web(
     from nutmeg.ontology.wiring import build_ontology_kernel
     from nutmeg.product.repository import ProductReadRepository
 
-    _warn_if_exposed(host)
+    web_password = get_settings().decision_web_password
+    _warn_if_exposed(host, web_password)
     # decision-read 写内核，工作台就读内核（不双写）。
     kernel = build_ontology_kernel(get_settings())
     kernel.initialize()
@@ -223,6 +229,7 @@ def decision_web(
         kernel_state=kernel_state,
         observe_repo=observe_repo,
         data_dir=Path(output_dir).parent,
+        web_password=web_password,
     )
     uvicorn.run(app, host=host, port=port)
 

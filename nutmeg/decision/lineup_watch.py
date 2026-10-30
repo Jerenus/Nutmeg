@@ -470,9 +470,9 @@ def watch(data_dir: Path, *, issue: str | None = None, now: datetime | None = No
     from nutmeg.notifications.notify import notify as _notify
 
     if base_url is None:
-        from nutmeg.config.settings import get_settings
+        from nutmeg.config.settings import decision_web_base_url
 
-        base_url = get_settings().decision_web_url
+        base_url = decision_web_base_url()
     data_dir = Path(data_dir)
     now = now or datetime.now(BJ)
     notify_fn = notify_fn or _notify

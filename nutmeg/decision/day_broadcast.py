@@ -93,9 +93,9 @@ def send_all(
 ) -> dict:
     """base_url 为 None 时读 settings（`NUTMEG_DECISION_WEB_URL`，默认空＝不加链接）。"""
     if base_url is None:
-        from nutmeg.config.settings import get_settings
+        from nutmeg.config.settings import decision_web_base_url
 
-        base_url = get_settings().decision_web_url
+        base_url = decision_web_base_url()
     sent_keys = read_sent(data_dir, date)
     path = day_dir(data_dir, date) / BROADCASTS
     path.parent.mkdir(parents=True, exist_ok=True)

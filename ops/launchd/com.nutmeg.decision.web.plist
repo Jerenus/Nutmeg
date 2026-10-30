@@ -8,7 +8,7 @@
 	<array>
 		<string>/bin/zsh</string>
 		<string>-lc</string>
-		<string>cd /Users/jz71/Projects/Nutmeg &amp;&amp; exec /opt/homebrew/bin/uv run nutmeg decision-web --port 8787</string>
+		<string>cd /Users/jz71/Projects/Nutmeg &amp;&amp; exec /opt/homebrew/bin/uv run nutmeg decision-web --host 0.0.0.0 --port 8787</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>

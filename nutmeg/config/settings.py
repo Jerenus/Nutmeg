@@ -42,7 +42,10 @@ class AppSettings(BaseSettings):
     telegram_allowed_chat_ids: str | None = None
     # 推送里的页面链接前缀（2026-10-29 产品形态 Task 9.1）：空＝不加链接、推送逐字照旧；
     # 配了才在末行给出 `{base}/issue/<期>` 之类的绝对地址。只管文本，不改服务绑定。
+    # `lan:<端口>`＝发送当下本机的局域网 IP（校园网动态地址池会变，见 decision_web_base_url）。
     decision_web_url: str = ''
+    # decision-web 绑非本机地址时必填（2026-10-30）：非本机访问先过密码页。见 decision_web_auth。
+    decision_web_password: str = Field(default='', repr=False)
 
     @field_validator('production_data_dir')
     @classmethod
@@ -67,5 +70,22 @@ class AppSettings(BaseSettings):
 @lru_cache(maxsize=1)
 def get_settings() -> AppSettings:
     return AppSettings()
+
+
+def decision_web_base_url(value: str | None = None) -> str:
+    """推送链接前缀。`lan:8787` → `http://<此刻本机局域网 IP>:8787`（取默认路由出口地址，UDP
+    connect 不发包）；取不到 IP 就返回空＝不带链接。其余值原样（去尾斜杠）。"""
+    value = get_settings().decision_web_url if value is None else value
+    if not value.startswith('lan:'):
+        return value.rstrip('/')
+    import socket
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(('10.255.255.255', 1))
+            ip = s.getsockname()[0]
+    except OSError:
+        return ''
+    return '' if ip.startswith('127.') else f'http://{ip}:{value[4:]}'
 
 

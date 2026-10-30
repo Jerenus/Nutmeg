@@ -99,10 +99,67 @@ def test_mobile_tabs_markup_present(tmp_path):
         assert label in html
 
 
-def test_non_loopback_host_warns(tmp_path):
+def test_non_loopback_host_needs_password(tmp_path):
+    """对网络开放（2026-10-30 校园网）：没设密码拒绝启动；设了放行；本机绑定不管。"""
+    import pytest
+
     from nutmeg.interfaces.cli import decision as dweb
-    assert dweb._warn_if_exposed("0.0.0.0") is True
+    with pytest.raises(SystemExit):
+        dweb._warn_if_exposed("0.0.0.0")
+    assert dweb._warn_if_exposed("0.0.0.0", "pw") is True
     assert dweb._warn_if_exposed("127.0.0.1") is False
+
+
+def _gated(tmp_path, client_host="10.209.1.2"):
+    app = create_decision_app(output_dir=tmp_path, kernel_state=_kernel_state,
+                              web_password="s3cret")
+    return TestClient(app, client=(client_host, 50000))
+
+
+def test_password_gate_for_other_machines(tmp_path):
+    """非本机：页面跳登录、接口 401；manifest/图标不设门；输对密码后 cookie 通行，next 只许站内。"""
+    c = _gated(tmp_path)
+    r = c.get("/day/2026-10-30", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/login?next=/day/2026-10-30"
+    assert c.get("/api/workbench?date=2026-10-30").status_code == 401
+    assert c.post("/action/note", json={"date": "d", "text": "x"}).status_code == 401
+    assert c.get("/manifest.webmanifest").status_code == 200
+    assert c.get("/static/decision/icons/icon-192.png").status_code == 200
+    bad = c.post("/login", data={"password": "nope", "next": "/day"}, follow_redirects=False)
+    assert bad.status_code == 200 and "密码不对" in bad.text
+    ok = c.post("/login", data={"password": "s3cret", "next": "//evil.example"},
+                follow_redirects=False)
+    assert ok.status_code == 303 and ok.headers["location"] == "/day"
+    assert "max-age=15552000" in ok.headers["set-cookie"].lower()
+    assert c.get("/api/workbench?date=2026-10-30").status_code == 200
+
+
+def test_password_gate_locks_after_five_misses_and_spares_localhost(tmp_path):
+    c = _gated(tmp_path)
+    for _ in range(5):
+        c.post("/login", data={"password": "nope"})
+    locked = c.post("/login", data={"password": "s3cret"}, follow_redirects=False)
+    assert locked.status_code == 200 and "15 分钟" in locked.text
+    assert _gated(tmp_path, "127.0.0.1").get("/api/workbench?date=2026-10-30").status_code == 200
+
+
+def test_push_link_base_follows_lan_ip(monkeypatch):
+    """`lan:<端口>` 每次发送时取本机当下 IP；其余原样去尾斜杠。"""
+    import socket
+
+    from nutmeg.config.settings import decision_web_base_url
+
+    class FakeSock:
+        def __init__(self, *a): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def connect(self, addr): pass
+        def getsockname(self): return ("10.209.80.225", 5555)
+
+    monkeypatch.setattr(socket, "socket", FakeSock)
+    assert decision_web_base_url("lan:8787") == "http://10.209.80.225:8787"
+    assert decision_web_base_url("https://x.example/") == "https://x.example"
+    assert decision_web_base_url("") == ""
 
 
 def test_manifest_and_icons_for_home_screen(tmp_path):

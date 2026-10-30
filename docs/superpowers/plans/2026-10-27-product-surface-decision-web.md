@@ -1525,6 +1525,16 @@ def bridge_ledger(data_dir: Path, issue: str) -> dict:
 - Jun 本人做：Mac 与 iPhone 装 Tailscale、同一账号登录；跑 `on`（首次按提示在后台开 HTTPS 证书）；iPhone Safari 打开 → 分享 → 添加到主屏幕。Mac 睡眠时手机打不开（launchd 作业本来也要求醒着）。
 - 测试：`test_manifest_and_icons_for_home_screen`、`test_cross_site_writes_are_refused`。
 
+#### Task 9.4：改走校园网 + 密码门（2026-10-30 Jun 定，Task 9.3 的 Tailscale 发布暂停）
+
+**为什么换**：iOS 同一时间只能开一个 VPN，Tailscale 与 Jun 日常用的学校 VPN 不能共存；手机连学校 VPN 本来就进校园网，能直接到 Mac（`10.209.80.225`，`dynapool.shanghai.nyu.edu` 动态地址池）。代价：校园网上任何人都能连到这台 Mac（防火墙关），所以必须有密码；校园网内段是明文 http。
+
+- `decision_web_auth.register_password_gate`：非本机（127.0.0.1 / ::1 之外）访问先过 `/login`，成功发 180 天 cookie（值＝密码的 HMAC，改密码即全部失效）；页面跳登录、接口 401；manifest 与图标不设门；同 IP 连错 5 次锁 15 分钟；`next` 只许站内路径。
+- CLI：绑非本机地址而 `NUTMEG_DECISION_WEB_PASSWORD` 未设 → 拒绝启动（exit 2），fail-closed。
+- launchd `decision.web`：`--host 0.0.0.0 --port 8787`。
+- 推送链接：`NUTMEG_DECISION_WEB_URL=lan:8787` → `settings.decision_web_base_url()` 每次发送取默认路由出口 IP，拼 `http://<IP>:8787`；IP 变了推送照样对，主屏幕图标需重加。
+- 测试：`test_non_loopback_host_needs_password`、`test_password_gate_for_other_machines`、`test_password_gate_locks_after_five_misses_and_spares_localhost`、`test_push_link_base_follows_lan_ip`。
+
 ---
 
 ### 追加 Task 7.3：账房曲线加「足彩换成机器初稿」线（2026-10-29）
