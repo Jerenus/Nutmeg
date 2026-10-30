@@ -59,7 +59,7 @@ def test_month_report_marks_tripped_brake(tmp_path: Path, monkeypatch) -> None:
         "jczq-20261002": {"net": -8200, "stake": 8300}}}), encoding="utf-8")  # 止损线 8000
     monkeypatch.setattr("nutmeg.decision.account.experiment_board", lambda _d: {})
     report = month_report(data, "2026-10")
-    assert report["tripped"] is True and "⛔已触发" in render_month(report)
+    assert report["tripped"] is True and "⛔实质已越线" in render_month(report)
 
 
 def test_deviation_ledger_groups_purchased_slips_by_reason_and_joins_payouts(tmp_path: Path,
@@ -274,13 +274,15 @@ def test_pending_tickets_are_charged_against_the_effective_room(tmp_path: Path,
     assert [r["slip_id"] for r in pend["slips"]] == ["26150-T1", "26150-T2", "26150-T3"]
     monkeypatch.setattr("nutmeg.decision.account.experiment_board", lambda _d: {})
     report = month_report(data, "2026-10")
-    assert report["net"] == -7922.0 and report["tripped"] is False
-    assert report["effective_net"] == -8690.0 and report["effective_room"] == -690.0
-    assert report["effective_tripped"] is True
+    # 2026-10-30 Task 10.1：tripped/room 只有一种口径＝实质
+    # （与预审、各页同一个 bankroll.with_pending）
+    assert report["net"] == -7922.0 and report["effective_net"] == -8690.0
+    assert report["room"] == -690.0 and report["tripped"] is True
+    assert "effective_room" not in report and "effective_tripped" not in report
     text = render_month(report)
-    assert "止损线 −8,000｜余 ¥78" in text
-    assert "**实质余量（含待结票）**：待结 3 张 ¥768 按全损计" in text
-    assert "→ -8,690｜⛔越线 ¥690" in text
+    assert "余 ¥78" not in text                       # 已结账口径的余量不再出现
+    assert "止损线 −8,000｜⛔实质已越线 ¥690，空仓到月底" in text
+    assert "**实质余量（含待结票）**：待结 3 张 ¥768 按全损计" in text and "→ 实质 -8,690" in text
 
 
 def test_slips_older_than_the_ticket_ledger_are_not_pending(tmp_path: Path) -> None:
@@ -314,5 +316,6 @@ def test_no_pending_tickets_says_so(tmp_path: Path, monkeypatch) -> None:
     (data / "betslips.jsonl").write_text("", encoding="utf-8")
     monkeypatch.setattr("nutmeg.decision.account.experiment_board", lambda _d: {})
     report = month_report(data, "2026-10")
-    assert report["pending"]["n"] == 0 and report["effective_room"] == report["stop_loss"] + 180
+    assert report["pending"]["n"] == 0 and report["room"] == report["stop_loss"] + 180
     assert "**实质余量**：无待结票，同上" in render_month(report)
+    assert "｜实质余 ¥8,180" in render_month(report)

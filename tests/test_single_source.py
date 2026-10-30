@@ -31,6 +31,8 @@ HOMES = {
     # 2026-10-13 补三条：ARCHITECTURE §1 列为共享、此前没守
     "board_rows": ("nutmeg/decision/board_rows.py", "jczq_rows"),
     "sporttery_board": ("nutmeg/data/sporttery_board.py", "flatten / selling_rows"),
+    # 2026-10-30 Task 10.1：止损「实质余量」在预审、账房、当日报告各算一份，报错 ≥6 次
+    "effective_room": ("nutmeg/decision/bankroll.py", "with_pending / precheck.month_brake"),
 }
 
 # 函数名规则：在唯一实现之外定义这些名字＝又写了一份
@@ -44,6 +46,7 @@ FUNCTION_NAMES = {
     "board_rows": {"jczq_rows", "_jczq_rows"},
     "sporttery_board": {"selling_rows", "_selling_rows", "flatten_board", "_flatten_board",
                         "_flatten_sporttery", "flatten_sporttery"},
+    "effective_room": {"with_pending", "_with_pending", "effective_room", "_effective_room"},
 }
 
 # 确有不同契约的例外：(规则, 文件) → 理由
@@ -89,6 +92,22 @@ def _docstring_nodes(tree: ast.AST) -> set[int]:
     return ids
 
 
+def _pending_stake(expr: ast.AST) -> bool:
+    """`… - pending["stake"]`、`… - float(pend.get("stake") or 0)` 这类：减的是待结票的注金。"""
+    for node in ast.walk(expr):
+        base = None
+        if isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant) \
+                and node.slice.value == "stake":
+            base = node.value
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) \
+                and node.func.attr == "get" and node.args \
+                and isinstance(node.args[0], ast.Constant) and node.args[0].value == "stake":
+            base = node.func.value
+        if isinstance(base, ast.Name) and "pend" in base.id:
+            return True
+    return False
+
+
 def _hits(path: Path, tree: ast.AST) -> list[tuple[str, int, str]]:
     hits: list[tuple[str, int, str]] = []
     docstrings = _docstring_nodes(tree)
@@ -97,6 +116,9 @@ def _hits(path: Path, tree: ast.AST) -> list[tuple[str, int, str]]:
             for rule, names in FUNCTION_NAMES.items():
                 if node.name in names:
                     hits.append((rule, node.lineno, f"def {node.name}"))
+        elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Sub) and _pending_stake(
+                node.right):
+            hits.append(("effective_room", node.lineno, "净值减待结注金"))
         elif isinstance(node, ast.Call):
             func = node.func
             name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")

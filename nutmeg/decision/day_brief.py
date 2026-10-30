@@ -289,12 +289,15 @@ def _factors(root: Path, rsi: dict | None) -> list[dict]:
 
 
 def _account(data_dir: Path, now: datetime) -> dict:
-    """账房一行（宪法 §4 月度止损）：本月净 vs 空仓、止损余量；记分牌缺失 → 缺席。"""
+    """账房一行（宪法 §4 月度止损）：本月净、实质余量（含待结票，与预审、各页同一个
+    `precheck.month_brake`，2026-10-30 Task 10.1）；记分牌缺失 → 缺席。"""
     try:
-        from nutmeg.decision.bankroll import brake_state, status_line
+        from nutmeg.decision.bankroll import status_line
+        from nutmeg.decision.precheck import month_brake
 
-        state = brake_state(data_dir, now.date())
-        return {"line": status_line(state), "net": state["net"], "tripped": state["tripped"],
+        state = month_brake(data_dir, now.date().isoformat())
+        return {"line": status_line(state), "net": state["net"],
+                "effective_net": state["effective_net"], "tripped": state["tripped"],
                 "month": state["month"]}
     except Exception as exc:  # noqa: BLE001
         return {"line": f"账房缺席：{exc!r}"[:120], "net": None, "tripped": None, "month": None}

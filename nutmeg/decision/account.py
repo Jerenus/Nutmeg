@@ -13,11 +13,11 @@ from datetime import date as _date
 from pathlib import Path
 
 from nutmeg.decision.bankroll import (
-    MONTHLY_STOP_LOSS_YUAN,
     STOP_LOSS_HISTORY,
     month_net,
     stop_loss_on,
     ticket_day,
+    with_pending,
 )
 
 EXP_PREFIX = "EXP:"
@@ -360,7 +360,7 @@ def daily_curve(data_dir: Path, month: str, *, today: _date | None = None) -> di
         year, mon = int(month[:4]), int(month[5:7])
         day = (today.isoformat() if month == this_month
                else f"{month}-{calendar.monthrange(year, mon)[1]:02d}")
-        effective = {"day": day, "net": round(net["net"] - pending["stake"], 2)}
+        effective = {"day": day, "net": with_pending(net, pending)["effective_net"]}
     return {"points": points, "moves": moves, "effective": effective}
 
 
@@ -381,7 +381,7 @@ def month_report(data_dir: Path, month: str, *, with_draft: bool = True,
     except Exception as exc:  # noqa: BLE001 —— 两张账缺席要写明，不能读成「0 张」
         deviations = vetoed = {"_error": repr(exc)[:200]}
         pending = {"n": 0, "stake": 0.0, "slips": [], "_error": repr(exc)[:200]}
-    effective_net = round(net["net"] - pending["stake"], 2)
+    state = with_pending(net, pending)
     board = experiment_board(data_dir)
     verdicts: dict[str, int] = {}
     for exp, row in board.items():
@@ -393,12 +393,9 @@ def month_report(data_dir: Path, month: str, *, with_draft: bool = True,
         "month": month, "net": net["net"], "stake": net["stake"],
         "entries": len(net["entries"]), "unknown": net["unknown"],
         "by_channel": {k: round(v, 2) for k, v in by_channel.items()},
-        "stop_loss": MONTHLY_STOP_LOSS_YUAN,
-        "tripped": net["net"] <= -MONTHLY_STOP_LOSS_YUAN,
-        # 实质余量（2026-10-26）：待结票按注金全损计；报余量看这一组，不看上面那组
-        "pending": pending, "effective_net": effective_net,
-        "effective_room": round(MONTHLY_STOP_LOSS_YUAN + effective_net, 2),
-        "effective_tripped": effective_net <= -MONTHLY_STOP_LOSS_YUAN,
+        # 止损只有实质一种口径（2026-10-30 Task 10.1）：待结票按注金全损计，与预审、各页同一推导
+        "stop_loss": state["stop_loss"], "tripped": state["tripped"], "room": state["room"],
+        "pending": pending, "effective_net": state["effective_net"],
         "exploration": spend, "deviations": deviations, "vetoed": vetoed, "experiments": board,
         "verdicts": verdicts,
     }
@@ -411,8 +408,8 @@ def month_report(data_dir: Path, month: str, *, with_draft: bool = True,
 
 def render_month(report: dict) -> str:
     ch = report["by_channel"]
-    brake = ("｜⛔已触发，空仓到月底" if report["tripped"]
-             else f"｜余 ¥{report['stop_loss'] + report['net']:,.0f}")
+    brake = (f"｜⛔实质已越线 ¥{-report['room']:,.0f}，空仓到月底" if report["tripped"]
+             else f"｜实质余 ¥{report['room']:,.0f}")
     lines = [f"# 账房 · {report['month']}", "",
              f"**净值 vs 空仓**：{report['net']:+,.0f}（投入 {report['stake']:,.0f}，"
              f"{report['entries']} 条入账；竞彩 {ch['jczq']:+,.0f} / 足彩 {ch['zucai']:+,.0f}）"
@@ -422,10 +419,8 @@ def render_month(report: dict) -> str:
         lines.append(f"**实质余量（含待结票）**：登记簿读不出，待结票未知——{pend['_error']}")
     elif pend["n"]:
         ids = "、".join(str(r["slip_id"]) for r in pend["slips"][:6])
-        tail = (f"⛔越线 ¥{-report['effective_room']:,.0f}" if report["effective_tripped"]
-                else f"余 ¥{report['effective_room']:,.0f}")
         lines.append(f"**实质余量（含待结票）**：待结 {pend['n']} 张 ¥{pend['stake']:,.0f} "
-                     f"按全损计（{ids}）→ {report['effective_net']:+,.0f}｜{tail}")
+                     f"按全损计（{ids}）→ 实质 {report['effective_net']:+,.0f}")
     else:
         lines.append("**实质余量**：无待结票，同上")
     if report["unknown"]:

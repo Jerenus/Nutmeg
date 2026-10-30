@@ -117,7 +117,7 @@
       return [wrap];
     }
     add(wrap, kpi("净值 vs 空仓", signed(r.net), tone(r.net),
-      "空仓 ＝ 0 · " + plain(r.entries) + " 条入账" + (r.tripped ? " · 已越止损线 " + negLine(r.stop_loss) : "")));
+      "空仓 ＝ 0 · " + plain(r.entries) + " 条入账" + (r.tripped ? " · 实质已越止损线 " + negLine(r.stop_loss) : "")));
 
     var pay = v.payout;
     var paySub;
@@ -140,11 +140,11 @@
     add(wrap, kpi("竞彩 " + (v.jczq_days || []).length + " 个出票日", signed(ch.jczq), tone(ch.jczq),
       "只列有投入的日子"));
 
-    var room = el("p", "lg-room" + (r.effective_tripped ? " veto" : ""));
+    var room = el("p", "lg-room" + (r.tripped ? " veto" : ""));
     var pend = r.pending || { n: 0, stake: 0, slips: [] };
     var line = " · 现行止损线 " + negLine(r.stop_loss);
-    var tail = isNum(r.effective_room)
-      ? (r.effective_room < 0 ? "越线 ¥" + grp(r.effective_room) : "余 ¥" + grp(r.effective_room)) : "";
+    var tail = isNum(r.room)
+      ? (r.room < 0 ? "越线 ¥" + grp(r.room) : "余 ¥" + grp(r.room)) : "";
     if (pend._error) {
       room.textContent = "实质余量：登记簿读不出，待结票未知——" + pend._error;
       room.className = "lg-room veto";

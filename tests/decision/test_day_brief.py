@@ -181,6 +181,17 @@ def test_compile_brief_builds_the_zucai_draft_reviews_slips_and_prints_the_ledge
     assert (data / "zucai" / "26132-draft.json").stat().st_mtime == before
 
 
+def test_brief_ledger_line_counts_pending_tickets(tmp_path: Path):
+    """2026-10-30 Task 10.1：当日报告的账房行与预审、各页同一个实质口径——26152 §0 报 −8,690
+    实 −9,170、26153 报 −8,741 实 −9,429，都是待结票没进这一行。"""
+    data, root = _fixture(tmp_path)
+    _board(data)                                  # 内含已购、未结的 J1 ¥2
+    brief = compile_brief(data_dir=data, date="2026-09-23", root=root, now=NOW)
+    assert brief["account"]["net"] == -120
+    assert brief["account"]["effective_net"] == -122
+    assert "待结 1 张 ¥2 按全损计 → 实质 -122" in brief["account"]["line"]
+
+
 def test_compile_brief_degrades_block_by_block(tmp_path: Path):
     brief = compile_brief(data_dir=tmp_path / "none", date="2026-09-23", root=tmp_path, now=NOW)
     assert brief["jczq"]["matches"] == [] and brief["zucai"]["issue"] is None

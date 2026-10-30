@@ -1563,6 +1563,7 @@ def bridge_ledger(data_dir: Path, issue: str) -> dict:
 
 **建议顺序**（先做复发最多、最不依赖应答员的）
 1. Task 10.1 各页统一「实质余量」（含待结票）——同一个数只算一处（`account.pending_ledger`），今天/期页/审票/账房都读它。
+   **已做（2026-10-30）**：推导收进 `bankroll.with_pending`（`brake_state`、账房月报、账房曲线实质点都走它），带登记簿的完整状态统一 `precheck.month_brake`；当日报告账房行与判决页原先不含待结票，已改；账房月报 `tripped`/`room` 只剩实质口径（删 `effective_room`/`effective_tripped`），`account month` 首行不再打已结口径的「余」；单一来源守卫加 `effective_room` 规则（AST：减待结票 stake 的表达式只许在 bankroll.py）。生产数据核对：预审、各页、月报、当日报告、判决页同为实质 −9,685（待结 3 张 ¥944）。
 2. Task 10.2 纠正对象 + `/corrections` 纠正账 + 格子「修 HH:MM」与「自你上次看过改了 N 处」；旧记录（复盘页、记分牌备注、改判账、证据文档、记忆）做一次回填。
 3. Task 10.3 待签收件箱 `/inbox`（今天页与手机底栏带角标）；CLI `nutmeg inbox propose` 供会话起草。
 4. Task 10.4 应答员 + 行内追问（期页、竞彩板、账房行），快捷问法：要防平吗／钱往哪边／和哪场死法像／要补跑吗／只能单选呢。

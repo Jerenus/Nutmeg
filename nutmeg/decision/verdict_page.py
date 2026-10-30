@@ -55,10 +55,10 @@ def _experiments(invoke) -> list[str]:
 
 
 def _brake_line(data_dir: Path, now: datetime) -> str:
-    try:
-        from nutmeg.decision.bankroll import brake_state, status_line
+    try:   # 实质余量（含待结票），与预审、各页同一个 month_brake（2026-10-30 Task 10.1）
+        from nutmeg.decision.precheck import brake_line
 
-        return status_line(brake_state(data_dir, now.date()))
+        return brake_line(data_dir, now.date().isoformat())
     except Exception as exc:  # noqa: BLE001
         return f"账房缺席：{exc!r}"[:120]
 

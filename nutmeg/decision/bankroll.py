@@ -70,18 +70,25 @@ def month_net(data_dir: Path, month: str, *, scoreboard_path: Path | None = None
             "entries": entries, "unknown": unknown}
 
 
+def with_pending(summary: dict, pending: dict | None, *,
+                 stop_loss: int = MONTHLY_STOP_LOSS_YUAN) -> dict:
+    """「实质余量」的唯一推导（2026-10-30 Task 10.1）：已结净值减待结实购票注金（按全损计）。
+    `tripped` / `room` 只有这一种口径——预审、各页、当日报告、账房月报都从这里出。"""
+    pend = pending or {"n": 0, "stake": 0.0}
+    effective = round(summary["net"] - float(pend.get("stake") or 0), 2)
+    return {**summary, "stop_loss": stop_loss, "tripped": effective <= -stop_loss,
+            "pending": pend, "effective_net": effective,
+            "room": round(stop_loss + effective, 2)}
+
+
 def brake_state(data_dir: Path, today: _date, *, stop_loss: int = MONTHLY_STOP_LOSS_YUAN,
                 scoreboard_path: Path | None = None, pending: dict | None = None) -> dict:
     """`pending`＝账房 `pending_ledger` 的 {n, stake}：待结实购票按注金全损计（2026-10-28；
-    26149/26150 两期预审报「余 ¥766」实 ¥78，都是只读了已结账）。调用方给，本模块不读登记簿。"""
+    26149/26150 两期预审报「余 ¥766」实 ¥78，都是只读了已结账）。调用方给，本模块不读登记簿；
+    要带登记簿的完整状态用 `precheck.month_brake`。"""
     month = today.strftime("%Y-%m")
     summary = month_net(data_dir, month, scoreboard_path=scoreboard_path)
-    pend = pending or {"n": 0, "stake": 0.0}
-    effective = round(summary["net"] - float(pend.get("stake") or 0), 2)
-    tripped = effective <= -stop_loss
-    return {**summary, "stop_loss": stop_loss, "tripped": tripped,
-            "pending": pend, "effective_net": effective,
-            "room": round(stop_loss + effective, 2)}
+    return with_pending(summary, pending, stop_loss=stop_loss)
 
 
 def status_line(state: dict) -> str:
