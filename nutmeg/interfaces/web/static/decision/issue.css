@@ -319,3 +319,11 @@ body:has(> .issue){background:#F3F4F1}
   .issue .s5-confirm-v{font-size:18px}
   .issue .s5-receipt{padding:12px}
 }
+
+/* 纠正（第 10 阶段 Task 10.2）：场行「修 HH:MM」小标 + 表上方「自你上次看过改了 N 处」 */
+.issue .fix-chip{display:inline-block; margin-left:6px; padding:1px 6px; border:1px solid var(--warn); border-radius:3px;
+  background:var(--warn-bg); color:var(--warn); font-size:11px; white-space:nowrap; cursor:help; vertical-align:middle}
+.issue .seen{margin:0 0 8px; padding:8px 12px; border:1px solid var(--warn); border-radius:6px; background:var(--warn-bg);
+  color:var(--warn); font-weight:700; overflow-wrap:anywhere}
+.issue .seen[hidden]{display:none}
+.issue .seen a{color:var(--link)}

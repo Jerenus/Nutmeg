@@ -1,0 +1,14 @@
+{% extends "decision/layout.html" %}
+{% block body %}
+<link rel="stylesheet" href="/static/decision/corrections.css?v={{ asset_v }}">
+<link rel="stylesheet" href="/static/decision/shell.css?v={{ asset_v }}">
+{% set nav_active = "corrections" %}{% include "decision/_nav.html" %}
+<main id="corrections" class="cx">
+  <header class="cx-head">
+    <h1>纠正账</h1>
+    <p class="cx-lede">任何对象上的数或判断被改，都记一笔：旧 → 新、谁发现、证据、回写到哪。只追加，不改原件。</p>
+  </header>
+  <p id="errors" class="errors" hidden></p>
+</main>
+<script src="/static/decision/corrections.js?v={{ asset_v }}"></script>
+{% endblock %}

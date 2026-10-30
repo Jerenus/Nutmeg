@@ -4,6 +4,8 @@
 // §3 桥（第 3 阶段）：五条自检 / 差异格 / 理由读数来自 /api/bridge/{期}/preview，定稿走 /action/bridge。
 // 500 票面（第 4 阶段）：先照抄录卡在 500 app 下单（/api/issue/{期}/slip500，只算不写），
 // 再「我已在 500 下单」登记实票（/action/issue/{期}/register，票号 T<n> 服务端分配），每张一份回执。
+// 纠正（第 10 阶段 Task 10.2）：/api/issue 带 corrections（新的在前）；场行标「修 HH:MM」，表上方
+// 「自你上次看过改了 N 处」——上次看过的时刻只在本机 localStorage（nm-seen-issue-<期>），读写失败就不显示。
 // 研究文本是不可信输入：全部 textContent，不用 innerHTML。
 (() => {
   "use strict";
@@ -87,6 +89,35 @@
     } else {
       render();
     }
+    renderSeen();
+  }
+
+  // ---- 纠正：场行「修 HH:MM」+「自你上次看过改了 N 处」 ------------------
+  function latestFix(no) {               // corrections 已按 at 新的在前：第一条就是最近一次
+    const obj = `issue:${issue}/m${no}`;
+    return (state.data.corrections || []).find((c) => c.obj === obj || String(c.obj).startsWith(`${obj}/`));
+  }
+
+  function renderSeen() {
+    const host = document.getElementById("seen");
+    if (!host) return;
+    const key = `nm-seen-issue-${issue}`;
+    let last = null;
+    try {
+      last = window.localStorage.getItem(key);
+      window.localStorage.setItem(key, new Date().toISOString());
+    } catch (exc) {
+      return;                              // 存储不可用：不显示
+    }
+    const since = last ? Date.parse(last) : NaN;
+    const n = Number.isNaN(since) ? 0
+      : (state.data.corrections || []).filter((c) => Date.parse(c.at) > since).length;
+    host.replaceChildren();
+    host.hidden = !n;
+    if (!n) return;
+    const a = el("a", null, "看纠正账");
+    a.href = `/corrections?obj=${encodeURIComponent(`issue:${issue}`)}`;
+    host.append(`自你上次看过改了 ${n} 处 · `, a);
   }
 
   function showErrors(list) {
@@ -193,6 +224,15 @@
       name.setAttribute("aria-expanded", String(open));
       name.dataset.focus = `name-${m.no}`;
       nameCell.append(name);
+      const fix = latestFix(m.no);
+      if (fix) {
+        // 当天的写时刻，更早的写日期（回填种子只有日期，时刻是补的，不能当真）
+        const at = String(fix.at || "");
+        const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+        const chip = el("span", "fix-chip mono", `修 ${at.slice(0, 10) === today ? at.slice(11, 16) : at.slice(5, 10)}`);
+        chip.title = `${fix.old} → ${fix.new}`;
+        nameCell.append(chip);
+      }
       row.append(nameCell);
 
       const tierCell = cell("tier-cell");

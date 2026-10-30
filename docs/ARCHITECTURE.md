@@ -433,6 +433,7 @@ flowchart TB
 | 月度止损 | 本月净值 ≤ −¥3,000 → 空仓到月底（触发后预审否决、退出码 1；登记不受限，登记是事实） | 宪法 §4，`bankroll.py` |
 | 探索预算 | ≤¥30/日、只给预登记实验，票面 `--note "EXP:<号>"` | 宪法 §4，`account.py` |
 | 偏离登记 | 票面与机器初稿有差异时带理由（自判事实 / 价格直觉 / 资金分配 / 结构偏好 / 其他）+ 一句可证伪预测 | RULEBOOK「九」，`betslip_diagnosis.vs_draft` |
+| 纠正账（decision-web，2026-10-30） | `/corrections`：`GET /api/corrections` 给行、复发堆、草稿数；页面只许把草稿改成「已确认」或「不改·记一笔」，「已回写」由 CLI 在真回写后标；导航「纠正」带草稿角标；期页场行「修 HH:MM / MM-DD」与「自你上次看过改了 N 处」读 `/api/issue/{期}` 的 `corrections` | `corrections.py`、`decision_web_corrections.py` |
 | 期页（decision-web，2026-10-27） | `/issue/{期}` 表即票：`GET /api/issue/{期}` 组装旁车 + 市场 + 止损块，`POST /api/precheck` 点格即审。P / 注数 / V 码 / 止损 / 刹车 / 死法清单都由 precheck 在服务端算（与 `betslip preview` 同一份），页面从不自己推导；六条件 k/n 只来自分析包旁车 `<期>-packet.json` | `decision_web_issue.py`、`precheck.py`、`packet_doc.py` |
 | 结算口径 | 90 分钟；竞彩 `jc-results.json`（内核结算 `decision-settle` 同源，当日未封存才回落 okooo），足彩官方 gameNo=90 | RUNBOOK A7 / B10，`match_results.py` |
 
@@ -580,6 +581,7 @@ flowchart TB
 | `zucai/` | `<期>-issue.json` `-store-ids.json` `-legs-base.json` `-reads.json` `-judgment-v1.json` `-research-m<N>.json` `-rubric-m<N>.json` `-draft.json/.md` `-legs-draft-<渠道>.json` `-zgzcw.json`（人群层市场底座，快照追加）`-clues.jsonl`（人群线索，只追加）；`official-results.json` `official-prizes.json` `prize-model.json` |
 | `daily/<日>/` | `brief.json/md` `session.md` `decisions.json` `timeline.json` `broadcasts.jsonl` `previews.jsonl` `retro.md` `results-90.json` |
 | `betslips.jsonl` | 登记簿（实票 / 试玩、诊断、偏离理由、预测）；2026-10-08 起不再镜像进内核票据表 |
+| `corrections.jsonl` | **纠正账**（2026-10-30）：任何数 / 判断被改记一条（旧→新、类型、谁发现、证据、回写去处、状态），只追加事件；`nutmeg correction add/list/status/backfill` 与 `/corrections` 页读写。只记账与路由，真回写仍走 `research override` / 前提纠正 / 记分牌 |
 | `notifications/ledger.jsonl` | Telegram 发送账：一次尝试一行，按 kind + key + fingerprint 去重，失败下次同身份重试；2026-10-08 切换时从旧 `state/state.db` 导入 162 条已投递记录，旧库与 `notifications/artifacts/` 随后删除 |
 | `scoreboard.json` | **记分牌单一事实源**（tickets、balance_ledger、adjudications、链） |
 | `ontology/ontology.db` | 本体内核 |

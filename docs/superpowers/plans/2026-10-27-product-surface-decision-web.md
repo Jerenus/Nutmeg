@@ -1565,6 +1565,7 @@ def bridge_ledger(data_dir: Path, issue: str) -> dict:
 1. Task 10.1 各页统一「实质余量」（含待结票）——同一个数只算一处（`account.pending_ledger`），今天/期页/审票/账房都读它。
    **已做（2026-10-30）**：推导收进 `bankroll.with_pending`（`brake_state`、账房月报、账房曲线实质点都走它），带登记簿的完整状态统一 `precheck.month_brake`；当日报告账房行与判决页原先不含待结票，已改；账房月报 `tripped`/`room` 只剩实质口径（删 `effective_room`/`effective_tripped`），`account month` 首行不再打已结口径的「余」；单一来源守卫加 `effective_room` 规则（AST：减待结票 stake 的表达式只许在 bankroll.py）。生产数据核对：预审、各页、月报、当日报告、判决页同为实质 −9,685（待结 3 张 ¥944）。
 2. Task 10.2 纠正对象 + `/corrections` 纠正账 + 格子「修 HH:MM」与「自你上次看过改了 N 处」；旧记录（复盘页、记分牌备注、改判账、证据文档、记忆）做一次回填。
+   **已做（2026-10-30）**：`corrections.py`（只追加事件账 `corrections.jsonl`、按 id 折叠、复发堆 `pile`）、CLI `nutmeg correction add/list/status/backfill`、`/corrections` 页（类型筛选、复发堆、草稿可「确认 / 不改·记一笔」）、导航草稿角标、期页场行「修」标记（当天写时刻、更早写日期）与「自你上次看过改了 N 处」（localStorage）。回填：会话种子 34 条（`evidence/2026-10-30-corrections-seed.json`）+ 主循环改判 31 条；研究员 `premise_corrections` 约 1,500 条是例行前提卡修正，不逐条进账。RUNBOOK 加「纠正一律进账」。
 3. Task 10.3 待签收件箱 `/inbox`（今天页与手机底栏带角标）；CLI `nutmeg inbox propose` 供会话起草。
 4. Task 10.4 应答员 + 行内追问（期页、竞彩板、账房行），快捷问法：要防平吗／钱往哪边／和哪场死法像／要补跑吗／只能单选呢。
 5. Task 10.5 票据收件（截图识别走应答员的看图能力）。

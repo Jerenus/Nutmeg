@@ -33,3 +33,5 @@
   .nm-nav .nm-links a{display:inline-flex; align-items:center; gap:4px; min-height:44px; padding:0 12px}
 }
 .nm-nav .nm-brake.veto{color:var(--nm-veto); background:var(--nm-veto-bg); border-color:var(--nm-veto); font-weight:700}
+.nm-nav .nm-badge{display:inline-block; min-width:18px; padding:0 5px; border-radius:9px; background:var(--nm-veto);
+  color:var(--nm-paper); font-family:var(--nm-mono); font-size:11px; line-height:18px; text-align:center; font-weight:700}

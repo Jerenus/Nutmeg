@@ -126,7 +126,26 @@ def issue_payload(data_dir: Path, issue: str, *, today: _date) -> dict:
             "draft_candidates": (draft or {}).get("candidates") or [],
             "brake": {**state, "line": brake_line(data_dir, today.isoformat()),
                       "issue": issue_brake(data_dir, issue)},
-            "bridge": bridge_record(data_dir, issue), "errors": errors}
+            "bridge": bridge_record(data_dir, issue),
+            "corrections": _issue_corrections(data_dir, issue, errors), "errors": errors}
+
+
+_CORRECTION_KEYS = ("id", "at", "obj", "old", "new", "kind", "status")
+
+
+def _issue_corrections(data_dir: Path, issue: str, errors: list[str]) -> list[dict]:
+    """本期的纠正（`issue:<期>` 及其下属 + `slip:<期>-…` 的票），新的在前。
+    期页据此标「修 HH:MM」。"""
+    from nutmeg.decision.corrections import for_obj, load
+
+    try:
+        rows = load(data_dir)
+    except Exception as exc:  # noqa: BLE001 —— 纠正账坏了不该拖垮期页
+        errors.append(f"纠正账读取失败：{exc!r}"[:200])
+        return []
+    ids = {r["id"] for r in for_obj(rows, f"issue:{issue}")}
+    return [{k: r.get(k) for k in _CORRECTION_KEYS} for r in rows
+            if r["id"] in ids or str(r.get("obj") or "").startswith(f"slip:{issue}-")]
 
 
 def bridge_view(data_dir: Path, issue: str, payload: dict, *, slip_id: str = "preview",

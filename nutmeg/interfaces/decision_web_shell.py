@@ -62,7 +62,8 @@ def _err(errors: list[str], what: str, exc: Exception) -> None:
 
 def shell_state(data_dir: Path | str, now: datetime) -> dict:
     """{today, issues:[{issue, deadline, close}], brake:{line, chip, net, effective_net, stop_loss,
-    room, tripped, pending}|None, issue_brake:{期: issue_brake|None}, errors}。每块各自 try。"""
+    room, tripped, pending}|None, issue_brake:{期: issue_brake|None}, drafts:纠正草稿数|None,
+    errors}。每块各自 try。"""
     from nutmeg.decision.bankroll import issue_brake, status_line
     from nutmeg.decision.bj_time import parse_bj
     from nutmeg.decision.lineup_watch import active_issues, issue_doc
@@ -95,7 +96,17 @@ def shell_state(data_dir: Path | str, now: datetime) -> dict:
         except Exception as exc:  # noqa: BLE001
             _err(errors, f"期 {item['issue']} 刹车档读取失败", exc)
     return {"today": today, "issues": issues, "brake": brake, "issue_brake": issue_brakes,
-            "errors": errors}
+            "drafts": _drafts(data_dir), "errors": errors}
+
+
+def _drafts(data_dir: Path) -> int | None:
+    """导航「纠正」角标：纠正账草稿数（只读 corrections.jsonl）；读不出 → None，不出角标。"""
+    from nutmeg.decision.corrections import draft_count
+
+    try:
+        return draft_count(data_dir)
+    except Exception:  # noqa: BLE001 —— 角标是提示，读不出就不显示，不进 errors
+        return None
 
 
 def _shape(shape, keys: tuple[str, ...]) -> dict | None:
@@ -198,7 +209,7 @@ def register_shell(app: FastAPI, templates) -> None:
             return shell_state(app.state.data_dir, app_now(app))
         except Exception as exc:  # noqa: BLE001 —— 导航坏了也不能让页面 500
             return {"today": None, "issues": [], "brake": None, "issue_brake": {},
-                    "errors": [f"外壳读取失败：{exc!r}"[:200]]}
+                    "drafts": None, "errors": [f"外壳读取失败：{exc!r}"[:200]]}
 
     templates.env.globals["shell"] = _shell
 
