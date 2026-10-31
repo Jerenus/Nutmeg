@@ -196,6 +196,40 @@ def render_matrix(matrix: dict) -> str:
     return "\n".join(lines)
 
 
+def _jczq_twins(data_dir: Path, issue: str, issue_doc: dict) -> dict[int, Path]:
+    """竞彩重叠场没有 m 文件：按身份脊柱 `<期>-channel-map(.auto).json`（match_id → 场号）
+    到板面日 `jczq/daily/<日>/reads.json`（match_id → 竞彩编号）找 `research-<编号>.json`。
+    只走别名表，不按队名或 fair 值反查（RULEBOOK g-scope）。"""
+    import datetime as _dt
+    zdir = data_dir / "zucai"
+    cmap = (read_json(zdir / f"{issue}-channel-map.json", None)
+            or read_json(zdir / f"{issue}-channel-map.auto.json", None) or {})
+    by_id = {str(k): int(v) for k, v in cmap.items() if str(v).isdigit() or isinstance(v, int)}
+    if not by_id:
+        return {}
+    days: set[str] = set()
+    for m in issue_doc.get("matches") or []:
+        d = str(m.get("match_date") or "")[:10]
+        if len(d) != 10:
+            continue
+        days.add(d)
+        try:
+            days.add((_dt.date.fromisoformat(d) - _dt.timedelta(days=1)).isoformat())
+        except ValueError:
+            pass
+    out: dict[int, Path] = {}
+    for day in sorted(days):
+        ddir = data_dir / "jczq" / "daily" / day
+        reads = read_json(ddir / "reads.json", None)
+        if not isinstance(reads, list):
+            continue
+        for r in reads:
+            mid, code = str(r.get("match_id") or ""), str(r.get("code") or "")
+            if mid in by_id and code and (ddir / f"research-{code}.json").exists():
+                out.setdefault(by_id[mid], ddir / f"research-{code}.json")
+    return out
+
+
 def issue_matrices(data_dir: Path, issue: str) -> list[dict]:
     """一期 14 场：legs-base 给 fair 与名字，研究原件 `<期>-research-m<N>.json` 给证据。"""
     zdir = Path(data_dir) / "zucai"
@@ -205,9 +239,12 @@ def issue_matrices(data_dir: Path, issue: str) -> list[dict]:
     names = {str(m["match_no"]): f"{m.get('home_team')}-{m.get('away_team')}"
              for m in issue_doc.get("matches") or []}
     out = []
+    twins = _jczq_twins(Path(data_dir), issue, issue_doc)
     for no in sorted(legs, key=lambda k: int(k)):
         leg = legs[no]
         research = read_json(zdir / f"{issue}-research-m{int(no)}.json", None)
+        if not isinstance(research, dict) and twins.get(int(no)):
+            research = read_json(twins[int(no)], None)
         name = leg.get("name") or names.get(no, "")
         if not isinstance(research, dict):
             out.append({"no": no, "name": name, "missing": True})
