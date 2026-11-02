@@ -143,6 +143,40 @@ def test_password_gate_locks_after_five_misses_and_spares_localhost(tmp_path):
     assert _gated(tmp_path, "127.0.0.1").get("/api/workbench?date=2026-10-30").status_code == 200
 
 
+def test_proxied_loopback_requests_must_log_in(tmp_path):
+    """2026-11-02 加固：本机反代 / 隧道转进来的请求（对端 127.0.0.1 但带转发头）按外部访问；
+    锁定按转发头里的来源算，不把所有隧道访客锁成一个人。"""
+    c = _gated(tmp_path, "127.0.0.1")
+    via = {"cf-connecting-ip": "203.0.113.7"}
+    assert c.get("/api/workbench?date=2026-10-30", headers=via).status_code == 401
+    xff = {"x-forwarded-for": "198.51.100.1, 203.0.113.9"}
+    assert c.get("/api/workbench?date=2026-10-30", headers=xff).status_code == 401
+    for _ in range(5):
+        c.post("/login", data={"password": "nope"}, headers=via)
+    assert "15 分钟" in c.post("/login", data={"password": "s3cret"}, headers=via).text
+    other = c.post("/login", data={"password": "s3cret"}, follow_redirects=False,
+                   headers={"cf-connecting-ip": "203.0.113.8", "x-forwarded-proto": "https"})
+    assert other.status_code == 303 and "secure" in other.headers["set-cookie"].lower()
+
+
+def test_global_login_cap_spans_addresses(tmp_path):
+    c = _gated(tmp_path, "127.0.0.1")
+    for i in range(30):
+        c.post("/login", data={"password": "nope"}, headers={"cf-connecting-ip": f"203.0.113.{i}"})
+    fresh = c.post("/login", data={"password": "s3cret"}, headers={"cf-connecting-ip": "192.0.2.1"})
+    assert "暂停一小时" in fresh.text
+
+
+def test_security_headers(tmp_path):
+    r = _gated(tmp_path, "127.0.0.1").get("/manifest.webmanifest")
+    assert r.headers["x-frame-options"] == "DENY"
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert "strict-transport-security" not in r.headers
+    https = _gated(tmp_path, "127.0.0.1").get("/manifest.webmanifest",
+                                               headers={"x-forwarded-proto": "https"})
+    assert "max-age" in https.headers["strict-transport-security"]
+
+
 def test_push_link_base_follows_lan_ip(monkeypatch):
     """`lan:<端口>` 每次发送时取本机当下 IP；其余原样去尾斜杠。"""
     import socket

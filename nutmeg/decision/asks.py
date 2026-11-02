@@ -32,6 +32,8 @@ QUICK = ("要防平吗", "钱往哪边", "和哪场死法像", "要补跑吗", "
 PREFIXES = ("issue", "jczq", "ledger", "slip", "rule", "experiment")
 """`obj` 命名与纠正账同一套（见 corrections.py 文首）。"""
 LOOKBACK_DAYS = 30
+DAILY_CAP = 40
+"""一天最多问 40 次（2026-11-02 加固）：每问一次 `claude -p` 约 $0.4，密码万一泄露也刷不出大账。"""
 PENDING_DAYS = 2
 """只自动答最近两天的问：更早的没答上就是答不上了，别在重启时突然花钱。"""
 TOOLS = "Read,Grep,Glob"
@@ -75,6 +77,10 @@ def ask(data_dir: Path | str, *, obj: str, text: str, at: datetime | None = None
     at = at or _now()
     day = at.date().isoformat()
     with _lock:
+        asked = sum(bool(r.get("ask")) for r in read_discussion(data_dir, day))
+        if asked >= DAILY_CAP:
+            raise ValueError(f"今天已问 {asked} 次，到每日上限 {DAILY_CAP}"
+                             "（防刷 claude 费用），明天再问")
         append_discussion(data_dir, day, who=ASKER, text=text, obj=obj,
                           at=at.isoformat(timespec="seconds"), extra={"ask": True})
         seq = len(read_discussion(data_dir, day))

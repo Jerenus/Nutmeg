@@ -74,3 +74,17 @@ def test_reconcile_needs_both_seen_and_equal():
     half = intake.reconcile({"notes": 32, "stake": 128}, notes=64, stake=128)
     assert half["ok"] is False and [r["ok"] for r in half["rows"]] == [False, True]
     assert intake.reconcile({"notes": None, "stake": 128}, notes=64, stake=128)["ok"] is False
+
+
+def test_daily_cap(tmp_path, monkeypatch):
+    from datetime import datetime
+
+    from nutmeg.decision.bj_time import BJ
+
+    monkeypatch.setattr(intake, "DAILY_CAP", 2)
+    for i in range(2):
+        intake.save_image(tmp_path, "26155", PNG + bytes([i]), "png",
+                          now=datetime(2026, 11, 2, 10, 0, i, tzinfo=BJ))
+    with pytest.raises(ValueError, match="每日上限"):
+        intake.save_image(tmp_path, "26156", PNG, "png", now=datetime(2026, 11, 2, 11, tzinfo=BJ))
+    intake.save_image(tmp_path, "26156", PNG, "png", now=datetime(2026, 11, 3, 9, tzinfo=BJ))

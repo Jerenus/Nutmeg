@@ -20,6 +20,8 @@ from pathlib import Path
 INTAKE_DIR = "intake"
 EXTS = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/heic": "heic"}
 MAX_BYTES = 12 * 1024 * 1024
+DAILY_CAP = 30
+"""一天最多收 30 张截图（2026-11-02 加固）：每张一次 `claude -p`，防刷费用与塞满磁盘。"""
 FACE_ORDER = "310"
 CHANNELS = ("renjiu", "shengfucai")
 TIMEOUT_S = 300
@@ -67,6 +69,10 @@ def save_image(data_dir: Path | str, issue: str, raw: bytes, ext: str, *,
     from nutmeg.decision.bj_time import BJ
 
     now = now or datetime.now(BJ)
+    today = sum(1 for p in Path(data_dir, INTAKE_DIR).glob(f"*/{now:%m%d}-*")
+                if p.suffix.lstrip(".") in EXTS.values())
+    if today >= DAILY_CAP:
+        raise ValueError(f"今天已收 {today} 张截图，到每日上限 {DAILY_CAP}，明天再传")
     iid = f"{now:%m%d-%H%M%S}-{hashlib.sha1(raw).hexdigest()[:6]}"
     out = intake_dir(data_dir, issue)
     out.mkdir(parents=True, exist_ok=True)

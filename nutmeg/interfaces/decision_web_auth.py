@@ -4,6 +4,12 @@
 直接打开不受影响；别的机器先过 /login，成功后发 180 天的 cookie（值是密码的 HMAC，改密码＝
 旧 cookie 全部失效）。manifest 与图标不设门：iOS 取它们时不一定带 cookie，内容也不敏感。
 连续输错 5 次锁 15 分钟（按来源 IP，进程内计数，重启清零）。
+
+加固（2026-11-02 Jun「要考虑如何提高项目的安全性」）：
+- 经本机代理 / 隧道转进来的请求（对端是 127.0.0.1 但带 `Cf-Connecting-Ip` / `X-Forwarded-For`）
+  一律按外部访问过门，锁定按转发头里的真实来源算——否则任何本机反代都会把公网请求当成本机放行；
+- 全局闸：一小时内所有来源合计输错 30 次，外部登录整体锁一小时（分散 IP 的暴力猜测）；
+- HTTPS 下 cookie 加 Secure。
 """
 from __future__ import annotations
 
@@ -21,6 +27,26 @@ MAX_AGE = 180 * 24 * 3600
 LOCAL = {"127.0.0.1", "::1"}
 PUBLIC_PREFIXES = ("/login", "/manifest.webmanifest", "/static/decision/icons/")
 MAX_FAILS, LOCK_S = 5, 15 * 60
+GLOBAL_FAILS, GLOBAL_WINDOW_S = 30, 3600
+FORWARD_HEADERS = ("cf-connecting-ip", "x-real-ip")
+
+
+def client_of(request: Request) -> tuple[str, bool]:
+    """→ (来源, 是否本机)。对端是本机但带转发头＝代理 / 隧道转进来的外部请求：来源取转发头。"""
+    peer = request.client.host if request.client else ""
+    if peer not in LOCAL:
+        return peer, False
+    for name in FORWARD_HEADERS:
+        if value := request.headers.get(name, "").strip():
+            return value, False
+    if forwarded := request.headers.get("x-forwarded-for", "").strip():
+        return forwarded.split(",")[-1].strip(), False
+    return peer, True
+
+
+def is_https(request: Request) -> bool:
+    return request.url.scheme == "https" or \
+        request.headers.get("x-forwarded-proto", "").lower() == "https"
 
 
 def auth_token(password: str) -> str:
@@ -70,9 +96,9 @@ def register_password_gate(app: FastAPI, password: str) -> None:
 
     @app.middleware("http")
     async def password_gate(request: Request, call_next):
-        client = request.client.host if request.client else ""
+        _, local = client_of(request)
         path = request.url.path
-        if client in LOCAL or path.startswith(PUBLIC_PREFIXES):
+        if local or path.startswith(PUBLIC_PREFIXES):
             return await call_next(request)
         if hmac.compare_digest(request.cookies.get(COOKIE, ""), token):
             return await call_next(request)
@@ -87,18 +113,22 @@ def register_password_gate(app: FastAPI, password: str) -> None:
 
     @app.post("/login")
     async def login_submit(request: Request) -> Response:
-        client = request.client.host if request.client else ""
+        client, _ = client_of(request)
         now = time.time()
         recent = [t for t in fails.get(client, []) if now - t < LOCK_S]
+        everyone = [t for ts in fails.values() for t in ts if now - t < GLOBAL_WINDOW_S]
         fields = parse_qs((await request.body()).decode("utf-8", "replace"))
         target = _safe_next((fields.get("next") or ["/day"])[0])
         if len(recent) >= MAX_FAILS:
             return _page(target, "输错太多次，15 分钟后再试。")
+        if len(everyone) >= GLOBAL_FAILS:
+            return _page(target, "近一小时输错太多次，外部登录暂停一小时。")
         given = (fields.get("password") or [""])[0]
         if not hmac.compare_digest(auth_token(given), token):
-            fails[client] = recent + [now]
+            fails[client] = [t for t in fails.get(client, []) if now - t < GLOBAL_WINDOW_S] + [now]
             return _page(target, "密码不对。")
         fails.pop(client, None)
         resp = RedirectResponse(target, status_code=303)
-        resp.set_cookie(COOKIE, token, max_age=MAX_AGE, httponly=True, samesite="lax", path="/")
+        resp.set_cookie(COOKIE, token, max_age=MAX_AGE, httponly=True, samesite="lax", path="/",
+                        secure=is_https(request))
         return resp

@@ -71,6 +71,20 @@ def create_decision_app(*, output_dir, kernel_state=None,
                                     status_code=403)
         return await call_next(request)
 
+    # 安全头（2026-11-02 加固）：不许被别的站点套框（点击劫持登记按钮）、不猜内容类型、
+    # 跨站不带完整来源；HTTPS 下加 HSTS。内联脚本还在，暂不上 CSP。
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        resp = await call_next(request)
+        resp.headers.setdefault("X-Frame-Options", "DENY")
+        resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+        resp.headers.setdefault("Referrer-Policy", "same-origin")
+        resp.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        if request.headers.get("x-forwarded-proto", "").lower() == "https" or \
+                request.url.scheme == "https":
+            resp.headers.setdefault("Strict-Transport-Security", "max-age=15552000")
+        return resp
+
     # 对校园网开放时的密码门（2026-10-30）：只有给了密码才装；本机访问不过门。见 decision_web_auth。
     if web_password:
         from nutmeg.interfaces.decision_web_auth import register_password_gate

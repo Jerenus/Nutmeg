@@ -40,9 +40,9 @@ def register_intake_routes(app: FastAPI) -> None:
         _check_issue(issue)
         try:
             raw, ext = decode_data_url(str(payload.get("image") or ""))
+            iid = save_image(app.state.data_dir, issue, raw, ext)
         except ValueError as error:
             return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
-        iid = save_image(app.state.data_dir, issue, raw, ext)
         reading.add((issue, iid))
         if getattr(app.state, "intake_background", True):
             threading.Thread(target=_read, args=(issue, iid), name="nutmeg-intake",

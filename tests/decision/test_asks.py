@@ -123,3 +123,11 @@ def test_work_answers_pending_one_by_one_and_tracks_busy(tmp_path):
                      runner=runner, busy=busy)
     assert [r["obj"] for r in done] == ["issue:26153/m1", "jczq:2026-11-02/周日003"]
     assert seen == [{("2026-11-02", 1)}, {("2026-11-02", 2)}] and busy == set()
+
+
+def test_daily_cap(tmp_path, monkeypatch):
+    monkeypatch.setattr(asks, "DAILY_CAP", 2)
+    asks.ask(tmp_path, obj="issue:1", text="a", at=AT)
+    asks.ask(tmp_path, obj="issue:1", text="b", at=AT)
+    with pytest.raises(ValueError, match="每日上限"):
+        asks.ask(tmp_path, obj="issue:1", text="c", at=AT)
