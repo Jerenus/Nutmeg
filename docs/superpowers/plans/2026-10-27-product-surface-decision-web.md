@@ -1569,6 +1569,7 @@ def bridge_ledger(data_dir: Path, issue: str) -> dict:
 3. Task 10.3 待签收件箱 `/inbox`（今天页与手机底栏带角标）；CLI `nutmeg inbox propose` 供会话起草。
    **已做（2026-10-30）**：`proposals.py`（只追加事件账 `proposals.jsonl`：建条 / 再问 / 回答＝签·改·否·已过时＋原话 / 执行；同批回答逐条记 `batch`）、CLI `nutmeg inbox propose/ask/answer/done/list/seed`、`/inbox` 页（四个按钮都先确认再提交，改须写改成什么；已答折起）、导航「待签」角标。RSI 闭环开着的项一并列出，账上 id＝`RSI-xxxxxx@起始日`（关了又开是新一轮）。回填种子 9 条（`evidence/2026-10-30-proposals-seed.json`）。今天页角标与手机底栏未做（底栏还不存在）。RUNBOOK 加「提案一律进待签收件箱」。
 4. Task 10.4 应答员 + 行内追问（期页、竞彩板、账房行），快捷问法：要防平吗／钱往哪边／和哪场死法像／要补跑吗／只能单选呢。
+   **已做（2026-11-02，Jun 定走 `claude -p`）**：`asks.py`（问答复用当天 `discussion.jsonl`：问 `ask:true`、答 `reply_to`；按对象前缀取线程；只自动答最近两天）、`decision_web_asks.py`（`POST /action/ask`、`GET /api/ask?obj=`；单后台线程逐个作答，重启后有人看线程就接着答；给应答员的「这一行」取自 issue/jczq/ledger payload）、`ask.js`/`ask.css` 底部面板（期页抽屉、竞彩抽屉、账房逐期行与页头）、CLI `nutmeg ask post/list/work`。应答员：仓根为工作目录（读 CLAUDE.md 与记忆）、只给 Read/Grep/Glob、`--disallowedTools Read(./.env*)` 等（实测 Read 与 Grep 读 .env 都被拒）、输出 JSON；改表的话只落纠正草稿 / 待签提案；答案按 settings 里的密钥打码。沙盒真跑：一问 43 秒 $0.40（sonnet）。推 Telegram 带页面链接。
 5. Task 10.5 票据收件（截图识别走应答员的看图能力）。
 
 画布：Dialog（蓝图）、AskPhone、IntakePhone、SignPhone、Corrections 五板。

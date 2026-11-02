@@ -51,6 +51,8 @@
   var root = document.getElementById("ledger");
   if (!root) return;
   var month = root.getAttribute("data-month");
+  var h1 = root.querySelector(".ledger-head h1");
+  if (h1 && window.NMAsk) h1.parentNode.insertBefore(window.NMAsk.button("ledger:" + month, "账房 " + month, "head-ask"), h1.nextSibling);
   var errBox = document.getElementById("errors");
   var errors = [];
   var view = null;
@@ -373,7 +375,8 @@
       var bar = add(el("div", "lg-bar"), el("span", isNum(it.net) && it.net > 0 ? "pos" : null));
       bar.firstChild.style.width = (maxAbs && isNum(it.net) ? Math.round(Math.abs(it.net) / maxAbs * 100) : 0) + "%";
       add(t.tbody, add(el("tr"),
-        td(null, link("/issue/" + encodeURIComponent(it.issue), null, it.issue)),
+        add(el("td", "lg-issue"), link("/issue/" + encodeURIComponent(it.issue), null, it.issue),
+          window.NMAsk && window.NMAsk.button("ledger:" + month + "/" + it.issue, "账房 " + month + " · " + it.issue)),
         td("num", plain(it.slips)),
         td("num", plain(it.stake)),
         td("num", plain(it.payout)),

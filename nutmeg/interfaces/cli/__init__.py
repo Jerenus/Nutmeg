@@ -37,6 +37,7 @@ def build_ontology_kernel(settings):
 # namespace (factories, helpers, options) is fully populated before they load.
 # E402 is expected: registration must run after the namespace is built.
 from nutmeg.interfaces.cli import account as account  # noqa: E402
+from nutmeg.interfaces.cli import ask as ask  # noqa: E402
 from nutmeg.interfaces.cli import betslip as betslip  # noqa: E402
 from nutmeg.interfaces.cli import correction as correction  # noqa: E402
 from nutmeg.interfaces.cli import crowd as crowd  # noqa: E402

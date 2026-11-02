@@ -2,6 +2,7 @@
 {% block body %}
 <link rel="stylesheet" href="/static/decision/jczq.css?v={{ asset_v }}">
 <link rel="stylesheet" href="/static/decision/shell.css?v={{ asset_v }}">
+<link rel="stylesheet" href="/static/decision/ask.css?v={{ asset_v }}">
 {% set nav_active = "jczq" %}{% include "decision/_nav.html" %}
 <main id="jczq" data-day="{{ day }}" class="jczq">
   <header class="jczq-head"><h1>竞彩 {{ day }}</h1><p id="brake" class="brake"></p></header>
@@ -11,5 +12,6 @@
     <aside class="side" aria-label="我的串"><div id="slip"></div><div id="review"></div><div id="actions"></div></aside>
   </div>
 </main>
+<script src="/static/decision/ask.js?v={{ asset_v }}"></script>
 <script src="/static/decision/jczq.js?v={{ asset_v }}"></script>
 {% endblock %}

@@ -81,14 +81,18 @@ def run_claude(system_prompt: str, stdin: str, *, model: str | None, allowed_too
 
 def run_claude_json(system_prompt: str, stdin: str, *, model: str | None,
                     allowed_tools: str = "", max_turns: str = "1",
-                    timeout: int = 300) -> tuple[int, str, dict]:
+                    timeout: int = 300, cwd: str | None = None,
+                    extra_argv: tuple[str, ...] = ()) -> tuple[int, str, dict]:
     """同 `run_claude`，但以 `--output-format json` 跑 → (退出码, 结果文本, 遥测)。
 
     遥测（2026-10-26 Tier 1 #4：研究层此前零遥测）：`model / duration_s / input_tokens /
     cache_read_input_tokens / cache_creation_input_tokens / output_tokens / cost_usd`。
-    外层 JSON 解析不出来 → 结果文本退回原 stdout、遥测 {}，不影响调用方照旧处理。"""
+    外层 JSON 解析不出来 → 结果文本退回原 stdout、遥测 {}，不影响调用方照旧处理。
+    `cwd` 缺省＝固定空目录（不读仓里 CLAUDE.md）；应答员要读仓，传仓根并用 `extra_argv`
+    带 `--disallowedTools` / `--add-dir`。"""
     proc = _run_claude_proc(system_prompt, stdin, model=model, allowed_tools=allowed_tools,
-                            max_turns=max_turns, timeout=timeout, output_format="json")
+                            max_turns=max_turns, timeout=timeout, output_format="json",
+                            cwd=cwd, extra_argv=extra_argv)
     text, meta = parse_claude_json_output(proc.stdout)
     return proc.returncode, text, meta
 
@@ -122,14 +126,16 @@ def parse_claude_json_output(stdout: str) -> tuple[str, dict]:
 
 
 def _run_claude_proc(system_prompt: str, stdin: str, *, model: str | None, allowed_tools: str,
-                     max_turns: str, timeout: int, output_format: str):
+                     max_turns: str, timeout: int, output_format: str,
+                     cwd: str | None = None, extra_argv: tuple[str, ...] = ()):
     import subprocess
 
     argv = [claude_bin(), "-p", *model_argv(model), "--system-prompt", system_prompt,
             "--allowedTools", allowed_tools, "--max-turns", str(max_turns),
-            "--output-format", output_format]
+            "--output-format", output_format, *extra_argv]
     return subprocess.run(argv, input=stdin, capture_output=True, text=True,
-                          timeout=timeout, cwd=neutral_cwd(), env=claude_env(), check=False)
+                          timeout=timeout, cwd=cwd or neutral_cwd(), env=claude_env(),
+                          check=False)
 
 
 def neutral_cwd() -> str:

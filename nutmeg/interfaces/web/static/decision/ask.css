@@ -1,0 +1,84 @@
+/* static/decision/ask.css —— 行内追问面板（Task 10.4）。色值与 shell.css 同一套，作用域在面板内。 */
+.nm-ask, .nm-ask-trigger {
+  --ak-ink:#15181B; --ak-paper:#FFFFFF; --ak-soft:#F4F5F2; --ak-line:#DADDD7; --ak-muted:#565E66;
+  --ak-link:#2348C9; --ak-on-link:#FFFFFF; --ak-veto:#B23A0E; --ak-veto-bg:#FBEDE6;
+  --ak-draft:#7A4B00; --ak-draft-bg:#FFF4DC;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .nm-ask,
+:root:not([data-theme="light"]) .nm-ask-trigger{
+  --ak-ink:#E4E7E3; --ak-paper:#1A1E22; --ak-soft:#22272C; --ak-line:#2E343A; --ak-muted:#9AA2AA;
+  --ak-link:#8EA6F5; --ak-on-link:#10131A; --ak-veto:#F08A63; --ak-veto-bg:#3A1D12;
+  --ak-draft:#F2C46B; --ak-draft-bg:#33280F;
+}}
+:root[data-theme="dark"] .nm-ask, :root[data-theme="dark"] .nm-ask-trigger {
+  --ak-ink:#E4E7E3; --ak-paper:#1A1E22; --ak-soft:#22272C; --ak-line:#2E343A; --ak-muted:#9AA2AA;
+  --ak-link:#8EA6F5; --ak-on-link:#10131A; --ak-veto:#F08A63; --ak-veto-bg:#3A1D12;
+  --ak-draft:#F2C46B; --ak-draft-bg:#33280F;
+}
+
+.nm-ask-trigger {
+  min-width:44px; min-height:32px; padding:4px 12px; border:1px solid var(--ak-link); border-radius:16px;
+  background:transparent; color:var(--ak-link); font:inherit; font-size:13px; cursor:pointer;
+}
+.nm-ask-trigger:hover { background:var(--ak-link); color:var(--ak-on-link); }
+@media (max-width:600px){ .nm-ask-trigger { min-height:44px; } }
+
+html.nm-ask-locked, html.nm-ask-locked body { overflow:hidden; }
+.nm-ask-back { position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:90; }
+.nm-ask {
+  position:fixed; z-index:91; right:16px; bottom:16px; width:min(480px, calc(100vw - 32px));
+  max-height:min(78vh, 720px); display:flex; flex-direction:column; gap:8px; padding:14px 16px 12px;
+  background:var(--ak-paper); color:var(--ak-ink); border:1px solid var(--ak-line); border-radius:12px;
+  box-shadow:0 12px 40px rgba(0,0,0,.25); box-sizing:border-box;
+}
+@media (max-width:600px){
+  .nm-ask { left:0; right:0; bottom:0; width:100vw; max-height:86vh; border-radius:14px 14px 0 0;
+            padding-bottom:calc(12px + env(safe-area-inset-bottom)); }
+}
+.nm-ask[hidden], .nm-ask-back[hidden] { display:none; }
+.nm-ask-head { display:flex; align-items:center; gap:8px; }
+.nm-ask-title { flex:1; font-size:15px; overflow-wrap:anywhere; }
+.nm-ask-x { min-height:44px; padding:0 10px; border:0; background:none; color:var(--ak-link); font:inherit; cursor:pointer; }
+.nm-ask-list { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:12px; min-height:80px; }
+.nm-ask-item { display:flex; flex-direction:column; gap:4px; }
+.nm-ask-q { margin:0; align-self:flex-end; max-width:88%; padding:8px 12px; border-radius:12px 12px 2px 12px;
+  background:var(--ak-link); color:var(--ak-on-link); white-space:pre-wrap; overflow-wrap:anywhere; }
+.nm-ask-item > .nm-ask-meta { align-self:flex-end; }
+.nm-ask-a { padding:10px 12px; border:1px solid var(--ak-line); border-radius:2px 12px 12px 12px; background:var(--ak-soft);
+  display:flex; flex-direction:column; gap:6px; max-width:96%; }
+.nm-ask-a.wait { color:var(--ak-muted); border-style:dashed; }
+.nm-ask-a.failed { border-color:var(--ak-veto); background:var(--ak-veto-bg); color:var(--ak-veto); }
+.nm-ask-a p { margin:0; }
+.nm-ask-text { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.55; }
+.nm-ask-meta { margin:0; font-size:12px; color:var(--ak-muted); }
+.nm-ask-src summary { cursor:pointer; font-size:12px; color:var(--ak-muted); min-height:28px; }
+.nm-ask-src ul { margin:4px 0 0; padding-left:18px; font-size:12px; color:var(--ak-muted); }
+.nm-ask-src li { overflow-wrap:anywhere; }
+.nm-ask-draft { padding:8px 10px; border-radius:8px; background:var(--ak-draft-bg); color:var(--ak-draft);
+  display:flex; flex-direction:column; gap:6px; }
+.nm-ask-tag { font-size:12px; font-weight:600; }
+.nm-ask-diff { font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace; font-size:13px; overflow-wrap:anywhere; }
+.nm-ask-btns { display:flex; gap:8px; flex-wrap:wrap; }
+.nm-ask-btn { min-height:44px; padding:0 14px; border:1px solid currentColor; border-radius:8px; background:transparent;
+  color:inherit; font:inherit; cursor:pointer; }
+.nm-ask-btn.primary { background:var(--ak-draft); color:var(--ak-draft-bg); border-color:var(--ak-draft); }
+.nm-ask-btn:disabled { opacity:.5; cursor:default; }
+.nm-ask-link { color:var(--ak-link); font-size:13px; }
+.nm-ask-quick { display:flex; gap:6px; overflow-x:auto; padding-bottom:2px; }
+.nm-ask-chip { flex:none; min-height:36px; padding:0 12px; border:1px solid var(--ak-line); border-radius:18px;
+  background:var(--ak-paper); color:var(--ak-ink); font:inherit; font-size:13px; cursor:pointer; }
+@media (max-width:600px){ .nm-ask-chip { min-height:44px; } }
+.nm-ask-form { display:flex; gap:8px; align-items:flex-end; }
+.nm-ask-input { flex:1; min-height:44px; padding:10px 12px; border:1px solid var(--ak-line); border-radius:10px;
+  background:var(--ak-paper); color:var(--ak-ink); font:inherit; font-size:16px; resize:vertical; box-sizing:border-box; }
+.nm-ask-send { min-width:56px; min-height:44px; border:0; border-radius:10px; background:var(--ak-link); color:var(--ak-on-link);
+  font:inherit; font-weight:600; cursor:pointer; }
+.nm-ask-send:disabled { opacity:.6; }
+.nm-ask-note { margin:0; font-size:11px; color:var(--ak-muted); }
+.nm-ask-err { margin:0; color:var(--ak-veto); font-size:13px; }
+.nm-ask-empty { margin:0; color:var(--ak-muted); font-size:13px; }
+.nm-ask :focus-visible, .nm-ask-trigger:focus-visible { outline:2px solid var(--ak-link); outline-offset:2px; }
+.head-ask { align-self:center; }
+td .nm-ask-trigger { margin-left:8px; min-height:28px; padding:2px 10px; }
+@media (max-width:600px){ td .nm-ask-trigger { min-height:44px; } }
+.drawer-head .nm-ask-trigger { margin-left:auto; }

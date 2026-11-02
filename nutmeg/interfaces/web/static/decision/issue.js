@@ -12,6 +12,8 @@
   const root = document.getElementById("issue");
   if (!root) return;
   const issue = root.dataset.issue;
+  const h1 = root.querySelector(".issue-head h1");
+  if (h1 && window.NMAsk) h1.after(window.NMAsk.button(`issue:${issue}`, `${issue} 整期`, "head-ask"));
   const FACES = ["3", "1", "0"];
   const NAME = { 3: "胜", 1: "平", 0: "负" };
   const KEY = { 3: "home", 1: "draw", 0: "away" };
@@ -454,6 +456,7 @@
 
     const head = el("div", "drawer-head");
     head.append(el("strong", null, `取证 · 场 ${m.no} ${m.name || ""}`.trim()));
+    if (window.NMAsk) head.append(window.NMAsk.button(`issue:${issue}/m${m.no}`, `${issue} 场 ${m.no} ${m.name || ""}`.trim()));
     if (hasMatrix) {
       const hyp = el("span", "sub");
       hyp.append("H1 锚方面 ", el("b", "mono", mx.h1), " 对 H2 翻车面 ", el("b", "mono", mx.h2));

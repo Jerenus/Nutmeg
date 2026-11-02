@@ -53,7 +53,8 @@ def create_decision_app(*, output_dir, kernel_state=None,
         for name in ("app.js", "observe.js", "observe.css", "day.js", "runs.js", "runs.css",
                      "issue.js", "issue.css", "jczq.js", "jczq.css", "shell.css",
                      "ledger.js", "ledger.css", "lab.js", "lab.css", "corrections.js",
-                     "corrections.css", "inbox.js", "inbox.css", "pwa.js")
+                     "corrections.css", "inbox.js", "inbox.css", "pwa.js", "ask.js",
+                     "ask.css")
     ]
     _mtimes = [asset.stat().st_mtime for asset in _assets if asset.exists()]
     templates.env.globals["asset_v"] = str(int(max(_mtimes))) if _mtimes else "0"
@@ -537,6 +538,7 @@ def create_decision_app(*, output_dir, kernel_state=None,
             # 登记被拒要说清是哪一条纪律拒的——静默失败会让人以为票已入账。
             return {"ok": False, "error": str(error)}
 
+    from nutmeg.interfaces.decision_web_asks import register_ask_routes
     from nutmeg.interfaces.decision_web_corrections import register_corrections_routes
     from nutmeg.interfaces.decision_web_inbox import register_inbox_routes
     from nutmeg.interfaces.decision_web_issue import register_issue_routes
@@ -552,4 +554,5 @@ def create_decision_app(*, output_dir, kernel_state=None,
     register_lab_routes(app, templates)
     register_corrections_routes(app, templates)
     register_inbox_routes(app, templates)
+    register_ask_routes(app)
     return app

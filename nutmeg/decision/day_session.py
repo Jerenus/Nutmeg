@@ -114,12 +114,14 @@ def read_discussion(data_dir: Path | str, date: str) -> list[dict]:
 
 
 def append_discussion(
-    data_dir: Path | str, date: str, *, who: str, text: str, obj: str = "", at: str
+    data_dir: Path | str, date: str, *, who: str, text: str, obj: str = "", at: str,
+    extra: dict | None = None,
 ) -> Path:
+    """`extra`：应答员的问答字段（`ask` / `reply_to` / `sources` / …，见 asks.py），并进同一行。"""
     path = day_dir(data_dir, date) / DISCUSSION
     path.parent.mkdir(parents=True, exist_ok=True)
     seq = len(read_discussion(data_dir, date)) + 1
-    row = {"seq": seq, "who": who, "obj": obj, "text": text, "at": at}
+    row = {"seq": seq, "who": who, "obj": obj, "text": text, "at": at, **(extra or {})}
     with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(row, ensure_ascii=False) + "\n")
     return path

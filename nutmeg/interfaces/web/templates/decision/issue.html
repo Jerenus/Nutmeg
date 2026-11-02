@@ -2,6 +2,7 @@
 {% block body %}
 <link rel="stylesheet" href="/static/decision/issue.css?v={{ asset_v }}">
 <link rel="stylesheet" href="/static/decision/shell.css?v={{ asset_v }}">
+<link rel="stylesheet" href="/static/decision/ask.css?v={{ asset_v }}">
 {% set nav_active = "issue" %}{% include "decision/_nav.html" %}
 <main id="issue" data-issue="{{ issue }}" class="issue">
   <header class="issue-head"><h1>{{ issue }} 决策表</h1><p id="brake" class="brake"></p></header>
@@ -13,5 +14,6 @@
   <section id="bridge" class="bridge" aria-labelledby="bridge-h" hidden></section>
   <section id="slip500" class="bridge slip500" aria-labelledby="slip500-h" hidden></section>
 </main>
+<script src="/static/decision/ask.js?v={{ asset_v }}"></script>
 <script src="/static/decision/issue.js?v={{ asset_v }}"></script>
 {% endblock %}

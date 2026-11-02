@@ -9,6 +9,8 @@
   const root = document.getElementById("jczq");
   if (!root) return;
   const day = root.dataset.day;
+  const h1 = root.querySelector(".jczq-head h1");
+  if (h1 && window.NMAsk) h1.after(window.NMAsk.button(`jczq:${day}`, `竞彩 ${day} 整板`, "head-ask"));
   const FACES = ["3", "1", "0"];
   const NAME = { 3: "胜", 1: "平", 0: "负" };
   const MARK = { veto: "⛔", warn: "⚠️", info: "ℹ️" };
@@ -300,6 +302,7 @@
     right.append(el("span", "hh", h
       ? `让球 ${hhadText(h)}：胜 ${num2(h["3"])} · 平 ${num2(h["1"])} · 负 ${num2(h["0"])}`
       : "让球：未开售"));
+    if (window.NMAsk) left.append(window.NMAsk.button(`jczq:${day}/${r.code}`, `${r.code} ${r.name || ""}`.trim()));
     box.append(left, right);
     return box;
   }
