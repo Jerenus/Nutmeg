@@ -432,3 +432,52 @@ def test_slip500_writes_nothing_and_matches_precheck_arithmetic(tmp_path):
 def test_slip500_wrong_pick_count_is_error(tmp_path):
     body = _client(tmp_path).post("/api/issue/26151/slip500", json={"faces": {"1": "3"}}).json()
     assert body == {"ok": False, "error": "任九要 9 场、胜负彩要 14 场（已选 1 场）"}
+
+
+# —— Task 10.5：截图收件 → 读格 → 对账 → 登记 ——
+
+def _intake_client(tmp_path: Path, read: dict) -> TestClient:
+    client = _client(tmp_path)
+    app = client.app
+    app.state.intake_background = False
+    app.state.intake_runner = lambda system, stdin, *, folder: (0, json.dumps(read), {})
+    return client
+
+
+_SHOT = "data:image/png;base64,iVBORw0KGgo="
+
+
+def test_intake_reads_reconciles_and_registers_with_note(tmp_path):
+    from nutmeg.decision.betslip import load_slips
+
+    cells = [{"no": no, "faces": f} for no, f in _FACES.items()]
+    cells[0] = {"no": "13", "faces": "3", "doubt": True, "options": ["31"], "why": "浅色格"}
+    client = _intake_client(tmp_path, {"channel": "renjiu", "cells": cells, "notes": 64,
+                                       "stake": 128, "multiplier": 1})
+    iid = client.post("/api/issue/26151/intake", json={"image": _SHOT}).json()["id"]
+    got = client.get(f"/api/issue/26151/intake/{iid}").json()
+    assert got["state"] == "done" and got["read"]["cells"][-1]["doubt"] is True
+    assert client.get(got["image_url"]).status_code == 200
+
+    card = client.post("/api/issue/26151/slip500", json={"faces": _FACES, "intake": iid}).json()
+    assert card["intake_check"]["ok"] is True
+    wrong = {**_FACES, "13": "31"}                       # 点成双 → 128 注 ¥256，与截图对不上
+    bad = client.post("/action/issue/26151/register", json={"faces": wrong, "intake": iid}).json()
+    assert bad["ok"] is False and "注数 截图 64 ≠ 票 128" in bad["error"]
+    assert load_slips(tmp_path / "data", issue="26151") == []
+
+    ok = client.post("/action/issue/26151/register",
+                     json={"faces": _FACES, "intake": iid, "trial": True}).json()
+    assert ok["ok"] is True and ok["purchased"] is False
+    (slip,) = load_slips(tmp_path / "data", issue="26151")
+    assert slip.note.startswith(f"截图收件 intake/26151/{iid}.") and slip.purchased is False
+
+
+def test_intake_bad_image_and_unknown_id(tmp_path):
+    client = _intake_client(tmp_path, {})
+    assert client.post("/api/issue/26151/intake", json={"image": "x"}).status_code == 400
+    assert client.get("/api/issue/26151/intake/nope").status_code == 404
+    iid = client.post("/api/issue/26151/intake", json={"image": _SHOT}).json()["id"]
+    assert client.get(f"/api/issue/26151/intake/{iid}").json()["state"] == "failed"
+    page = client.get("/issue/26151").text
+    assert 'id="intake"' in page

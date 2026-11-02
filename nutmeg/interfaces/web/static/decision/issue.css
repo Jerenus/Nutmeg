@@ -327,3 +327,15 @@ body:has(> .issue){background:#F3F4F1}
   color:var(--warn); font-weight:700; overflow-wrap:anywhere}
 .issue .seen[hidden]{display:none}
 .issue .seen a{color:var(--link)}
+/* 截图登记（Task 10.5） */
+.issue .intake{display:flex; flex-direction:column; gap:10px}
+.issue .intake .b-head{display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center}
+.issue .intake-pick{cursor:pointer; display:inline-flex; align-items:center; min-height:44px}
+.issue .intake-img-link{font-size:13px; color:var(--link)}
+.issue .intake-doubt{display:flex; flex-direction:column; gap:8px; padding:10px 12px; border:2px dashed var(--veto); border-radius:6px; background:var(--veto-bg); color:var(--veto)}
+.issue .intake-check{margin:0; padding:10px 12px; border:1px solid var(--line); border-radius:6px; font-family:var(--mono, ui-monospace, monospace); overflow-wrap:anywhere}
+.issue .intake-check.ok{border-color:var(--ok); color:var(--ok); background:var(--ok-bg); font-weight:700}
+.issue .intake-check.bad{border-color:var(--veto); color:var(--veto); background:var(--veto-bg); font-weight:700}
+.issue .intake-hold{font-size:13px}
+.issue .head-intake{align-self:center; display:inline-flex; align-items:center; min-height:44px; padding:0 14px; border:1px solid var(--line); border-radius:22px; color:var(--link); text-decoration:none; font-size:14px}
+.issue .intake{scroll-margin-top:12px}

@@ -541,6 +541,7 @@ def create_decision_app(*, output_dir, kernel_state=None,
     from nutmeg.interfaces.decision_web_asks import register_ask_routes
     from nutmeg.interfaces.decision_web_corrections import register_corrections_routes
     from nutmeg.interfaces.decision_web_inbox import register_inbox_routes
+    from nutmeg.interfaces.decision_web_intake import register_intake_routes
     from nutmeg.interfaces.decision_web_issue import register_issue_routes
     from nutmeg.interfaces.decision_web_jczq import register_jczq_routes
     from nutmeg.interfaces.decision_web_lab import register_lab_routes
@@ -555,4 +556,5 @@ def create_decision_app(*, output_dir, kernel_state=None,
     register_corrections_routes(app, templates)
     register_inbox_routes(app, templates)
     register_ask_routes(app)
+    register_intake_routes(app)
     return app

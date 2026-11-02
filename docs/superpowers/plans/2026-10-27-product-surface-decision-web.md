@@ -1571,6 +1571,7 @@ def bridge_ledger(data_dir: Path, issue: str) -> dict:
 4. Task 10.4 应答员 + 行内追问（期页、竞彩板、账房行），快捷问法：要防平吗／钱往哪边／和哪场死法像／要补跑吗／只能单选呢。
    **已做（2026-11-02，Jun 定走 `claude -p`）**：`asks.py`（问答复用当天 `discussion.jsonl`：问 `ask:true`、答 `reply_to`；按对象前缀取线程；只自动答最近两天）、`decision_web_asks.py`（`POST /action/ask`、`GET /api/ask?obj=`；单后台线程逐个作答，重启后有人看线程就接着答；给应答员的「这一行」取自 issue/jczq/ledger payload）、`ask.js`/`ask.css` 底部面板（期页抽屉、竞彩抽屉、账房逐期行与页头）、CLI `nutmeg ask post/list/work`。应答员：仓根为工作目录（读 CLAUDE.md 与记忆）、只给 Read/Grep/Glob、`--disallowedTools Read(./.env*)` 等（实测 Read 与 Grep 读 .env 都被拒）、输出 JSON；改表的话只落纠正草稿 / 待签提案；答案按 settings 里的密钥打码。沙盒真跑：一问 43 秒 $0.40（sonnet）。推 Telegram 带页面链接。
 5. Task 10.5 票据收件（截图识别走应答员的看图能力）。
+   **已做（2026-11-02，足彩）**：`intake.py`（data URL 收图 ≤12MB、存 `intake/<期>/`、`claude -p` 只给 Read 看图读格→规整读数、失败也落盘、`reconcile` 截图底部 vs 票）、`decision_web_intake.py`（上传 / 轮询 / 原图）、`slip500` 带 `intake` 返回 `intake_check`、`register` 带 `intake` 对不上拒收并把原图写进 note、可选 `trial`（回执显示实购/试玩）。期页「截图登记」区（页头直达）：传图（前端长边压到 2400px）→ 读数填进表 → 看不清的格点选 → 对上才放行登记按钮。真图实测：26106 胜负彩截图 14/14 格与 256 注 ¥512 全对，18 秒 $0.21（sonnet）。竞彩截图未接（腿与 SP 结构不同）。
 
 画布：Dialog（蓝图）、AskPhone、IntakePhone、SignPhone、Corrections 五板。
 

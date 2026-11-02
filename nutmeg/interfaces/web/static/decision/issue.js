@@ -14,6 +14,13 @@
   const issue = root.dataset.issue;
   const h1 = root.querySelector(".issue-head h1");
   if (h1 && window.NMAsk) h1.after(window.NMAsk.button(`issue:${issue}`, `${issue} 整期`, "head-ask"));
+  if (h1) {   // 手机上截图登记在 14 场之下：页头给一个直达
+    const jump = document.createElement("a");
+    jump.className = "head-intake";
+    jump.href = "#intake";
+    jump.textContent = "截图登记";
+    h1.parentNode.insertBefore(jump, h1.nextSibling);
+  }
   const FACES = ["3", "1", "0"];
   const NAME = { 3: "胜", 1: "平", 0: "负" };
   const KEY = { 3: "home", 1: "draw", 0: "away" };
@@ -34,6 +41,9 @@
     slip: null, sseq: 0, spending: false, mult: "1", copied: {},
     reg: { scheme: "", deviation: "", prediction: "", touched: false, posting: false, error: "" },
     receipts: [],
+    // 截图收件（Task 10.5）：id＝收件号；phase idle|uploading|reading|done|failed；read＝服务端读数；
+    // resolved＝{场号: true} 看不清的格已点选；trial＝记成试玩（默认实购：截图＝实购）
+    intake: { id: "", phase: "idle", read: null, error: "", image: "", resolved: {}, trial: false },
   };
   // 偏离理由封闭枚举 = betslip_diagnosis.DEVIATION_REASONS；空串也收（账上记「偏离初稿未登记理由」）
   const DEVIATIONS = [["fact_self_judged", "自判事实"], ["price_instinct", "价格直觉"],
@@ -993,7 +1003,7 @@
     stimer = setTimeout(async () => {
       const mult = String(state.mult).trim();
       const body = await postJSON(`/api/issue/${encodeURIComponent(issue)}/slip500`,
-        { faces: { ...state.picks }, multiplier: mult }, "抄录卡接口");
+        { faces: { ...state.picks }, multiplier: mult, intake: intakeReady() ? state.intake.id : "" }, "抄录卡接口");
       if (seq !== state.sseq) return;      // 过期回应丢掉
       state.spending = false;
       state.slip = { ...body, mult: mult || "1" };
@@ -1175,7 +1185,9 @@
     const go = button("btn primary", state.reg.posting ? "登记中…"
       : `我已在 500 下单 · 登记实票${next ? " " + next : ""}`, registerReal);
     go.dataset.focus = "s5-register";
-    go.disabled = state.reg.posting;
+    const hold = intakeHold();
+    go.disabled = state.reg.posting || Boolean(hold);
+    if (hold) acts.append(el("span", "b-error intake-hold", hold));
     acts.append(go, el("span", "foot", "⛔ 只表示审票不同意；登记永远可以，否决会随票入账。可以接着登记下一张，每张一份回执。"));
     sec.append(acts);
     host.append(sec);
@@ -1189,6 +1201,7 @@
     const payload = {
       faces: { ...state.picks }, multiplier: String(state.mult).trim(),
       scheme_no: state.reg.scheme.trim(), deviation: state.reg.deviation, prediction: state.reg.prediction.trim(),
+      intake: intakeReady() ? state.intake.id : "", trial: intakeReady() && state.intake.trial,
     };
     const body = await postJSON(`/action/issue/${encodeURIComponent(issue)}/register`, payload, "登记接口");
     state.reg.posting = false;
@@ -1197,6 +1210,7 @@
     } else {
       state.receipts.unshift(body);
       state.reg.scheme = "";              // 方案号一张一个；理由与预测留着给下一张
+      if (intakeReady()) state.intake = { id: "", phase: "idle", read: null, error: "", image: "", resolved: {}, trial: false };
     }
     renderSlip();
   }
@@ -1230,7 +1244,7 @@
     const box = el("article", "s5-receipt");
     box.setAttribute("aria-label", `回执 ${r.slip_id}`);
     const head = el("div", "b-head");
-    head.append(el("h3", null, `已登记 ${r.slip_id} · 实购`), el("span", "muted", r.faces_row || ""));
+    head.append(el("h3", null, `已登记 ${r.slip_id} · ${r.purchased === false ? "试玩" : "实购"}`), el("span", "muted", r.faces_row || ""));
     box.append(head, el("p", "s5-summary", r.summary || ""));
     const codes = r.codes || [];
     if (codes.length) {
@@ -1257,7 +1271,185 @@
     return box;
   }
 
+  // ---- 截图收件（Task 10.5）：传 500 截图 → 看图读格 → 填进表 → 点选看不清的格 → 底部对上才登记 ----
+  // 读格、对账都在服务端（intake.read_ticket / slip500 的 intake_check）；页面只填格、点选、显示。
+  const INTAKE_POLL_MS = 3000;
+  const intakeReady = () => state.intake.phase === "done" && Boolean(state.intake.read);
+  function intakeDoubts() {
+    return intakeReady() ? state.intake.read.cells.filter((c) => c.doubt && !state.intake.resolved[c.no]) : [];
+  }
+  function intakeHold() {                  // 带截图时登记按钮的门：看不清的格没点完 / 底部没对上
+    if (!intakeReady()) return "";
+    const left = intakeDoubts();
+    if (left.length) return `截图里还有 ${left.length} 格看不清（场 ${left.map((c) => c.no).join("、")}），先在上面点选`;
+    const chk = state.slip && state.slip.intake_check;
+    if (!chk) return "正在和截图对账…";
+    if (!chk.ok) return "截图底部的注数 / 金额和这张票对不上——改格，或清掉截图再登记";
+    return "";
+  }
+
+  function shrink(file) {                  // 手机原图动辄 5–10MB：长边压到 2400px 的 JPEG 再传
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("读不了这张图"));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => resolve(String(reader.result));   // 解不了码就原样传，交给服务端判
+        img.onload = () => {
+          const scale = Math.min(1, 2400 / Math.max(img.width, img.height));
+          if (scale === 1 && file.size < 4e6) { resolve(String(reader.result)); return; }
+          const c = document.createElement("canvas");
+          c.width = Math.round(img.width * scale);
+          c.height = Math.round(img.height * scale);
+          c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+          resolve(c.toDataURL("image/jpeg", 0.9));
+        };
+        img.src = String(reader.result);
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function intakeUpload(file) {
+    if (!file) return;
+    state.intake = { id: "", phase: "uploading", read: null, error: "", image: "", resolved: {}, trial: false };
+    renderIntake();
+    let image;
+    try { image = await shrink(file); } catch (e) {
+      state.intake.phase = "failed"; state.intake.error = String(e.message || e); renderIntake(); return;
+    }
+    const body = await postJSON(`/api/issue/${encodeURIComponent(issue)}/intake`, { image }, "收件接口");
+    if (!body.ok) { state.intake.phase = "failed"; state.intake.error = body.error || "传不上去"; renderIntake(); return; }
+    state.intake.id = body.id;
+    state.intake.phase = "reading";
+    renderIntake();
+    intakePoll(body.id);
+  }
+
+  async function intakePoll(id) {
+    if (state.intake.id !== id) return;
+    let body;
+    try {
+      const r = await fetch(`/api/issue/${encodeURIComponent(issue)}/intake/${encodeURIComponent(id)}`);
+      body = await r.json();
+    } catch (e) { body = { ok: false, error: String(e.message || e) }; }
+    if (state.intake.id !== id) return;
+    if (!body.ok) { state.intake.phase = "failed"; state.intake.error = body.error || "读取失败"; renderIntake(); return; }
+    state.intake.image = body.image_url || "";
+    if (body.state === "reading") { renderIntake(); setTimeout(() => intakePoll(id), INTAKE_POLL_MS); return; }
+    if (body.state === "failed") { state.intake.phase = "failed"; state.intake.error = body.error; renderIntake(); return; }
+    state.intake.phase = "done";
+    state.intake.read = body.read;
+    state.intake.took = body.duration_s;
+    const faces = {};
+    for (const c of body.read.cells) faces[c.no] = c.faces;
+    if (body.read.multiplier) state.mult = String(body.read.multiplier);
+    setPicks(faces);                       // 填进决策表；slipRefresh 带上收件号去对账
+  }
+
+  function intakeClear() {
+    state.intake = { id: "", phase: "idle", read: null, error: "", image: "", resolved: {}, trial: false };
+    slipRefresh();
+    renderIntake();
+  }
+
+  function pickDoubt(no, faces) {
+    state.intake.resolved[no] = true;
+    setPicks({ ...state.picks, [no]: faces });
+  }
+
+  function doubtCard(c) {
+    const box = el("div", "intake-doubt");
+    box.append(el("strong", null, `场 ${c.no} 看不清${c.why ? "：" + c.why : ""}`));
+    const row = el("div", "b-chips");
+    for (const f of [c.faces, ...c.options]) {
+      const on = state.picks[c.no] === f;
+      const b = button("b-chip" + (on ? " on" : ""), f.split("").join(" "), () => pickDoubt(c.no, f));
+      b.dataset.focus = `intake-${c.no}-${f}`;
+      b.setAttribute("aria-label", `场 ${c.no} 按 ${f.split("").join(" ")}`);
+      row.append(b);
+    }
+    box.append(row);
+    return box;
+  }
+
+  function renderIntake() {
+    const host = document.getElementById("intake");
+    if (!host || !state.data) return;
+    host.replaceChildren();
+    host.hidden = false;
+    const head = el("div", "b-head");
+    const h = el("h2", null, "截图登记 · 下完单把 500 截图传上来");
+    h.id = "intake-h";
+    head.append(h);
+    const it = state.intake;
+    const pick = el("label", "btn" + (it.phase === "idle" ? " primary" : "") + " intake-pick");
+    pick.append(it.phase === "idle" ? "传截图" : "换一张");
+    const file = el("input");
+    file.type = "file";
+    file.accept = "image/*";
+    file.hidden = true;
+    file.addEventListener("change", (e) => intakeUpload(e.target.files && e.target.files[0]));
+    pick.append(file);
+    head.append(pick);
+    if (it.phase !== "idle") head.append(button("btn", "清掉截图", intakeClear));
+    host.append(head);
+    if (it.phase === "idle") {
+      host.append(el("p", "muted", "读出的格会填进上面的表；看不清的格要你点选；截图底部的注数和金额要和抄录卡对上才能登记。"));
+      return;
+    }
+    if (it.image) {
+      const a = el("a", "intake-img-link", "看原图");
+      a.href = it.image; a.target = "_blank"; a.rel = "noopener";
+      host.append(a);
+    }
+    if (it.phase === "uploading" || it.phase === "reading") {
+      const p = el("p", "b-status", it.phase === "uploading" ? "上传中…" : "在看图读格，大约半分钟…");
+      p.setAttribute("role", "status");
+      host.append(p);
+      return;
+    }
+    if (it.phase === "failed") {
+      const p = el("p", "b-error", it.error || "没读出来");
+      p.setAttribute("role", "alert");
+      host.append(p);
+      return;
+    }
+    const r = it.read;
+    const doubts = r.cells.filter((c) => c.doubt);
+    host.append(el("p", null, `读出 ${r.cells.length} 场${doubts.length ? `，${doubts.length} 格看不清` : ""}`
+      + (r.channel ? ` · ${r.channel === "renjiu" ? "任九" : "胜负彩"}` : "")
+      + (it.took ? ` · 用时 ${Math.round(it.took)} 秒` : "") + "。已填进上面的表，读错的格直接在表里改。"));
+    if (r.issue_seen && r.issue_seen !== issue) {
+      host.append(el("p", "b-error", `截图上的期号是 ${r.issue_seen}，这页是 ${issue}——传错期了？`));
+    }
+    for (const c of doubts) host.append(doubtCard(c));
+    const chk = state.slip && state.slip.intake_check;
+    const line = el("p", "intake-check" + (chk ? (chk.ok ? " ok" : " bad") : ""));
+    if (!chk) {
+      line.textContent = state.spending ? "对账中…" : "选满 9 场（任九）或 14 场（胜负彩）后对账";
+    } else if (chk.rows && chk.rows.length) {
+      line.textContent = chk.rows.map((x) => `${x.label} 截图 ${x.seen ?? "看不到"} · 票 ${x.computed}`).join("　")
+        + (chk.ok ? "　✓ 对上" : "　✗ 对不上");
+    } else {
+      line.textContent = chk.error || "对不上";
+    }
+    host.append(line);
+    if (/试玩/.test(r.status_text || "")) {
+      host.append(el("p", "foot", "截图写着「试玩」——按约定截图＝实购，默认记实购；真是试玩就切到下面的「试玩」。"));
+    }
+    const kinds = el("div", "b-chips");
+    for (const [val, label] of [[false, "实购"], [true, "试玩"]]) {
+      const on = it.trial === val;
+      const b = button("b-chip" + (on ? " on" : ""), label, () => { state.intake.trial = val; renderIntake(); renderSlip(); });
+      b.setAttribute("aria-pressed", String(on));
+      kinds.append(b);
+    }
+    host.append(kinds);
+  }
+
   function renderSlip() {
+    renderIntake();
     const host = document.getElementById("slip500");
     if (!host || !state.data) return;
     const active = document.activeElement;

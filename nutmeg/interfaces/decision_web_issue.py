@@ -55,8 +55,8 @@ def _names(data_dir: Path, issue: str, matrices: dict[str, dict]) -> dict[str, s
 
 
 def _sale_ticket(data_dir: Path, issue: str, payload: dict, *, slip_id: str, deviation: str = "",
-                 prediction: str = "", scheme_no: str = ""):
-    """500 下单的那张票（实购）：9 场＝任九、14 场＝胜负彩，其它场数不成票。不写文件。"""
+                 prediction: str = "", scheme_no: str = "", trial: bool = False, note: str = ""):
+    """500 下单的那张票（默认实购）：9 场＝任九、14 场＝胜负彩，其它场数不成票。不写文件。"""
     from nutmeg.decision.betslip import RENJIU_PICK, SFC_MATCHES, format_faces_row, parse_faces_row
     from nutmeg.decision.precheck import build_slip
 
@@ -69,7 +69,19 @@ def _sale_ticket(data_dir: Path, issue: str, payload: dict, *, slip_id: str, dev
     return build_slip(slip_id=slip_id, channel=channel, placed_at=_today_bj(),
                       faces=format_faces_row(faces), issue=issue,
                       multiplier=_multiplier(payload.get("multiplier")), scheme_no=scheme_no,
-                      trial=False, deviation=deviation, prediction=prediction, data_dir=data_dir)
+                      trial=trial, note=note, deviation=deviation, prediction=prediction,
+                      data_dir=data_dir)
+
+
+def _intake_check(data_dir: Path, issue: str, iid: str, slip) -> dict:
+    """带截图收件时：截图底部注数 / 金额 对 这张票（Task 10.5）。没读出来的收件 → ok=False。"""
+    from nutmeg.decision.intake import load_result, reconcile
+
+    got = load_result(data_dir, issue, iid) or {}
+    if got.get("state") != "done":
+        return {"ok": False, "rows": [], "error": got.get("error") or "截图还没读完"}
+    return {**reconcile(got["read"], notes=slip.notes, stake=int(slip.stake_yuan)),
+            "image": got.get("image")}
 
 
 def _zucai_gates(slip) -> list[dict]:
@@ -291,6 +303,8 @@ def register_issue_routes(app: FastAPI, templates) -> None:
             slip = _sale_ticket(data_dir, issue, payload, slip_id="preview")
             row = format_faces_row(slip.faces)
             notes, stake = slip.notes, slip.stake_yuan
+            iid = str(payload.get("intake") or "")
+            check = _intake_check(data_dir, issue, iid, slip) if iid else None
         except (KeyError, ValueError) as error:   # BetslipError 是 ValueError
             return {"ok": False, "error": _error_text(error)}
         names = _names(data_dir, issue, _matrices(data_dir, issue, []))
@@ -299,7 +313,7 @@ def register_issue_routes(app: FastAPI, templates) -> None:
         named = " ".join(f"{no}·{f}" for no, f in sorted(slip.faces.items(),
                                                           key=lambda kv: int(kv[0])))
         return {"ok": True, "faces_row": row, "named": named, "cells": cells,
-                "notes": notes, "stake": stake}
+                "notes": notes, "stake": stake, "intake_check": check}
 
     @app.post("/action/issue/{issue}/register")
     def register_action(issue: str, payload: dict = Body(...)) -> Any:  # noqa: B008
@@ -318,10 +332,20 @@ def register_issue_routes(app: FastAPI, templates) -> None:
         if record is not None and not deviation and not prediction:
             deviation = str(record.get("deviation") or "")
             prediction = str(record.get("prediction") or "")
+        iid = str(payload.get("intake") or "")
         try:
             slip = _sale_ticket(data_dir, issue, payload, slip_id=next_slip_id(data_dir, issue),
                                 deviation=deviation, prediction=prediction,
-                                scheme_no=str(payload.get("scheme_no") or "").strip())
+                                scheme_no=str(payload.get("scheme_no") or "").strip(),
+                                trial=bool(payload.get("trial")))
+            if iid:   # 截图收件：底部注数 / 金额对不上就不收（抄录错误，不是审票否决）
+                check = _intake_check(data_dir, issue, iid, slip)
+                if not check["ok"]:
+                    bad = "；".join(f"{r['label']} 截图 {r['seen']} ≠ 票 {r['computed']}"
+                                   for r in check["rows"] if not r["ok"]) or check.get("error")
+                    return {"ok": False,
+                            "error": f"截图与这张票对不上：{bad}。改格，或不带截图登记"}
+                slip.note = f"截图收件 intake/{issue}/{check['image']}"
             done = register_reviewed(slip, data_dir)
         except (KeyError, ValueError) as error:   # 偏离理由不在封闭枚举里也在登记之前挡回
             return {"ok": False, "error": _error_text(error)}
@@ -331,7 +355,8 @@ def register_issue_routes(app: FastAPI, templates) -> None:
         if record is not None:   # 跨渠道（胜负彩对任九 B1）不比，bridge_ledger 不出这张 → null
             changed = next((r["changed"] for r in bridge_ledger(data_dir, issue)["real"]
                             if r["slip_id"] == saved.slip_id), None)
-        return {"ok": True, "slip_id": saved.slip_id, "summary": done["summary"],
+        return {"ok": True, "slip_id": saved.slip_id, "purchased": saved.purchased,
+                "summary": done["summary"],
                 "lines": done["lines"], "faces_row": format_faces_row(saved.faces),
                 "notes": saved.notes, "stake": saved.stake_yuan, "multiplier": saved.multiplier,
                 "codes": list(review.get("codes") or []), "vetoed": bool(review.get("vetoed")),
