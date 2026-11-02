@@ -234,6 +234,33 @@ def decision_web(
     uvicorn.run(app, host=host, port=port)
 
 
+@_cli.app.command("decision-web-ip-check")
+def decision_web_ip_check(
+    dry_run: bool = _cli.typer.Option(False, "--dry-run", help="只打印，不推 Telegram"),
+) -> None:
+    """内网域名（2026-11-02）：本机 IP 与域名解析不一致 → 推一次 Telegram，
+    提醒去 Cloudflare 改 A 记录。同一个新 IP 只推一次（notify 指纹＝新 IP）；
+    没配域名或此刻没网就什么都不做。"""
+    from nutmeg.config.settings import decision_web_lan, resolve
+    from nutmeg.notifications.notify import notify
+
+    lan = decision_web_lan()
+    if lan is None or not lan[1] or not lan[2]:
+        _cli.typer.echo("未配内网域名或此刻没有局域网 IP：跳过")
+        return
+    port, domain, ip = lan
+    seen = resolve(domain)
+    if seen == ip:
+        _cli.typer.echo(f"{domain} → {ip} 一致")
+        return
+    text = (f"Mac 的校园网地址变了：{domain} 还指向 {seen or '（解析不到）'}，本机现在是 {ip}。\n"
+            f"去 Cloudflare → einshx.com → DNS，把 A 记录 {domain.split('.')[0]} 改成 {ip}"
+            "（仅 DNS，灰色云朵）。\n"
+            f"改好之前推送链接自动用 http://{ip}:{port}；主屏幕图标改好后恢复。")
+    result = notify("lan_ip", domain, ip, text, dry_run=dry_run)
+    _cli.typer.echo(f"{domain} → {seen or '—'} ≠ 本机 {ip}：{result.status}")
+
+
 @_cli.app.command("zucai-prep")
 def zucai_prep(
     run_date: str | None = _cli.typer.Option(None, "--run-date", help="YYYY-MM-DD,默认今天"),

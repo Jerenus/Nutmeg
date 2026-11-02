@@ -42,7 +42,8 @@ class AppSettings(BaseSettings):
     telegram_allowed_chat_ids: str | None = None
     # 推送里的页面链接前缀（2026-10-29 产品形态 Task 9.1）：空＝不加链接、推送逐字照旧；
     # 配了才在末行给出 `{base}/issue/<期>` 之类的绝对地址。只管文本，不改服务绑定。
-    # `lan:<端口>`＝发送当下本机的局域网 IP（校园网动态地址池会变，见 decision_web_base_url）。
+    # `lan:<端口>`＝发送当下本机的局域网 IP（校园网动态地址池会变，见 decision_web_base_url）；
+    # `lan:<端口>@<域名>`＝内网域名（2026-11-02 Jun 定，不上公网）：域名此刻解析到本机 IP 才用域名。
     decision_web_url: str = ''
     # decision-web 绑非本机地址时必填（2026-10-30）：非本机访问先过密码页。见 decision_web_auth。
     decision_web_password: str = Field(default='', repr=False)
@@ -72,12 +73,8 @@ def get_settings() -> AppSettings:
     return AppSettings()
 
 
-def decision_web_base_url(value: str | None = None) -> str:
-    """推送链接前缀。`lan:8787` → `http://<此刻本机局域网 IP>:8787`（取默认路由出口地址，UDP
-    connect 不发包）；取不到 IP 就返回空＝不带链接。其余值原样（去尾斜杠）。"""
-    value = get_settings().decision_web_url if value is None else value
-    if not value.startswith('lan:'):
-        return value.rstrip('/')
+def lan_ip() -> str:
+    """本机此刻的局域网 IP（默认路由出口地址，UDP connect 不发包）；取不到 → 空串。"""
     import socket
 
     try:
@@ -86,6 +83,40 @@ def decision_web_base_url(value: str | None = None) -> str:
             ip = s.getsockname()[0]
     except OSError:
         return ''
-    return '' if ip.startswith('127.') else f'http://{ip}:{value[4:]}'
+    return '' if ip.startswith('127.') else ip
+
+
+def resolve(domain: str) -> str:
+    """域名此刻解析到的 IPv4；解析不了 → 空串。"""
+    import socket
+
+    try:
+        return socket.gethostbyname(domain)
+    except OSError:
+        return ''
+
+
+def decision_web_lan(value: str | None = None) -> tuple[str, str, str] | None:
+    """`lan:<端口>[@<域名>]` → (端口, 域名, 本机 IP)；不是 lan 写法 → None。"""
+    value = get_settings().decision_web_url if value is None else value
+    if not value.startswith('lan:'):
+        return None
+    port, _, domain = value[4:].partition('@')
+    return port, domain.strip(), lan_ip()
+
+
+def decision_web_base_url(value: str | None = None) -> str:
+    """推送链接前缀。`lan:8787` → `http://<此刻本机局域网 IP>:8787`；`lan:8787@<域名>` → 域名此刻
+    解析到本机 IP 时用 `http://<域名>:8787`，否则退回 IP（IP 变了、DNS 还没改，链接照样能开）。
+    取不到 IP 就返回空＝不带链接。其余值原样（去尾斜杠）。"""
+    value = get_settings().decision_web_url if value is None else value
+    lan = decision_web_lan(value)
+    if lan is None:
+        return value.rstrip('/')
+    port, domain, ip = lan
+    if not ip:
+        return ''
+    host = domain if domain and resolve(domain) == ip else ip
+    return f'http://{host}:{port}'
 
 

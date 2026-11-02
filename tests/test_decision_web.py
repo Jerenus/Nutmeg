@@ -226,3 +226,40 @@ def test_cross_site_writes_are_refused(tmp_path):
                                    "X-Forwarded-Host": "mac.tail1.ts.net"})
     assert proxied.status_code == 200
     assert client.post("/action/note", json=body).status_code == 200
+
+
+def test_push_link_uses_domain_only_when_it_points_here(monkeypatch):
+    """`lan:<端口>@<域名>`（2026-11-02 内网域名）：域名解析到本机 IP 才用域名，否则退回 IP。"""
+    from nutmeg.config import settings
+
+    monkeypatch.setattr(settings, "lan_ip", lambda: "10.209.80.225")
+    monkeypatch.setattr(settings, "resolve", lambda d: "10.209.80.225")
+    assert settings.decision_web_base_url("lan:8787@nutmeg.einshx.com") == \
+        "http://nutmeg.einshx.com:8787"
+    monkeypatch.setattr(settings, "resolve", lambda d: "10.209.1.1")
+    assert settings.decision_web_base_url("lan:8787@nutmeg.einshx.com") == \
+        "http://10.209.80.225:8787"
+    monkeypatch.setattr(settings, "lan_ip", lambda: "")
+    assert settings.decision_web_base_url("lan:8787@nutmeg.einshx.com") == ""
+
+
+def test_ip_check_alerts_once_per_new_ip(monkeypatch):
+    from typer.testing import CliRunner
+
+    from nutmeg.config import settings
+    from nutmeg.interfaces.cli import app
+    from nutmeg.notifications import notify as nmod
+
+    sent = []
+    monkeypatch.setattr(settings, "decision_web_lan",
+                        lambda value=None: ("8787", "nutmeg.einshx.com", "10.209.9.9"))
+    monkeypatch.setattr(settings, "resolve", lambda d: "10.209.80.225")
+    monkeypatch.setattr(nmod, "notify", lambda kind, key, fp, text, **kw: sent.append(
+        (kind, key, fp, text)) or nmod.NotifyResult("sent"))
+    out = CliRunner().invoke(app, ["decision-web-ip-check"])
+    assert out.exit_code == 0 and "sent" in out.output
+    (kind, key, fp, text) = sent[0]
+    assert (kind, key, fp) == ("lan_ip", "nutmeg.einshx.com", "10.209.9.9")
+    assert "A 记录 nutmeg 改成 10.209.9.9" in text
+    monkeypatch.setattr(settings, "resolve", lambda d: "10.209.9.9")
+    assert "一致" in CliRunner().invoke(app, ["decision-web-ip-check"]).output and len(sent) == 1
