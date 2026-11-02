@@ -35,3 +35,49 @@
 .nm-nav .nm-brake.veto{color:var(--nm-veto); background:var(--nm-veto-bg); border-color:var(--nm-veto); font-weight:700}
 .nm-nav .nm-badge{display:inline-block; min-width:18px; padding:0 5px; border-radius:9px; background:var(--nm-veto);
   color:var(--nm-paper); font-family:var(--nm-mono); font-size:11px; line-height:18px; text-align:center; font-weight:700}
+
+/* 手机底栏（2026-11-02）：≤600px 顶栏只留品牌与刹车，五项放底部；宽屏不显示。 */
+.nm-tabbar{display:none}
+@media (max-width:600px){
+  .nm-nav .nm-links{display:none}
+  .nm-tabbar{
+    --nm-ink:#15181B; --nm-paper:#FFFFFF; --nm-line:#DADDD7; --nm-muted:#565E66; --nm-show:#7A828A;
+    --nm-focus:#EEF2FD; --nm-link:#2348C9; --nm-veto:#B23A0E;
+    --nm-sans:"Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+    --nm-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+    position:fixed; left:0; right:0; bottom:0; z-index:80; box-sizing:border-box;
+    display:grid; grid-template-columns:repeat(5, minmax(0, 1fr));
+    padding:4px 4px calc(4px + env(safe-area-inset-bottom)); background:var(--nm-paper);
+    border-top:1px solid var(--nm-line); font-family:var(--nm-sans); font-size:11px; line-height:1.2;
+  }
+  body:has(.nm-tabbar){padding-bottom:calc(64px + env(safe-area-inset-bottom))}
+  .nm-tabbar *{box-sizing:border-box}
+  .nm-tabbar > a, .nm-tabbar summary{
+    position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+    min-height:52px; padding:2px; border-radius:8px; color:var(--nm-muted); text-decoration:none;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; list-style:none;
+  }
+  .nm-tabbar summary::-webkit-details-marker{display:none}
+  .nm-tabbar .nm-ico{font-size:18px; line-height:20px}
+  .nm-tabbar > a[aria-current="page"], .nm-tabbar summary[aria-current="page"]{color:var(--nm-link); background:var(--nm-focus); font-weight:700}
+  .nm-tabbar a:focus-visible, .nm-tabbar summary:focus-visible{outline:2px solid var(--nm-link); outline-offset:-2px}
+  .nm-tabbar .nm-badge{position:absolute; top:2px; left:calc(50% + 6px); display:inline-block; min-width:18px; padding:0 5px;
+    border-radius:9px; background:var(--nm-veto); color:var(--nm-paper); font-family:var(--nm-mono); font-size:11px;
+    line-height:18px; text-align:center; font-weight:700}
+  .nm-tabbar .nm-more{position:relative}
+  .nm-tabbar .nm-more-menu{position:absolute; right:0; bottom:calc(100% + 8px); min-width:180px; display:flex; flex-direction:column;
+    padding:6px; background:var(--nm-paper); border:1px solid var(--nm-line); border-radius:10px; box-shadow:0 8px 28px rgba(0,0,0,.2)}
+  .nm-tabbar .nm-more-menu a{display:flex; align-items:center; gap:6px; min-height:44px; padding:0 12px; border-radius:6px;
+    color:var(--nm-ink); text-decoration:none; font-size:15px}
+  .nm-tabbar .nm-more-menu a[aria-current="page"]{color:var(--nm-link); background:var(--nm-focus); font-weight:700}
+  .nm-tabbar .nm-more-menu small{font-family:var(--nm-mono); font-size:11px; color:var(--nm-show)}
+  .nm-tabbar .nm-more-menu .nm-badge{position:static}
+}
+@media (max-width:600px) and (prefers-color-scheme:dark){:root:not([data-theme="light"]) .nm-tabbar{
+  --nm-ink:#E4E7E3; --nm-paper:#1A1E22; --nm-line:#2E343A; --nm-muted:#9AA2AA; --nm-show:#8A929A;
+  --nm-focus:#1C2540; --nm-link:#8EA6F5; --nm-veto:#F08A63;
+}}
+@media (max-width:600px){:root[data-theme="dark"] .nm-tabbar{
+  --nm-ink:#E4E7E3; --nm-paper:#1A1E22; --nm-line:#2E343A; --nm-muted:#9AA2AA; --nm-show:#8A929A;
+  --nm-focus:#1C2540; --nm-link:#8EA6F5; --nm-veto:#F08A63;
+}}

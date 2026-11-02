@@ -37,14 +37,17 @@
 
   function syncBadge(n) {
     // 导航角标是服务端渲染的；答复之后用同一份 summary.pending 跟上，不用刷新整页
-    var badge = document.querySelector('.nm-badge[data-badge="inbox"]');
-    if (badge) { if (n) badge.textContent = String(n); else badge.remove(); return; }
-    var nav = document.querySelector('.nm-nav a[href="/inbox"]');
-    if (nav && n) {
+    var badges = document.querySelectorAll('.nm-badge[data-badge="inbox"]');   // 顶栏与手机底栏各一枚
+    if (badges.length) {
+      badges.forEach(function (b) { if (n) b.textContent = String(n); else b.remove(); });
+      return;
+    }
+    if (!n) return;
+    document.querySelectorAll('.nm-nav a[href="/inbox"], .nm-tabbar a[href="/inbox"]').forEach(function (nav) {
       var b = el("span", "nm-badge", String(n));
       b.dataset.badge = "inbox";
       add(nav, document.createTextNode(" "), b);
-    }
+    });
   }
 
   function submit(r) {

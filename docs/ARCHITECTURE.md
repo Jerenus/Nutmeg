@@ -434,6 +434,7 @@ flowchart TB
 | 探索预算 | ≤¥30/日、只给预登记实验，票面 `--note "EXP:<号>"` | 宪法 §4，`account.py` |
 | 偏离登记 | 票面与机器初稿有差异时带理由（自判事实 / 价格直觉 / 资金分配 / 结构偏好 / 其他）+ 一句可证伪预测 | RULEBOOK「九」，`betslip_diagnosis.vs_draft` |
 | 行内追问（decision-web，2026-11-02） | 期页 / 竞彩板抽屉、账房逐期行、三页页头的「问」→ 底部面板：线程、快捷问法（要防平吗 / 钱往哪边 / 和哪场死法像 / 要补跑吗 / 只能单选呢）、答案里的纠正草稿就地确认；`POST /action/ask` 记问并唤醒后台作答线程，`GET /api/ask?obj=` 读线程（含纠正草稿此刻状态）；给应答员的「这一行」取自页面自己的 payload | `asks.py`、`decision_web_asks.py`、`ask.js` |
+| 手机底栏与「等你处理」（decision-web，2026-11-02） | ≤600px：顶栏链接收起，底栏五项（今天 / 在售期 / 竞彩 / 待签 / 更多），角标与顶栏同源（`shell_state` 的 inbox / drafts）；今天页「等你处理」读 `/api/day` 的 `todo`（待签超期在前前三条、纠正草稿前三条） | `_nav.html`、`decision_web_shell.todo` |
 | 截图登记（decision-web，2026-11-02） | 期页「截图登记」：`POST /api/issue/{期}/intake`（data URL）存原图并起线程看图读格（`claude -p` 只给 Read），`GET /api/issue/{期}/intake/{id}` 轮询读数；读数填进表、看不清的格点选；`slip500` 带 `intake` 时服务端对账（截图底部注数/金额 vs 抄录卡），`/action/issue/{期}/register` 带 `intake` 对不上就拒收，可选 `trial` | `intake.py`、`decision_web_intake.py` |
 | 待签收件箱（decision-web，2026-10-30） | `/inbox`：`GET /api/inbox` 给待签与已答（问过次数、积压天数、超期标记由服务端算），`POST /action/inbox/{id}/answer` 签 / 改（须写改成什么）/ 否 / 已过时；导航「待签」带待签数角标 | `proposals.py`、`decision_web_inbox.py` |
 | 纠正账（decision-web，2026-10-30） | `/corrections`：`GET /api/corrections` 给行、复发堆、草稿数；页面只许把草稿改成「已确认」或「不改·记一笔」，「已回写」由 CLI 在真回写后标；导航「纠正」带草稿角标；期页场行「修 HH:MM / MM-DD」与「自你上次看过改了 N 处」读 `/api/issue/{期}` 的 `corrections` | `corrections.py`、`decision_web_corrections.py` |

@@ -205,3 +205,16 @@ body:has(> .today){background:#F3F4F1}
   .today .lic-row{grid-template-columns:minmax(0,6em) minmax(0,1fr) 2.6em; gap:8px}
   .today #day-talk-obj{flex:1 1 100%}
 }
+
+/* 等你处理（2026-11-02）：待签与纠正草稿，点进收件箱 / 纠正账 */
+.today #day-todo .day-body{display:flex; flex-direction:column; gap:12px}
+.today .todo-group{display:flex; flex-direction:column; gap:6px}
+.today .todo-group h3{margin:0; font-size:13px; color:var(--muted); font-weight:600}
+.today .todo-row{display:flex; flex-direction:column; gap:2px; min-height:44px; justify-content:center; padding:8px 12px;
+  border:1px solid var(--line); border-radius:6px; background:var(--paper); color:var(--ink); text-decoration:none}
+.today .todo-row:hover{background:var(--focus)}
+.today .todo-row.hot{border-color:var(--veto); background:var(--veto-bg)}
+.today .todo-row.hot .todo-title{color:var(--veto)}
+.today .todo-title{font-weight:600; overflow-wrap:anywhere}
+.today .todo-sub{font-size:12px; color:var(--muted); overflow-wrap:anywhere; font-family:var(--mono)}
+.today .todo-more{font-size:13px; color:var(--link)}

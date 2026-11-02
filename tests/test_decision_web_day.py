@@ -199,3 +199,44 @@ def test_glance_missing_sidecar_is_an_error_not_a_500(tmp_path: Path):
     g = r.json()["glance"][0]
     assert g["tiers"] == {"A": 0, "B": 0, "b": 0, "C": 0, "D": 0}
     assert any("26152-packet.json" in e for e in g["errors"])
+
+
+# —— 2026-11-02：手机底栏 + 今天页「等你处理」——
+
+def _seed_todo(data: Path) -> dict:
+    from nutmeg.decision import corrections, proposals
+
+    ids = {"old": proposals.propose(data, title="旧提案", at="2026-10-01T12:00:00+08:00"),
+           "new": proposals.propose(data, title="新提案", blocks="六条件",
+                                    at=_NOW.isoformat(timespec="seconds"))}
+    ids["cx"] = corrections.record(data, obj="issue:26152/m7", old="④ ✓", new="④ ✗",
+                                   kind="premise", found_by="machine")
+    return ids
+
+
+def test_tabbar_carries_first_issue_and_badges(tmp_path: Path):
+    client, data = _shell_client(tmp_path)
+    _seed_todo(data)
+    html = client.get(f"/day/{_TODAY}").text
+    bar = html[html.index('class="nm-tabbar"'):]
+    assert 'href="/issue/26152"' in bar and 'href="/jczq"' in bar and 'href="/day"' in bar
+    assert bar.count('data-badge="inbox"') == 1 and bar.count('data-badge="corrections"') == 2
+    assert 'href="/corrections"' in bar and 'href="/lab"' in bar and 'href="/runs"' in bar
+    assert html.count('data-badge="inbox"') == 2           # 顶栏一枚、底栏一枚
+
+
+def test_tabbar_without_issue_in_sale_offers_ledger(tmp_path: Path):
+    client, _ = _client(tmp_path)
+    html = client.get("/day/2026-09-23").text
+    bar = html[html.index('class="nm-tabbar"'):]
+    assert 'href="/issue/' not in bar and bar.index('href="/ledger"') < bar.index('href="/jczq"')
+
+
+def test_today_todo_lists_overdue_first_and_drafts(tmp_path: Path):
+    client, data = _shell_client(tmp_path)
+    ids = _seed_todo(data)
+    todo = client.get(f"/api/day/{_TODAY}").json()["todo"]
+    assert todo["inbox"]["pending"] == 2 and todo["inbox"]["overdue"] == 1
+    assert [r["id"] for r in todo["inbox"]["top"]] == [ids["old"], ids["new"]]
+    assert todo["drafts"]["n"] == 1 and todo["drafts"]["top"][0]["new"] == "④ ✗"
+    assert 'id="day-todo"' in client.get(f"/day/{_TODAY}").text

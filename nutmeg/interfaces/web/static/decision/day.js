@@ -233,6 +233,39 @@ window.Day = (function () {
     });
   }
 
+  // ---- 等你处理：待签与纠正草稿（2026-11-02；与导航角标同一本账，前三条在服务端选好）----
+  function todoRow(href, title, sub, hot) {
+    var a = link(href, "todo-row" + (hot ? " hot" : ""));
+    add(a, el("span", "todo-title", title), sub ? el("span", "todo-sub", sub) : null);
+    return a;
+  }
+  function renderTodo(view) {
+    var sec = document.getElementById("day-todo");
+    var t = view.todo || {}, inbox = t.inbox, drafts = t.drafts;
+    var nInbox = inbox ? inbox.pending : 0, nDrafts = drafts ? drafts.n : 0;
+    sec.hidden = !(nInbox || nDrafts);
+    if (sec.hidden) return;
+    var box = clear(body("day-todo"));
+    document.getElementById("day-todo-n").textContent = [nInbox ? nInbox + " 条待签" + (inbox.overdue ? "（" + inbox.overdue + " 条超期）" : "") : "",
+      nDrafts ? nDrafts + " 条纠正待确认" : ""].filter(Boolean).join(" · ");
+    if (nInbox) {
+      var g = add(el("div", "todo-group"), el("h3", null, "待签"));
+      inbox.top.forEach(function (r) {
+        g.appendChild(todoRow("/inbox", r.title, "问过 " + r.asked_count + " 次 · 积压 " + r.age_days + " 天" + (r.blocks ? " · 拦住 " + r.blocks : ""), r.overdue));
+      });
+      if (nInbox > inbox.top.length) g.appendChild(link("/inbox", "todo-more", "还有 " + (nInbox - inbox.top.length) + " 条 → 待签"));
+      box.appendChild(g);
+    }
+    if (nDrafts) {
+      var d = add(el("div", "todo-group"), el("h3", null, "纠正草稿"));
+      drafts.top.forEach(function (r) {
+        d.appendChild(todoRow("/corrections?obj=" + encodeURIComponent(r.obj), r.obj, (r.old || "—") + " → " + (r.new || "—"), false));
+      });
+      if (nDrafts > drafts.top.length) d.appendChild(link("/corrections", "todo-more", "还有 " + (nDrafts - drafts.top.length) + " 条 → 纠正账"));
+      box.appendChild(d);
+    }
+  }
+
   // ---- 期一眼（旁车） ----
   var TIERS = ["A", "B", "b", "C", "D"];
   function segBar(k, n) {
@@ -390,7 +423,7 @@ window.Day = (function () {
     if (!view) return;
     state.view = view;
     if (!state.date) state.date = view.date;
-    renderBrake(view); renderErrors(view); renderTimeline(view); renderDecisions(view);
+    renderBrake(view); renderErrors(view); renderTodo(view); renderTimeline(view); renderDecisions(view);
     renderGlance(view); renderLines(view);
     renderJczq(view); renderRetro(view); renderRsi(view); renderSession(view); renderTalk(view);
   }

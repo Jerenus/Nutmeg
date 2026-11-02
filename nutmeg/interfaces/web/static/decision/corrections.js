@@ -179,8 +179,9 @@
     clear(body);
     var drafts = state.data.summary.drafts || 0;
     // 导航角标是服务端渲染的；页上确认之后用同一份 summary.drafts 跟上，不用刷新整页
-    var badge = document.querySelector('.nm-badge[data-badge="corrections"]');
-    if (badge) { if (drafts) badge.textContent = String(drafts); else badge.remove(); }
+    document.querySelectorAll('.nm-badge[data-badge="corrections"]').forEach(function (badge) {   // 顶栏与手机底栏各一枚
+      if (drafts) badge.textContent = String(drafts); else badge.remove();
+    });
     add(body,
       add(el("div", "cx-bar"), chips(),
         el("span", "cx-drafts" + (drafts ? " on" : ""), drafts ? drafts + " 条草稿待你确认" : "没有待确认的草稿")),

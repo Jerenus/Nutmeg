@@ -188,7 +188,34 @@ def today_extras(data_dir: Path | str, date: str, now: datetime, *,
         rows.sort(key=lambda r: r.get("kind") not in REGISTER_KINDS)
     return {"shell": shell, "passes": passes,
             "glance": [glance(data_dir, i["issue"], i["deadline"]) for i in shell["issues"]],
-            "decisions": [_linked(r) for r in rows], "errors": errors}
+            "decisions": [_linked(r) for r in rows], "todo": todo(data_dir, errors),
+            "errors": errors}
+
+
+TODO_TOP = 3
+
+
+def todo(data_dir: Path, errors: list[str]) -> dict:
+    """今天页「等你处理」：待签（收件箱，超期在前）与纠正草稿，各取前三条。与导航角标同一本账。"""
+    from nutmeg.decision import corrections, proposals
+
+    out: dict[str, Any] = {"inbox": None, "drafts": None}
+    try:
+        rows = [r for r in proposals.inbox(data_dir) if r["status"] == "pending"]
+        rows.sort(key=lambda r: not r.get("overdue"))      # 稳定排序：超期在前，其余照账序
+        out["inbox"] = {**proposals.summary(rows), "top": [
+            {k: r.get(k) for k in ("id", "title", "blocks", "asked_count", "age_days", "overdue")}
+            for r in rows[:TODO_TOP]]}
+    except Exception as exc:  # noqa: BLE001
+        _err(errors, "待签收件箱读取失败", exc)
+    try:
+        drafts = [r for r in corrections.load(data_dir) if r["status"] == "draft"]
+        out["drafts"] = {"n": len(drafts), "top": [
+            {k: r.get(k) for k in ("id", "obj", "old", "new", "kind", "at")}
+            for r in drafts[:TODO_TOP]]}
+    except Exception as exc:  # noqa: BLE001
+        _err(errors, "纠正账读取失败", exc)
+    return out
 
 
 def _pass_error(data_dir: Path, channel: str, target: str, now: datetime) -> str | None:
