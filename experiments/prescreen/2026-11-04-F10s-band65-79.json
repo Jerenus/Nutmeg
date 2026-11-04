@@ -1,0 +1,22 @@
+{
+ "id": "F10s_B65–79",
+ "select": {
+  "field": "derived.band",
+  "equals": "B65–79"
+ },
+ "face": "modal",
+ "n": 102,
+ "pool": 679,
+ "days": 35,
+ "effect_pp_threshold": 10.0,
+ "residual_pp": 7.01,
+ "ci": [
+  0.3,
+  13.54
+ ],
+ "floor_pp": 12.88,
+ "floor_low_pp": -3.58,
+ "passes_floor": false,
+ "effect_abs_pp": 7.01,
+ "suggested_n_min": null
+}

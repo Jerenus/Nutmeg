@@ -1,0 +1,25 @@
+{
+ "id": "F10s_band60_80",
+ "select": {
+  "field": "derived.band",
+  "in": [
+   "B65–79",
+   "b57–64"
+  ]
+ },
+ "face": "modal",
+ "n": 209,
+ "pool": 679,
+ "days": 40,
+ "effect_pp_threshold": 10.0,
+ "residual_pp": 9.24,
+ "ci": [
+  3.27,
+  14.98
+ ],
+ "floor_pp": 9.81,
+ "floor_low_pp": -0.95,
+ "passes_floor": false,
+ "effect_abs_pp": 9.24,
+ "suggested_n_min": null
+}
