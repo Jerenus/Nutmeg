@@ -73,11 +73,11 @@ def test_trade_flow_aggregates_usd_by_side_and_outcome_and_keeps_the_biggest_tra
 
     def fetch(url, params):
         seen.update(params)
-        assert url.endswith("/trades")
-        return trades
+        assert url.endswith("/v2/trades")  # Data API v1 2026-11-02 退役，v2 响应包在 data 里
+        return {"data": trades, "pagination": {"has_more": False}}
 
     flow = trade_flow(fetch, "0xabc")
-    assert seen["market"] == "0xabc"
+    assert seen["condition_id"] == "0xabc" and "market" not in seen
     assert flow["n"] == 3 and flow["buy_no"] == 73.0 and flow["buy_yes"] == 13.5
     assert flow["sell_yes"] == 3120.0 and flow["sell_no"] == 0.0
     assert flow["biggest"] == {"side": "SELL", "outcome": "Yes", "usd": 3120.0, "price": 0.26,

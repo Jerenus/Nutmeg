@@ -126,8 +126,14 @@ def trade_flow(fetch: Fetch, condition_id: str, *, limit: int = TRADES_LIMIT) ->
     """一个二元市场最近 `limit` 笔成交按 (side, outcome) 合计美元（2026-10-18，资金去向）。
 
     → {buy_yes, buy_no, sell_yes, sell_no, n, biggest{side,outcome,usd,price,who}}。
-    只合计、不判断；接口非列表 → 全零。"""
-    rows = fetch(f"{DATA_API}/trades", {"market": condition_id, "limit": limit})
+    只合计、不判断；接口非列表 → 全零。
+
+    2026-11-04：Data API v1 于 11-02 退役（`/trades?market=` 回 410），改走 v2——
+    `/v2/trades?condition_id=`，响应包在 `{"data": [...], "pagination": …}` 里；逐笔字段
+    （side / outcome / size / price / pseudonym）不变。"""
+    rows = fetch(f"{DATA_API}/v2/trades", {"condition_id": condition_id, "limit": limit})
+    if isinstance(rows, dict):
+        rows = rows.get("data")
     out = {"buy_yes": 0.0, "buy_no": 0.0, "sell_yes": 0.0, "sell_no": 0.0, "n": 0,
            "biggest": None}
     if not isinstance(rows, list):
