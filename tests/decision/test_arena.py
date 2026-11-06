@@ -8,7 +8,7 @@ import pytest
 
 from nutmeg.decision.arena.backtest import Day, check_admission, dev_pack, history_days, replay
 from nutmeg.decision.arena.baseline import baseline_rules
-from nutmeg.decision.arena.board import champion_line, render_board, track_rows
+from nutmeg.decision.arena.board import build_board, champion_line, render_board, track_rows
 from nutmeg.decision.arena.floor import floor_tickets
 from nutmeg.decision.arena.freeze import freeze_day
 from nutmeg.decision.arena.ledger import (
@@ -276,12 +276,12 @@ def test_settle_pending_appends_once(tmp_path):
 
 # --- 榜单 -----------------------------------------------------------------
 def test_track_rows_subtract_same_day_floor():
-    entries = {"T-1": [{"day": "d1", "tier": "10-20", "gross": 15.0},
-                       {"day": "d2", "tier": "10-20", "gross": 0.0}]}
+    entries = {"T-1": [{"day": "d1", "tier": "10-20", "gross": 15.0, "fair": 0.9},
+                       {"day": "d2", "tier": "10-20", "gross": 0.0, "fair": 0.9}]}
     floors = {("d1", "10-20"): [0.0, 2.0], ("d2", "10-20"): [1.0, 1.0]}
     row = track_rows(entries, floors)[0]
     assert row["tickets"] == 2 and row["won"] == 1 and row["roi"] == pytest.approx(6.5)
-    assert row["score"] == pytest.approx(6.5)
+    assert row["score"] == pytest.approx(6.5) and row["edge"] == pytest.approx(6.6)
 
 
 def test_champion_line_is_reproducible_and_board_reports_no_champion():
@@ -290,6 +290,19 @@ def test_champion_line_is_reproducible_and_board_reports_no_champion():
     line = champion_line(tracks, floors, sims=200)
     assert line == champion_line(tracks, floors, sims=200) and line > 0
     rows = [{"track": "T-1", "tier": "10-20", "tickets": 2, "won": 0, "roi": -1.0,
-             "floor_roi": 3.0, "score": -4.0}]
+             "floor_roi": 3.0, "score": -4.0, "edge": -1.0}]
     text = render_board("2026-11", rows, line, pending=3, empty_days=1)
     assert "本季无有效冠军" in text and "T-1" in text and "待结 3" in text
+
+
+def test_build_board_from_settled_ledger(tmp_path):
+    add_rule(tmp_path, "S1", _rule(filter={"face": ["draw"]}))
+    _freeze(tmp_path)
+    results = {"2026-11-06": {"周五001": {"ft_home": 1, "ft_away": 1},
+                              "周五002": {"ft_home": 0, "ft_away": 0},
+                              "周五003": {"ft_home": 1, "ft_away": 0}}}
+    (tmp_path / "jczq" / "jc-results.json").write_text(json.dumps(results), "utf-8")
+    settle_pending(tmp_path, "2026-11-07T09:50:00+08:00")
+    text = build_board(tmp_path, "2026-11").read_text("utf-8")
+    assert "| 1 | T-1 | 10-20 | 1 | 1 | +924.0% |" in text and "超预期" in text
+    assert "待结 0" in text

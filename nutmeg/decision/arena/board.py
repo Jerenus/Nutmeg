@@ -16,7 +16,11 @@ def _mean(values: list[float]) -> float:
 
 
 def track_rows(entries: dict[str, list[dict]], floors: dict) -> list[dict]:
-    """entries＝{赛道: [{day, tier, gross}]}；floors＝{(day, tier): [地板派奖倍数]}。按主分降序。"""
+    """entries＝{赛道: [{day, tier, gross, fair}]}，fair＝联合概率×赔率。
+
+    floors＝{(day, tier): [地板派奖倍数]}。
+
+    主分含少吃抽水的结构优势，`edge`＝实际减国际概率期望，才看选腿有没有信息。按主分降序。"""
     rows = []
     for track, items in entries.items():
         matched = [x for x in items if floors.get((x["day"], x["tier"]))]
@@ -25,6 +29,7 @@ def track_rows(entries: dict[str, list[dict]], floors: dict) -> list[dict]:
             "track": track, "tier": items[0]["tier"], "tickets": len(items),
             "won": sum(1 for x in items if x["gross"] > 0),
             "roi": _mean([x["gross"] for x in items]) - 1,
+            "edge": _mean([x["gross"] - x["fair"] for x in items]),
             "floor_roi": _mean(bases) - 1 if bases else None,
             "score": (_mean([x["gross"] - b for x, b in zip(matched, bases, strict=True)])
                       if matched else None),
@@ -63,11 +68,14 @@ def render_board(month: str, rows: list[dict], line: float | None, *, pending: i
             "虚拟单，不进净值和止损账。榜单只作展示，不影响实票。", "",
             f"**{head}**。冠军线 {_pct(line)}，待结 {pending} 张，"
             f"无合规组合累计 {empty_days} 条次。",
-            "", "| 排名 | 赛道 | 档 | 张 | 中 | ROI | 地板 ROI | 主分 |",
-            "|---|---|---|---|---|---|---|---|"]
+            "", "主分＝ROI 减同日同档地板，含少吃抽水的结构优势。",
+            "超预期＝ROI 减国际概率期望，才看选腿信息。",
+            "", "| 排名 | 赛道 | 档 | 张 | 中 | ROI | 地板 ROI | 主分 | 超预期 |",
+            "|---|---|---|---|---|---|---|---|---|"]
     for rank, row in enumerate(rows, 1):
         text.append(f"| {rank} | {row['track']} | {row['tier']} | {row['tickets']} | {row['won']} "
-                    f"| {_pct(row['roi'])} | {_pct(row['floor_roi'])} | {_pct(row['score'])} |")
+                    f"| {_pct(row['roi'])} | {_pct(row['floor_roi'])} | {_pct(row['score'])} "
+                    f"| {_pct(row['edge'])} |")
     return "\n".join(text) + "\n"
 
 
@@ -80,7 +88,8 @@ def build_board(data_dir, month: str) -> Path:
     for row in settled:
         ticket = tickets[row["ticket_id"]]
         entries[ticket["track"]].append({"day": ticket["day"], "tier": ticket["tier"],
-                                         "gross": row["payout"] / ticket["stake"]})
+                                         "gross": row["payout"] / ticket["stake"],
+                                         "fair": ticket["p_joint"] * ticket["odds"]})
     floors: dict = {}
     for day in {x["day"] for items in entries.values() for x in items}:
         doc = json.loads((root / "floor" / f"{day}.json").read_text("utf-8"))
