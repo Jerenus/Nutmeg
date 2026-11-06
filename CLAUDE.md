@@ -20,6 +20,7 @@
 - "胜负彩 / 任九 / 26xxx 期方案" → RUNBOOK 泳道 B
 - "深度分析 / 混合投注 / X 串 Y / 审核我的方案" → 深研与审票（`docs/jczq-mixed-bet-judge-process.md`：逐场研究 → Jun 出方案 → `betslip preview` 审票 → 登记）
 - "/zucai-packet <期> / 按我的问题梳理 / 分析包" → RUNBOOK B5e 阅读层（`.claude/commands/zucai-packet.md`，2026-10-14 起**三屏一桥**：A 三屏 §0 头部 · §1 决策表 14 行（档·锚方中轴·洞在谁·翻车面·标签(弱/真实·价内/未价，10-16 F19)·六条件 k/n·人群(钱→哪面)·默认动作·死门 P·赛前看谁）· §1b 人群地图（PM 分市场量·资金去向·富勒姆型三判据，10-18；`crowd polymarket --flow`）· §2 胆与票（胆表 ≤5 行 + 主形一张 + 替代一张 + 死法清单）一次出齐 → B 桥 §3 只走一次（五条自检、差异格、死法清单）→ C 审票登记 §4 → D 次日 `retro` §5（决策表加「开」「许可证 ✓/✗」）；发布为报告页）
+- "虚拟规则赛 / arena / 竞彩虚拟单榜单" → RUNBOOK 泳道 C（全程虚拟，不进净值和判断层）
 - "/today / 今天的结论 / 从今天开始" → 读 daily/<日>/session.md（`.claude/commands/today.md`）
 
 ## 知识层

@@ -146,7 +146,7 @@ flowchart TB
 
 ### 2.1 定时任务
 
-launchd **14 个**（plist 单一来源 `ops/launchd/`，装载副本在 `~/Library/LaunchAgents/`），OpenClaw **3 个**确定性任务仍在用。
+launchd **21 个**（plist 单一来源 `ops/launchd/`，装载副本在 `~/Library/LaunchAgents/`），OpenClaw **3 个**确定性任务仍在用。
 
 ```mermaid
 %%{init: {"theme": "base", "themeCSS": ".grid .tick line { stroke: #E2E8F0; } .grid path { stroke: none; } .sectionTitle { font-weight: 600; }", "themeVariables": {"fontSize": "14px", "taskBkgColor": "#F3E8FF", "taskBorderColor": "#9333EA", "doneTaskBkgColor": "#E0F2FE", "doneTaskBorderColor": "#0284C7", "activeTaskBkgColor": "#CCFBF1", "activeTaskBorderColor": "#0D9488", "critBkgColor": "#FFE4E6", "critBorderColor": "#E11D48", "taskTextColor": "#0F172A", "taskTextDarkColor": "#0F172A", "taskTextOutsideColor": "#0F172A", "taskTextLightColor": "#0F172A", "sectionBkgColor": "#F8FAFC", "altSectionBkgColor": "#FFFFFF", "sectionBkgColor2": "#F8FAFC", "gridColor": "#E2E8F0", "titleColor": "#0F172A", "todayLineColor": "transparent"}, "gantt": {"barHeight": 18, "barGap": 6, "topPadding": 40, "leftPadding": 96, "fontSize": 13, "sectionFontSize": 14}}}%%
@@ -173,6 +173,7 @@ gantt
   当日报告 v2                                :active, d2, 14:20, 10m
   当日报告 v3                                :active, d3, 18:35, 10m
   section 结算与实验
+  虚拟规则赛冻结 arena.freeze                :18:40, 5m
   结算 day.settle                            :crit, e1, 09:45, 10m
   结算 二跑                                  :crit, e2, 15:45, 10m
   RSI 闭环 9 步                              :crit, e3, 10:45, 30m
@@ -757,4 +758,5 @@ flowchart TB
 | v1.4 | 2026-10-08 | 第二轮瘦身：共享模块行（赛果 / 每场行 / 面 / 去水 / 抓取只许一处实现）；`jczq.research` 末步改 `research refresh`；内核结算赛果改 `jc-results`；图 7 登记簿不再写内核；通知账本；内核表族注明已删代码的空表；证据链 10-08 行；文档地图加 RULEBOOK 归档与深研流程；`nutmeg/` 61,871→50,629 行、256 模块 |
 | v1.5 | 2026-10-08 | §9 加写代码四条纪律（Karpathy 编码准则按本项目改写）与单一来源守卫测试；新增定时器 `ops.deadcode`（每周一死代码周报，launchd 13→14） |
 | v1.6 | 2026-10-19 | §5 RSI：判决协议 v2（按登记 bound 判、单次结账、到期、CI 只取决于样本集合、前瞻门）、出口字段与观察型、落位守卫；实验清单重排（F14/F11 v2 证伪、F14b/K2 登记、六项退役、R0/R1 转运维指标）；图 9 第 4/5 步；rubric r2 上限退役 |
+| v1.8 | 2026-11-07 | 新增独立分析线「竞彩虚拟规则赛」`nutmeg/decision/arena/` 与定时器 `arena.freeze`、`arena.settle`（全程虚拟，账本 `jczq/arena/`，不进净值和判断层，设计见 specs/2026-11-07-jczq-arena-design.md）；launchd 计数按实际更新为 21 |
 | v1.7 | 2026-10-20 | §5：F19 价内/未价判据对象化接入结账；语料去重并入板面通路孪生的研究标签（10-10 起 65 场曾丢失）；rubric r3（`F_suspension` 上限退役，起无拨动项） |

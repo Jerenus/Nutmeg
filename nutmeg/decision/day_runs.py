@@ -331,6 +331,12 @@ JOBS: dict[str, JobSpec] = {
     "com.nutmeg.zucai.lineups": JobSpec(
         "足彩首发复核", "zucai", "每 15 分：停售倒计时、位移、票内场首发，有事才推",
         _ops_runs("zucai.lineups"), since=lambda _data_dir: "2026-10-26"),
+    "com.nutmeg.arena.freeze": JobSpec(
+        "虚拟规则赛·冻结", "jczq", "18:40 冻结当日虚拟组合和随机地板，不进净值",
+        _ops_runs("arena.freeze"), since=lambda _data_dir: "2026-11-07"),
+    "com.nutmeg.arena.settle": JobSpec(
+        "虚拟规则赛·结算", "jczq", "结算虚拟票，刷新当月榜单",
+        _ops_runs("arena.settle"), since=lambda _data_dir: "2026-11-07"),
     "com.nutmeg.rsi.loop": JobSpec(
         "RSI 闭环", "rsi", "结账、提案、列出待你决定的事", _rsi_loop,
         since=_first_day("analytics/rsi-loop/*.json")),

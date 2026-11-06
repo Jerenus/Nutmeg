@@ -12,6 +12,8 @@ EXPECTED = {
     ),
     "com.nutmeg.day.broadcast": ("every 600s", "day run --job broadcast"),
     "com.nutmeg.rsi.loop": ("10:45", "rsi loop"),
+    "com.nutmeg.arena.freeze": ("18:40", "arena freeze"),
+    "com.nutmeg.arena.settle": ("09:50,15:50", "arena settle", "arena board"),
 }
 
 

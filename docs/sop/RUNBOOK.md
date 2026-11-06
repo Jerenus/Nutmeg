@@ -1,4 +1,4 @@
-# RUNBOOK — 每日执行清单（两条泳道；命令可直接复制）
+# RUNBOOK — 每日执行清单（两条实票泳道 + 一条虚拟分析线；命令可直接复制）
 
 > 只写"做什么"，不写"为什么"。为什么见宪法与 RULEBOOK。launchd：am 08:00 自动（失败 30 分后重试）；settle 由 `com.nutmeg.day.settle` 09:45/15:45 承担；真票走 A6/B9c 登记。 **出生事故全文在 `INCIDENTS.md`（按步骤编号索引）；本表只留指针。**
 
@@ -86,6 +86,20 @@
 
 > **非决策附录 · 页面追问（`decision-web` 的 user_message）**：⛔**只解释已落库的研究与判读**：不产生新面集建议、不改 belief、只引用上下文里已有的数字。回复含「建议买/应该排/改成」即**拒答留痕**（不写答案，写一条说明）。
 > 判断仍在主循环：要改票面，回终端说「今天的方案」。 出生事故 → `INCIDENTS.md` §追问应答器
+
+## 泳道 C：竞彩虚拟规则赛（独立分析线，2026-11-07 起）
+
+全程虚拟：账本只在 `.nutmeg-data/jczq/arena/`，不写 betslips，不进净值、止损账和判断层。设计：`docs/superpowers/specs/2026-11-07-jczq-arena-design.md`。
+
+| 步 | 动作 | 命令 |
+|---|---|---|
+| C1 | 每日冻结（18:40 自动） | `uv run nutmeg arena freeze`；失败不补票，同日重跑不重复 |
+| C2 | 结算和榜单（09:50、15:50 自动） | `uv run nutmeg arena settle`、`uv run nutmeg arena board` |
+| C3 | 看榜 | 读 `jczq/arena/board-<月>.md`；月度只展示，每 90 天看趋势，赛季内不下结论 |
+| C4 | 新赛季投稿 | `arena dev-pack --out <目录>` 给选手，选手用 `arena backtest --rule <文件> --window dev` |
+| C5 | 评审和入赛 | 评审查偷看未来、过拟合、禁区形状和机制；`arena admit --rule <文件> --season <季> --review <结论>` 跑封存验证 |
+
+纪律：规则入库后只读，改规则换 id 算新赛道；每季 90 天；活跃赛道上限 40；跑满两季且名额不够才淘汰（规则文件写 `retired`）。过冠军线也只进展示，要影响判断必须走 RULEBOOK 指标两段式。
 
 ## 收尾检查表（每期）
 
