@@ -1,0 +1,50 @@
+{
+ "prospective_rows": 711,
+ "fav_residual": {
+  "market_read=agree": {
+   "n": 530,
+   "resid_pp": 5.6,
+   "ci": [
+    1.7,
+    9.7
+   ]
+  },
+  "market_read=overpriced": {
+   "n": 65,
+   "resid_pp": -1.1,
+   "ci": [
+    -12.9,
+    10.8
+   ]
+  },
+  "anchor=pass": {
+   "n": 436,
+   "resid_pp": 5.8,
+   "ci": [
+    1.2,
+    10.1
+   ]
+  },
+  "anchor=fail": {
+   "n": 144,
+   "resid_pp": 0.6,
+   "ci": [
+    -7.2,
+    8.5
+   ]
+  },
+  "anchor=symmetric_damage": {
+   "n": 121,
+   "resid_pp": 5.0,
+   "ci": [
+    -3.7,
+    13.8
+   ]
+  }
+ },
+ "c_tier_min_face": {
+  "n": 27043,
+  "priced": 0.225,
+  "actual": 0.218
+ }
+}
