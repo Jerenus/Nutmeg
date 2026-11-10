@@ -60,6 +60,7 @@
 | C18 / C18b 跨渠道立场矛盾、买回足彩已排的面 | WARN；未显式映射身份只报 INFO | `cross_channel_stance_conflict` / `cross_channel_excluded_face` |
 | **l-权重表 + 锚归零**：拨动须含官宣或确证结构级证据，否则归零；`form_state` 每条 ≤1pp；shift 峰值 ≤ 证据预算；无官宣 ≤10pp、有官宣 ≤15pp | rubric 派生的 tilt 同样过这道算术 | `stance.TIER_PP` / `ANCHOR_TIERS` / `KIND_PP_CAP` / `apply_tilt` |
 | **g-scope 身份脊柱**：一场一个内核 `match_id`；竞彩编号、足彩场号、titan007/500 id 都是别名，只走别名表（`<期>-channel-map(.auto).json`），缺一环显式跳过，不按队名或 fair 值反查 | 校验强制 | `zucai_identity`、C18、`zucai-night-calibrate` |
+| **规则 a 定线·降形价帽（2026-11-10 Jun 签）**：许可单凑不够字典主形时可降一形，但票价不得高于该板型降形价帽——热板 ¥128、半热板 ¥256、冷板 ¥256（128 期回测全中时奖金中位以下的最贵一形：热 ¥159 / 半热 ¥428 / 冷 2单7双 ¥283、1单8双 ¥491，每格中 7–12 次）；高于就空仓，1单8双 ¥512 不再是降形落点；A 档（≥80）六条件 4/6 不算许可单。近五期两读并排：降形读 3 张 ¥512 全灭（三条单全开、死在双），26162 全中单注 ¥132。取代包里的「两读并列」 | 许可证纪律，`/zucai-packet` §2 规则 a 与 §2a 票形字典；只在文档层，`judgment draft` 未入码 | `experiments/prescreen/2026-11-07-defense-width.py` |
 | **规则 a 补条·六条件④机械判（2026-10-24 Jun 批，26148 复盘）**：胆的六条件④「无欧战轮换」不得靠「未官宣」记 ✓——锚方 `rest_days ≤4` 且上一场欧战/杯赛且停售前无名单 → ④ 记「?」＝不成立（研究 q5_no_rotation_window=false 同义）；只改胆的资格，不改 P（F16 回放 n=598 负荷已定价）；损耗台账覆盖补 API-Football 全联赛日程（`nutmeg load fetch-schedule`） | 许可证纪律，`/zucai-packet` §1 条件列 + §2 胆表「停售前拿不到的信息」列 | `team_load.SCHEDULE_DIR` / `research_intake.LICENSE_KEYS` q5 |
 | 封闭词典（方向 / 无方向旗、`crash_markers`、先例 `alive/dead/none`、标签）：词典外的剥离进 note 并留痕，不阻断 | 入库桥 | `research_intake` + `legs_audit` 词典（2026-10-13 起 `legs_audit` 只剩词典） |
 
