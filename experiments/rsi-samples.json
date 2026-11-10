@@ -19407,6 +19407,206 @@
    "identity": "t:3013752",
    "key": "2026-11-08-周日030",
    "kind": "admitted"
+  },
+  {
+   "at": "2026-11-10T10:45:11+08:00",
+   "detail": {
+    "current_key": "26162-2"
+   },
+   "exp": "F14b",
+   "identity": "t:3003944",
+   "key": "2026-11-08-周日012",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-11-10T10:45:11+08:00",
+   "detail": {
+    "current_key": "26162-1"
+   },
+   "exp": "F17",
+   "identity": "t:3003941",
+   "key": "2026-11-08-周日013",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-11-10T10:45:12+08:00",
+   "detail": {
+    "current_key": "26162-1"
+   },
+   "exp": "F18",
+   "identity": "t:3003941",
+   "key": "2026-11-08-周日013",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-11-10T10:45:12+08:00",
+   "detail": {
+    "current_key": "26162-13"
+   },
+   "exp": "F18",
+   "identity": "t:3013761",
+   "key": "2026-11-08-周日024",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-11-10T10:45:12+08:00",
+   "detail": {
+    "current_key": "26162-6"
+   },
+   "exp": "F18",
+   "identity": "t:3018860",
+   "key": "2026-11-08-周日022",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-11-10T10:45:12+08:00",
+   "detail": {
+    "current_key": "26162-7"
+   },
+   "exp": "F18",
+   "identity": "t:3018862",
+   "key": "2026-11-08-周日027",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-11-10T10:45:13+08:00",
+   "detail": {
+    "current_key": "26162-11"
+   },
+   "exp": "K2",
+   "identity": "t:2993857",
+   "key": "2026-11-08-周日028",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-11-10T10:45:13+08:00",
+   "detail": {
+    "current_key": "26162-8"
+   },
+   "exp": "K2",
+   "identity": "t:2993858",
+   "key": "2026-11-08-周日015",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-11-10T10:45:13+08:00",
+   "detail": {
+    "current_key": "26162-10"
+   },
+   "exp": "K2",
+   "identity": "t:2993859",
+   "key": "2026-11-08-周日023",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-11-10T10:45:13+08:00",
+   "detail": {
+    "current_key": "26162-9"
+   },
+   "exp": "K2",
+   "identity": "t:2993860",
+   "key": "2026-11-08-周日014",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-11-10T10:45:13+08:00",
+   "detail": {
+    "current_key": "26162-1"
+   },
+   "exp": "K2",
+   "identity": "t:3003941",
+   "key": "2026-11-08-周日013",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-11-10T10:45:13+08:00",
+   "detail": {
+    "current_key": "26162-2"
+   },
+   "exp": "K2",
+   "identity": "t:3003944",
+   "key": "2026-11-08-周日012",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-11-10T10:45:13+08:00",
+   "detail": {
+    "current_key": "26162-4"
+   },
+   "exp": "K2",
+   "identity": "t:3003946",
+   "key": "2026-11-08-周日021",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-11-10T10:45:13+08:00",
+   "detail": {
+    "current_key": "26162-3"
+   },
+   "exp": "K2",
+   "identity": "t:3003948",
+   "key": "2026-11-08-周日011",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-11-10T10:45:13+08:00",
+   "detail": {
+    "current_key": "26162-14"
+   },
+   "exp": "K2",
+   "identity": "t:3013752",
+   "key": "2026-11-08-周日030",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-11-10T10:45:13+08:00",
+   "detail": {
+    "current_key": "26162-12"
+   },
+   "exp": "K2",
+   "identity": "t:3013758",
+   "key": "2026-11-08-周日017",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-11-10T10:45:13+08:00",
+   "detail": {
+    "current_key": "26162-13"
+   },
+   "exp": "K2",
+   "identity": "t:3013761",
+   "key": "2026-11-08-周日024",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-11-10T10:45:13+08:00",
+   "detail": {
+    "current_key": "26162-5"
+   },
+   "exp": "K2",
+   "identity": "t:3018859",
+   "key": "2026-11-08-周日016",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-11-10T10:45:13+08:00",
+   "detail": {
+    "current_key": "26162-6"
+   },
+   "exp": "K2",
+   "identity": "t:3018860",
+   "key": "2026-11-08-周日022",
+   "kind": "superseded"
+  },
+  {
+   "at": "2026-11-10T10:45:13+08:00",
+   "detail": {
+    "current_key": "26162-7"
+   },
+   "exp": "K2",
+   "identity": "t:3018862",
+   "key": "2026-11-08-周日027",
+   "kind": "superseded"
   }
  ],
  "experiments": {
