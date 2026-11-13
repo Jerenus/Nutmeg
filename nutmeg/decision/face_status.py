@@ -33,18 +33,6 @@ def _precedent_status(leg: dict, face: str) -> str:
     return "none"
 
 
-def proven_dead(research: dict | None) -> set[str]:
-    """研究以三证 3/3 判死的面（home/draw/away）。不足 3 证的「dead」不算死面——
-    `attach_face_status` 对它直接拒收，这里同一口径。"""
-    out = set()
-    for face in FACES:
-        doc = ((research or {}).get("death_three_proofs") or {}).get(face)
-        if (str((doc or {}).get("verdict") or "alive").lower() == "dead"
-                and sum(_proofs(doc).values()) == 3):
-            out.add(face)
-    return out
-
-
 def derive_faces(face_status: dict) -> str:
     return "".join(CODE_OF[face] for face in FACES if face_status[face]["state"] == "alive")
 

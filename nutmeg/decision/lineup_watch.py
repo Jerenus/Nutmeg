@@ -4,8 +4,10 @@
 播报。本模块由 launchd 每 15 分钟跑一次（`com.nutmeg.zucai.lineups`），**只推需要 Jun 动作的事**
 （2026-10-05 原则）：
 
-1. 首发复核：只看有已登记实票的期；票内场在开球前 20–75 分钟内才拉 API-Football 名单，否则
-   立刻退出不打网。研究原件里按上下文分成「研究记缺阵」与「研究记在阵」两组人名，只在
+1. 首发复核：看有已登记实票的期（没有实票时退到试玩票 B1 里「名单停售前可见」的单选行，
+   只在研究记在阵的人坐替补时推，2026-11-13）；票内场在开球前 20–75 分钟内才拉
+   API-Football 名单，否则立刻退出不打网。研究原件里按上下文分成「研究记缺阵」与
+   「研究记在阵」两组人名，只在
    *研究记缺阵的人首发* 或 *研究记在阵的人坐替补* 时推一条（名单上根本找不到的名字不推——
    宁可漏报不误报）。票面该场全包（310）不推。一场一期只推一次。
 2. 停售倒计时：停售前 30 / 10 分各一次，只在「有分析包、无实票」时推，带机器默认动作。
@@ -111,6 +113,24 @@ def ticket_faces(slips: list[BetSlip]) -> dict[str, list[tuple[str, str]]]:
     for s in slips:
         for no, face in s.faces.items():
             if face and "".join(sorted(face)) != "013":
+                out.setdefault(str(no), []).append((s.slip_id, face))
+    return out
+
+
+def trial_faces(data_dir: Path, issue: str) -> dict[str, list[tuple[str, str]]]:
+    """没有实票时看桥后试玩票 `<期>-B1`（2026-11-13，P-7909d59a）：只取单选、且分析包旁车写了
+    「名单停售前可见」（`lineup_before_close=true`）的行——停售前唯一可核的名单信息。
+    26155：唯一许可胆名单 21:00 可见，Jun 只登记了 B1，承诺的核查没有发生。"""
+    from nutmeg.decision.packet_doc import load_packet
+
+    visible = {str(r["no"]) for r in load_packet(data_dir, issue)["rows"]
+               if r.get("lineup_before_close") is True}
+    out: dict[str, list[tuple[str, str]]] = {}
+    for s in load_slips(data_dir, issue=issue):
+        if s.purchased or s.channel not in ZUCAI_CHANNELS or not s.slip_id.endswith("-B1"):
+            continue
+        for no, face in s.faces.items():
+            if str(no) in visible and len(face or "") == 1:
                 out.setdefault(str(no), []).append((s.slip_id, face))
     return out
 
@@ -312,6 +332,9 @@ def run_lineup_check(data_dir: Path, issue: str, *, now: datetime, notify_fn: No
         return []
     slips = real_slips(data_dir, issue)
     faces = ticket_faces(slips)
+    trial = not faces          # 没有实票：退到试玩票里名单停售前可见的许可胆
+    if trial:
+        faces = trial_faces(data_dir, issue)
     if not faces:
         return [{"issue": issue, "status": "no_real_ticket"}]
     kicks = kickoffs(doc)
@@ -354,13 +377,16 @@ def run_lineup_check(data_dir: Path, issue: str, *, now: datetime, notify_fn: No
                     verdict = LineupVerdict("no_lineups")
                     ev["error"] = str(exc)[:160]
                 ev["status"] = verdict.status
-                if verdict.status == "affected":
+                if trial and verdict.status == "affected" and not verdict.present_but_bench:
+                    ev["status"] = "no_impact"      # 试玩票只为「在阵的人坐了替补」打扰一次
+                elif verdict.status == "affected":
                     parts = []
-                    if verdict.absent_but_starting:
+                    if verdict.absent_but_starting and not trial:
                         parts.append("研究记缺阵但首发：" + "、".join(verdict.absent_but_starting))
                     if verdict.present_but_bench:
                         parts.append("研究记在阵却替补：" + "、".join(verdict.present_but_bench))
-                    tickets = "；".join(f"票 {sid} 该格 {face}" for sid, face in faces[no])
+                    label = "试玩票" if trial else "票"
+                    tickets = "；".join(f"{label} {sid} 该格 {face}" for sid, face in faces[no])
                     text = f"{issue}·{no} {home}-{away}｜" + "｜".join(parts) + f"｜{tickets}"
                     ev["text"] = text
                     notify_fn("zucai.lineup", f"{issue}:{no}", _fp(text),

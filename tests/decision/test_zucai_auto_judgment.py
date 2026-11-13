@@ -53,8 +53,9 @@ def test_auto_judgment_transcribes_research_and_anchors_the_rest_to_market(tmp_p
     assert bare["source"] == "market_anchor" and bare["confidence"] == 1
 
 
-def test_research_dead_face_is_zeroed_in_the_zucai_belief_like_jczq(tmp_path):
-    """2026-10-08 B2：足彩转录此前漏了竞彩的「三证判死的面清零」；不足 3 证的 dead 不算。"""
+def test_research_dead_face_is_not_zeroed_in_the_belief(tmp_path):
+    """2026-11-13（P-70233890）：三证判死的面不清零——宪法 §2「死亡三证 3/3 不再是出票前提；
+    活面集只作事实层记录」。10-08 B2 的清零在 26139 场 10 把 belief 挪了 22pp（无上限位移）。"""
     zdir = _issue(tmp_path, n=2)
     proofs = {"a_no_scoring_mechanism": True, "b_precedent_carrier_gone": True,
               "c_anchor_pass": True}
@@ -62,8 +63,7 @@ def test_research_dead_face_is_zeroed_in_the_zucai_belief_like_jczq(tmp_path):
     _research(zdir, 2, death_three_proofs={"away": {"verdict": "dead", **proofs,
                                                     "c_anchor_pass": False}})
     judgment = auto_judgment(issue="26133", data_dir=tmp_path)
-    mass = 0.5 + 0.3 + 0.0
-    assert judgment["1"]["belief"] == {"home": 0.5 / mass, "draw": 0.3 / mass, "away": 0.0}
+    assert judgment["1"]["belief"] == {"home": 0.5, "draw": 0.3, "away": 0.2}
     assert judgment["2"]["belief"] == {"home": 0.5, "draw": 0.3, "away": 0.2}
 
 

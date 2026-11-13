@@ -52,7 +52,8 @@ def _issue(tmp: Path, *, kick: datetime = KICK, deadline: datetime = DEADLINE) -
     return z
 
 
-def _slip(tmp: Path, faces: dict[str, str], *, purchased: bool = True) -> None:
+def _slip(tmp: Path, faces: dict[str, str], *, purchased: bool = True,
+          slip_id: str | None = None) -> None:
     faces = dict(faces)
     for no in range(14, 0, -1):                 # 任九至少 9 场：其余用全包补齐（全包不算票面押了）
         if len(faces) >= 9:
@@ -62,7 +63,8 @@ def _slip(tmp: Path, faces: dict[str, str], *, purchased: bool = True) -> None:
                     selections=tuple({"3": "home", "1": "draw", "0": "away"}[c] for c in f),
                     odds=(), fair={"home": 0.4, "draw": 0.3, "away": 0.3})
             for no, f in faces.items()]
-    register_slip(tmp, BetSlip(slip_id=f"{ISSUE}-T1", channel="renjiu", placed_at="2026-11-01",
+    register_slip(tmp, BetSlip(slip_id=slip_id or f"{ISSUE}-T1", channel="renjiu",
+                               placed_at="2026-11-01",
                                legs=legs, issue=ISSUE, purchased=purchased, faces=faces),
                   now=datetime(2026, 11, 1, 15, 0, tzinfo=BJ))
 
@@ -291,3 +293,40 @@ def test_watch_reads_link_prefix_from_settings_when_not_passed(tmp_path: Path, m
         assert rec.sent[0][2].endswith(f"\nhttp://h/issue/{ISSUE}")
     finally:
         get_settings.cache_clear()
+
+
+def _packet(tmp: Path, visible: dict[str, bool]) -> None:
+    rows = [{"no": no, "tier": "B", "k": 5, "n": 6, "default": "3", "lineup_before_close": flag}
+            for no, flag in visible.items()]
+    (tmp / "zucai" / f"{ISSUE}-packet.json").write_text(
+        json.dumps({"issue": ISSUE, "rows": rows}, ensure_ascii=False), "utf-8")
+
+
+def test_trial_ticket_singles_with_a_visible_lineup_are_watched_for_benched_starters(
+        tmp_path: Path):
+    """2026-11-13（P-7909d59a）：26155 唯一许可胆名单停售前可见，Jun 只登记了 B1 试玩票，
+    承诺的 21:00 核查没有发生。没有实票时，B1 里「名单停售前可见」的单选行同样拉首发，
+    只在研究记在阵的人坐替补时推一次。"""
+    _issue(tmp_path)
+    _slip(tmp_path, {"1": "3", "2": "3", "3": "31"}, purchased=False, slip_id=f"{ISSUE}-B1")
+    _packet(tmp_path, {"1": True, "2": False, "3": True})    # 场 2 名单停售后才出；场 3 是双
+    calls: list = []
+    rec = Recorder()
+    now = KICK - timedelta(minutes=60)
+    benched = [{"team": "H", "xi": ["Zabarnyi"], "bench": ["Vitinha"]}]
+    evs = run_lineup_check(tmp_path, ISSUE, now=now, notify_fn=rec,
+                           fetchers=_fetchers(calls, benched), resolve=_RESOLVE)
+    assert [e["match_no"] for e in evs] == ["1"] and evs[0]["status"] == "pushed"
+    assert "研究记在阵却替补：Vitinha" in rec.sent[0][2] and "试玩票" in rec.sent[0][2]
+    assert ("lineups", "F2") not in calls
+
+
+def test_trial_ticket_watch_stays_quiet_when_only_an_absentee_starts(tmp_path: Path):
+    _issue(tmp_path)
+    _slip(tmp_path, {"1": "3"}, purchased=False, slip_id=f"{ISSUE}-B1")
+    _packet(tmp_path, {"1": True})
+    rec = Recorder()
+    starts = [{"team": "H", "xi": ["Marquinhos", "Vitinha"], "bench": []}]
+    evs = run_lineup_check(tmp_path, ISSUE, now=KICK - timedelta(minutes=60), notify_fn=rec,
+                           fetchers=_fetchers([], starts), resolve=_RESOLVE)
+    assert evs[0]["status"] == "no_impact" and rec.sent == []

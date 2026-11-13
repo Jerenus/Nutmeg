@@ -6,7 +6,6 @@ from datetime import datetime
 from pathlib import Path
 
 from nutmeg.decision.face_status import FaceStatusError, attach_face_status
-from nutmeg.decision.faces import FACES
 from nutmeg.decision.overrides import effective_research
 from nutmeg.decision.research_intake import intake
 from nutmeg.decision.stance import research_belief, validate_stance
@@ -160,20 +159,15 @@ def build_jczq_reads(*, day: str, jczq_dir: Path, made_at: str) -> list[dict]:
             )
         )
         prior = dict(leg["fair"])
-        # 表态块：有 tilt 则走 l 条拨动算术；三证判死的面优先于拨动（`research_belief`）。
+        # 表态块：有 tilt 则走 l 条拨动算术；三证判死的面只记在 face_status，不清零。
         # 「跟市场」是宪法 §2 的明文判断：无命名理由即市场锚定。
         # 它是可被 Brier 评分的陈述，不是判断缺席；强度只决定结构。
         stance = leg.get("stance") if researched else None
         belief = dict(prior)
         result = None
         if researched:
-            alive = [face for face in FACES if leg["face_status"][face]["state"] == "alive"]
-            try:
-                belief, result = research_belief(
-                    prior, (stance or {}).get("tilt"), kickoff=leg.get("kickoff_bj"),
-                    alive=alive)
-            except ValueError as exc:
-                raise ValueError(f"{code} {exc}") from exc
+            belief, result = research_belief(
+                prior, (stance or {}).get("tilt"), kickoff=leg.get("kickoff_bj"))
         tilt_info: dict = {}
         if stance:
             tilt_info = {

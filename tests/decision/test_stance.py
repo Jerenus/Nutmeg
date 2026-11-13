@@ -176,24 +176,18 @@ def test_research_belief_follows_market_when_the_tilt_is_zeroed_and_keeps_prior_
     assert research_belief(prior, state_only)[0] == prior        # 无锚证据：归零
 
 
-def test_research_belief_zeroes_dead_faces_after_the_tilt():
+def test_research_belief_has_no_dead_face_zeroing():
+    """2026-11-13（P-70233890）：判死面只记在 face_status，不再进 belief 算术。"""
     tilt = {"shift": {"3": 3, "1": 0, "0": -3}, "expires_if": "",
             "evidence": [_ev(tier="confirmed_structural", kind="lineup_confirmed", pp=3)]}
     moved, result = research_belief(PRIOR, tilt)
-    assert not result.zeroed and moved["home"] > PRIOR["home"]
-    alive_only, _ = research_belief(PRIOR, tilt, alive=["home", "draw"])
-    assert alive_only["away"] == 0.0
-    assert abs(alive_only["home"] / alive_only["draw"] - moved["home"] / moved["draw"]) < 1e-12
-    assert abs(sum(alive_only.values()) - 1.0) < 1e-12
-    untilted, _ = research_belief(PRIOR, None, alive=["home", "draw"])
-    mass = 0.52 + 0.26 + 0.0
-    assert untilted == {"home": 0.52 / mass, "draw": 0.26 / mass, "away": 0.0}
+    assert not result.zeroed and moved["home"] > PRIOR["home"] and moved["away"] > 0
     try:
-        research_belief(PRIOR, None, alive=[])
-    except ValueError as exc:
-        assert "活面" in str(exc)
+        research_belief(PRIOR, None, alive=["home", "draw"])
+    except TypeError as exc:
+        assert "alive" in str(exc)
     else:
-        raise AssertionError("no alive face must raise")
+        raise AssertionError("alive 参数应已删除")
 
 
 def test_market_read_out_of_enum_is_normalised_not_rejected():

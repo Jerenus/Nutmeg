@@ -3,7 +3,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档 | 现役系统结构总图（权威） |
-| 版本 | v1.11 · 2026-11-13 |
+| 版本 | v1.12 · 2026-11-13 |
 | 范围 | 定位 · 系统总图 · 每日时序 · 判断层（含足彩人群层） · 出票审票与账务 · RSI 实验层 · 回放 gym · 数据对象 · 全量分析过程 · 工程流程 · 文档地图 · 术语表 |
 | 读者 | Jun（下注者与决策人）· Claude 主循环 · Codex / OpenClaw 会话 |
 | 权威关系 | 原则与规则以 SOP 三件套为准；数字以 `.nutmeg-data/scoreboard.json` 与内核为准；本文与它们冲突时以它们为准，并回来改本文 |
@@ -764,3 +764,4 @@ flowchart TB
 | v1.9 | 2026-11-13 | 运维：`ops-run` 发现某段死在 claude 无人值守登录上时推一次通知（`ops.claude-auth`，一天一次）；`ops-status` 新增「仓里有定义、未安装」一节（`uninstalled_definitions`）；`day_runs.JOBS` 补 `decision.lanip`；`/api/day` 的待签积压按页面时钟算。删除无入口的 `public_report.py` 与模板（备份在仓库外）、无引用的 `update_duty_definition`。页眉版本号补齐（v1.8 当时漏改） |
 | v1.10 | 2026-11-13 | 账房：月账第二行与账房页新增「买前预审」——实购票里开球前留过同一张预审痕的张数（`preview_coverage.py`，只读；竞彩按同日同场次、足彩按同期同票面，购买时刻不入账所以以开球为界）。运维：`nutmeg ops-snapshot` 只读出一份结构快照 JSON（代码规模、内核表与空表、作业定义/安装/装载、近几天各作业成败、实验状态、待签积压），系统版图页的数字从它来（`system_snapshot.py`）。删除无引用的 `ActionService.unit_of_work`、`CapitalRepository.all_latest` |
 | v1.11 | 2026-11-13 | Jun 签 P-574c4d0b / P-f3689160 后的一组收缩与治理：①待签提案带默认动作与到期时刻，到期没答按默认动作落账（`proposals.expire`，`inbox terms`；宪法 §6）；②读者 B 改抽样（约一成）；③损耗台账停逐场义务与机器旗标，删 `rsi team-load`；④分析包 §1 自 26165 起拆主表六列 + 折叠附表；⑤判断类新实验登记前必须带外部样本证据（`rsi_prereg.require_external_first`）。审票新增 V6 提醒：任九票「中了估派多少、不回本的概率」（`review.win_prize`，只提醒）。删除从未生效的 `decision.lanip` 作业定义（内网域名未配置）。此前悬空的白防线、SOP 恢复、别名与预筛脚本同日分主题入库 |
+| v1.12 | 2026-11-13 | 受 Jun 委托清理旧待签：判死面不再在 belief 里清零（`stance.research_belief` 去掉 `alive`，与宪法 §2 对齐，P-70233890）；首发巡检在没有实票时看试玩票 B1 里名单停售前可见的许可胆（`lineup_watch.trial_faces`，P-7909d59a）；分析包六条件 ②④⑤ 的计数口径写明（P-4c457607）。无人值守登录凭据同日重建 |

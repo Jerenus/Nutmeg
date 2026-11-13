@@ -104,7 +104,7 @@ def test_build_reads_marks_ai_judge_and_deep_tier(tmp_path):
     assert reads[0]["match_id"] == "m-1"
     assert reads[0]["judgment_tier"] == "deep_research"
     assert abs(sum(reads[0]["belief"].values()) - 1) < 1e-9
-    assert reads[0]["belief"]["away"] == 0.0
+    assert reads[0]["belief"]["away"] > 0      # 判死面不清零（2026-11-13）
 
 
 def test_every_board_match_gets_a_read_even_without_research(tmp_path):
@@ -270,9 +270,9 @@ def test_reads_take_belief_from_tilt_and_carry_stance(tmp_path):
 
     r = reads[0]
     # 拨动 +6pp 作用在 prior 上（home 0.60→0.66，其余按比例缩：draw 0.2125 / away 0.1275），
-    # 再把三证判死的 away 清零并在活面上归一：home 0.66/0.8725 = 0.756。
-    assert round(r["belief"]["home"], 3) == 0.756
-    assert r["belief"]["away"] == 0.0
+    # 三证判死的 away 不清零（2026-11-13：宪法 §2「活面集只作事实层记录」）。
+    assert round(r["belief"]["home"], 3) == 0.66
+    assert round(r["belief"]["away"], 4) == 0.1275
     assert abs(sum(r["belief"].values()) - 1) < 1e-9
     assert r["adjustment_evidence_tiers"] == ["official"]
     assert r["falsifier"] == STANCE["falsifier"] and r["confidence"] == 3
@@ -280,7 +280,7 @@ def test_reads_take_belief_from_tilt_and_carry_stance(tmp_path):
     assert r["stance"]["tilt_applied_pp"] == 6 and r["stance"]["tilt_zeroed"] is False
 
 
-def test_reads_express_small_tilt_and_keep_alive_normalisation(tmp_path):
+def test_reads_express_small_tilt_and_leave_dead_faces_at_their_price(tmp_path):
     root = _day(tmp_path)
     tilt = {
         "face": "3",
@@ -309,7 +309,7 @@ def test_reads_express_small_tilt_and_keep_alive_normalisation(tmp_path):
         day="2026-09-19", jczq_dir=root, made_at="2026-09-19T12:00:00+08:00"
     )[0]
 
-    assert r["belief"]["away"] == 0.0  # away 判死 → 活面归一仍生效
+    assert r["belief"]["away"] > 0.1  # away 判死只记在 face_status，belief 不清零
     # strength-v2（2026-09-26）：2pp 的推断级偏移如实表达，不再归零
     assert r["stance"]["tilt_zeroed"] is False and r["stance"]["tilt_applied_pp"] == 3
     assert r["adjustment_evidence_tiers"] == ["confirmed_structural"]
