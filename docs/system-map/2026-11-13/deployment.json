@@ -1,10 +1,10 @@
 {
   "space_id": "48e06fef-6ea6-4a51-a2fe-53fff64ec556",
   "url": "https://spacesheep.dev/@jerenus/nutmeg-system-map",
-  "version": "8dd631e4eaeb",
-  "parent_version": "0fbbc8a1200a",
-  "version_name": "第三轮改造后的进展（签字项落地）",
-  "deployed_at": "2026-11-13T13:03:42Z",
+  "version": "7b840778ab57",
+  "parent_version": "8dd631e4eaeb",
+  "version_name": "凭据重建、巡检安装、待签清理后的进展",
+  "deployed_at": "2026-11-13T13:42:27Z",
   "visibility": "private",
   "published_files": [
     "index.html"
