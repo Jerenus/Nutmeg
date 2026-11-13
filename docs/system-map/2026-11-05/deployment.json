@@ -1,0 +1,20 @@
+{
+  "verified_at": "2026-11-05T23:28:15.723119+08:00",
+  "space_id": "48e06fef-6ea6-4a51-a2fe-53fff64ec556",
+  "url": "https://spacesheep.dev/@jerenus/nutmeg-system-map",
+  "version": "b72ff5bb0db9",
+  "version_name": "2026-11-05 · 首版现况核查",
+  "deployed_at": "2026-11-05T15:23:10.110Z",
+  "visibility": "private",
+  "anonymous_access": false,
+  "all_signed_in_access": false,
+  "listed": false,
+  "access_scope": "owner only; one access entry verified with get_space",
+  "published_files": [
+    "index.html"
+  ],
+  "html_sha256": "6ae0b2f0cb48baf01ebb932191f86d839ed598f82d163e16c889cf7288a5314a",
+  "remote_matches_local": true,
+  "verification": "verification.json",
+  "note": "Existing deployment verified, not redeployed; published HTML synced locally before final browser checks."
+}

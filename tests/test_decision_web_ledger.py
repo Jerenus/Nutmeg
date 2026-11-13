@@ -75,6 +75,9 @@ def test_ledger_api_runs_no_replay_and_has_three_ledgers(client):
     assert body["issues"] == [{"issue": "26145", "stake": 384, "payout": 0.0, "net": -384.0,
                                "slips": 1}]
     assert body["jczq_days"] == [{"day": "2026-10-17", "stake": 198, "net": -140.98}]
+    # 买前预审覆盖率随月报原样出（账房页单列一格）
+    cov = report["preview_coverage"]
+    assert cov["n"] == cov["covered"] + len(cov["missing"]) and cov["n"] >= 1
 
 
 def test_ledger_block_failure_goes_to_errors_not_500(client, monkeypatch):

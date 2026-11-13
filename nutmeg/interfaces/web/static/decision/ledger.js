@@ -458,6 +458,24 @@
       if (codes.length) add(vBox, el("p", "lg-note", "否决码计数：" + codes.join("、")));
       if (vt.unrecorded) add(vBox, el("p", "lg-note", vt.unrecorded + " 张登记时没存审票结论（10-06 前），不在此列"));
     }
+
+    var pc = r.preview_coverage || {};
+    var pBox = put(sec, el("div", "lg-split"));
+    add(pBox, el("span", "lg-split-head", "买前预审（开球前审过同一张）"));
+    if (pc._error) {
+      add(pBox, el("p", "lg-error", pc._error));
+    } else if (!pc.n) {
+      add(pBox, el("p", "lg-note", "本月没有实购票"));
+    } else {
+      var miss = pc.missing || [];
+      add(pBox, el("p", "lg-split-nums", plain(pc.covered || 0) + " / " + plain(pc.n) + " 张"));
+      if (miss.length) {
+        var pDet = add(el("details"), el("summary", null, "没有同票面预审痕 " + miss.length + " 张"));
+        var pul = put(pDet, el("ul", "lg-list"));
+        miss.forEach(function (sid) { add(pul, el("li", null, sid)); });
+        add(pBox, pDet);
+      }
+    }
     return sec;
   }
 

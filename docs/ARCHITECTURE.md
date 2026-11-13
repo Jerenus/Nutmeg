@@ -3,7 +3,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档 | 现役系统结构总图（权威） |
-| 版本 | v1.9 · 2026-11-13 |
+| 版本 | v1.10 · 2026-11-13 |
 | 范围 | 定位 · 系统总图 · 每日时序 · 判断层（含足彩人群层） · 出票审票与账务 · RSI 实验层 · 回放 gym · 数据对象 · 全量分析过程 · 工程流程 · 文档地图 · 术语表 |
 | 读者 | Jun（下注者与决策人）· Claude 主循环 · Codex / OpenClaw 会话 |
 | 权威关系 | 原则与规则以 SOP 三件套为准；数字以 `.nutmeg-data/scoreboard.json` 与内核为准；本文与它们冲突时以它们为准，并回来改本文 |
@@ -680,6 +680,7 @@ flowchart TB
   3. **精准修改**：每一行改动都能追溯到任务；自己改动造成的孤儿当场删；顺手看到的无关死代码不顺手删，留给死代码周报和瘦身任务。
   4. **以验证收尾**：任务先改写成可检验的标准（测试先行）；行为改变在沙盒副本上做前后对比，数字写进提交信息；跑 `/verify` 再提交。
 - **死代码周报**：每周一 09:20 `scripts/deadcode_report.py` 从现役入口走 import 图，列出走不到的模块、无引用和只有测试在用的定义，只报告不拦截；有候选时 `ops-status` 待办里出现一行。
+- **版图快照**：`nutmeg ops-snapshot [--out <文件>] [--days 7]` 只读，一份 JSON 出齐结构数字（代码规模、内核表与空表、作业定义/安装/装载、近几天各作业成败、实验状态、待签积压）；每块独立取数，读不出的块只留 `_error`。不带票面、资金与账号。两次快照相比就是结构变化。
 - **验证**：`make verify`（ruff + compileall + pytest）；全量约 3 分钟；提交前看真实退出码，不用 `| tail` 吞掉它。
 - **提交**：只用显式路径 `git add <path>`，绝不 `-A/-u`；实验输出文件由 10:45 闭环自动提交（`--no-verify`，只提交 `experiments/` 三个文件）。
 - **定时器**：plist 单一来源 `ops/launchd/`；新增或退役必须同一提交更新 `day_runs.JOBS`（运行记录页的证据来源）、本文 2.1 与 `docs/ops/2026-09-20-scheduled-dataflows.md`。
@@ -761,3 +762,4 @@ flowchart TB
 | v1.8 | 2026-11-07 | 新增独立分析线「竞彩虚拟规则赛」`nutmeg/decision/arena/` 与定时器 `arena.freeze`、`arena.settle`（全程虚拟，账本 `jczq/arena/`，不进净值和判断层，设计见 specs/2026-11-07-jczq-arena-design.md）；launchd 计数按实际更新为 21 |
 | v1.7 | 2026-10-20 | §5：F19 价内/未价判据对象化接入结账；语料去重并入板面通路孪生的研究标签（10-10 起 65 场曾丢失）；rubric r3（`F_suspension` 上限退役，起无拨动项） |
 | v1.9 | 2026-11-13 | 运维：`ops-run` 发现某段死在 claude 无人值守登录上时推一次通知（`ops.claude-auth`，一天一次）；`ops-status` 新增「仓里有定义、未安装」一节（`uninstalled_definitions`）；`day_runs.JOBS` 补 `decision.lanip`；`/api/day` 的待签积压按页面时钟算。删除无入口的 `public_report.py` 与模板（备份在仓库外）、无引用的 `update_duty_definition`。页眉版本号补齐（v1.8 当时漏改） |
+| v1.10 | 2026-11-13 | 账房：月账第二行与账房页新增「买前预审」——实购票里开球前留过同一张预审痕的张数（`preview_coverage.py`，只读；竞彩按同日同场次、足彩按同期同票面，购买时刻不入账所以以开球为界）。运维：`nutmeg ops-snapshot` 只读出一份结构快照 JSON（代码规模、内核表与空表、作业定义/安装/装载、近几天各作业成败、实验状态、待签积压），系统版图页的数字从它来（`system_snapshot.py`）。删除无引用的 `ActionService.unit_of_work`、`CapitalRepository.all_latest` |

@@ -1,0 +1,293 @@
+{
+  "captured_at": "2026-11-05T23:15:07+08:00",
+  "commit": "ce6bbd27aa4744684480d07a7b6f41ada4591d27",
+  "kind": "read-only structural snapshot, not live health monitoring",
+  "launchd": {
+    "defined": 19,
+    "loaded": 18,
+    "status_rows": 17,
+    "jobs": [
+      {
+        "label": "com.nutmeg.account.month",
+        "loaded": true,
+        "state": "not running",
+        "calendar": {
+          "Day": 1,
+          "Hour": 16,
+          "Minute": 10
+        },
+        "interval_seconds": null,
+        "keep_alive": false
+      },
+      {
+        "label": "com.nutmeg.day.brief",
+        "loaded": true,
+        "state": "not running",
+        "calendar": [
+          {
+            "Hour": 12,
+            "Minute": 0
+          },
+          {
+            "Hour": 14,
+            "Minute": 20
+          },
+          {
+            "Hour": 18,
+            "Minute": 35
+          }
+        ],
+        "interval_seconds": null,
+        "keep_alive": false
+      },
+      {
+        "label": "com.nutmeg.day.broadcast",
+        "loaded": true,
+        "state": "not running",
+        "calendar": null,
+        "interval_seconds": 600,
+        "keep_alive": false
+      },
+      {
+        "label": "com.nutmeg.day.settle",
+        "loaded": true,
+        "state": "not running",
+        "calendar": [
+          {
+            "Hour": 9,
+            "Minute": 45
+          },
+          {
+            "Hour": 15,
+            "Minute": 45
+          }
+        ],
+        "interval_seconds": null,
+        "keep_alive": false
+      },
+      {
+        "label": "com.nutmeg.day.verdict",
+        "loaded": true,
+        "state": "not running",
+        "calendar": [
+          {
+            "Hour": 12,
+            "Minute": 30
+          },
+          {
+            "Hour": 18,
+            "Minute": 45
+          }
+        ],
+        "interval_seconds": null,
+        "keep_alive": false
+      },
+      {
+        "label": "com.nutmeg.decision.am",
+        "loaded": true,
+        "state": "not running",
+        "calendar": {
+          "Hour": 8,
+          "Minute": 0
+        },
+        "interval_seconds": null,
+        "keep_alive": false
+      },
+      {
+        "label": "com.nutmeg.decision.lanip",
+        "loaded": false,
+        "state": "unloaded",
+        "calendar": null,
+        "interval_seconds": 600,
+        "keep_alive": false
+      },
+      {
+        "label": "com.nutmeg.decision.web",
+        "loaded": true,
+        "state": "running",
+        "calendar": null,
+        "interval_seconds": null,
+        "keep_alive": true
+      },
+      {
+        "label": "com.nutmeg.jczq.research-pm",
+        "loaded": true,
+        "state": "not running",
+        "calendar": {
+          "Hour": 16,
+          "Minute": 30
+        },
+        "interval_seconds": null,
+        "keep_alive": false
+      },
+      {
+        "label": "com.nutmeg.jczq.research",
+        "loaded": true,
+        "state": "not running",
+        "calendar": {
+          "Hour": 10,
+          "Minute": 0
+        },
+        "interval_seconds": null,
+        "keep_alive": false
+      },
+      {
+        "label": "com.nutmeg.jczq.results-backfill",
+        "loaded": true,
+        "state": "not running",
+        "calendar": [
+          {
+            "Hour": 9,
+            "Minute": 30
+          },
+          {
+            "Hour": 15,
+            "Minute": 30
+          }
+        ],
+        "interval_seconds": null,
+        "keep_alive": false
+      },
+      {
+        "label": "com.nutmeg.ops.deadcode",
+        "loaded": true,
+        "state": "not running",
+        "calendar": {
+          "Weekday": 1,
+          "Hour": 9,
+          "Minute": 20
+        },
+        "interval_seconds": null,
+        "keep_alive": false
+      },
+      {
+        "label": "com.nutmeg.rsi.loop",
+        "loaded": true,
+        "state": "not running",
+        "calendar": {
+          "Hour": 10,
+          "Minute": 45
+        },
+        "interval_seconds": null,
+        "keep_alive": false
+      },
+      {
+        "label": "com.nutmeg.rsi.sweep",
+        "loaded": true,
+        "state": "not running",
+        "calendar": {
+          "Minute": 0
+        },
+        "interval_seconds": null,
+        "keep_alive": false
+      },
+      {
+        "label": "com.nutmeg.schedule.fixtures",
+        "loaded": true,
+        "state": "not running",
+        "calendar": {
+          "Hour": 10,
+          "Minute": 5
+        },
+        "interval_seconds": null,
+        "keep_alive": false
+      },
+      {
+        "label": "com.nutmeg.zucai.lineups",
+        "loaded": true,
+        "state": "not running",
+        "calendar": null,
+        "interval_seconds": 900,
+        "keep_alive": false
+      },
+      {
+        "label": "com.nutmeg.zucai.prep-morning",
+        "loaded": true,
+        "state": "not running",
+        "calendar": {
+          "Hour": 11,
+          "Minute": 0
+        },
+        "interval_seconds": null,
+        "keep_alive": false
+      },
+      {
+        "label": "com.nutmeg.zucai.prep-revision",
+        "loaded": true,
+        "state": "not running",
+        "calendar": {
+          "Hour": 18,
+          "Minute": 30
+        },
+        "interval_seconds": null,
+        "keep_alive": false
+      },
+      {
+        "label": "com.nutmeg.zucai.prep",
+        "loaded": true,
+        "state": "not running",
+        "calendar": {
+          "Hour": 14,
+          "Minute": 0
+        },
+        "interval_seconds": null,
+        "keep_alive": false
+      }
+    ]
+  },
+  "openclaw": {
+    "enabled": 3,
+    "source": "uv run nutmeg ops-status",
+    "schedules": [
+      "08:10 昨日内核结算",
+      "12:30 D1D2补结算",
+      "17:15 临场刷新"
+    ]
+  },
+  "kernel": {
+    "table_count": 55,
+    "schema_migrations": [
+      [
+        1,
+        "baseline_2026_10_13"
+      ]
+    ]
+  },
+  "artifacts": [
+    {
+      "path": ".nutmeg-data/daily/2026-11-05/session.md",
+      "exists": true,
+      "modified_at": "2026-11-05T18:35:06+08:00"
+    },
+    {
+      "path": ".nutmeg-data/daily/2026-11-05/decisions.json",
+      "exists": true,
+      "modified_at": "2026-11-05T18:35:06+08:00"
+    },
+    {
+      "path": ".nutmeg-data/daily/2026-11-05/brief.json",
+      "exists": true,
+      "modified_at": "2026-11-05T18:35:06+08:00"
+    },
+    {
+      "path": ".nutmeg-data/scoreboard.json",
+      "exists": true,
+      "modified_at": "2026-11-05T15:45:09+08:00"
+    },
+    {
+      "path": ".nutmeg-data/betslips.jsonl",
+      "exists": true,
+      "modified_at": "2026-11-05T12:43:47+08:00"
+    },
+    {
+      "path": ".nutmeg-data/analytics/rsi-loop/2026-11-05.json",
+      "exists": true,
+      "modified_at": "2026-11-05T10:45:40+08:00"
+    }
+  ],
+  "notes": [
+    "首发巡检已装载但未列入 ops-status 的 17 行；未据此改动现有工作流",
+    "decision.lanip 未装载",
+    "public_report.py 与 report 模板是原有未跟踪文件，未注册当前 CLI/Web，不计作现役主入口"
+  ]
+}

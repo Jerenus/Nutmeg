@@ -1,0 +1,33 @@
+{
+  "verified_at": "2026-11-05T23:28:15.723119+08:00",
+  "browser": "Playwright using installed Chrome",
+  "checks": {
+    "module_count": true,
+    "desktop_no_page_overflow": true,
+    "all_navigation_targets_exist": true,
+    "comment_anchors_unique": true,
+    "all_dependency_links_resolve": true,
+    "all_code_paths_exist": true,
+    "route_jczq": true,
+    "route_zucai": true,
+    "route_rsi": true,
+    "search_spacesheep_only_one": true,
+    "search_result_opens_details": true,
+    "search_empty_state": true,
+    "all_module_detail_panels": true,
+    "no_page_overflow_320": true,
+    "no_page_overflow_390": true,
+    "mobile_stage_opens_detail": true,
+    "no_page_overflow_768": true,
+    "no_javascript_errors": true,
+    "no_external_requests": true
+  },
+  "missing_code_paths": [],
+  "errors": [],
+  "html_sha256": "6ae0b2f0cb48baf01ebb932191f86d839ed598f82d163e16c889cf7288a5314a",
+  "screenshots": [
+    "desktop.png",
+    "mobile.png"
+  ],
+  "scope": "Verified actual published HTML copied back locally, including server-generated anchors and presentation styling; no production code or data changed."
+}

@@ -1,0 +1,69 @@
+{
+  "captured_at": "2026-11-13T16:05:29+08:00",
+  "commit": "5b13eaaf",
+  "working_tree": {
+    "tracked_modified": 35,
+    "untracked_paths": 32
+  },
+  "launchd": {
+    "defined": 21,
+    "loaded": 20,
+    "status_rows": 19,
+    "unloaded": [
+      "com.nutmeg.decision.lanip"
+    ],
+    "loaded_not_listed": [
+      "com.nutmeg.zucai.lineups"
+    ]
+  },
+  "openclaw": {
+    "enabled": 3
+  },
+  "kernel": {
+    "table_count": 55,
+    "empty_tables": 11,
+    "schema_baseline": "baseline_2026_10_13"
+  },
+  "rsi": {
+    "registered_total": 24,
+    "retired": 10,
+    "accumulating": 5,
+    "survived": 2,
+    "falsified": 2,
+    "inconclusive": 2,
+    "ops_metric": 2,
+    "monitor": 1,
+    "source": "uv run nutmeg rsi status"
+  },
+  "runs_since_2026_11_06": {
+    "rsi.loop": [
+      8,
+      2
+    ],
+    "jczq.research": [
+      24,
+      2
+    ],
+    "rsi.sweep": [
+      185,
+      8
+    ],
+    "other_12_jobs": [
+      939,
+      0
+    ],
+    "source": ".nutmeg-data/logs/runs.jsonl"
+  },
+  "inbox": {
+    "pending": 18,
+    "older_than_10_days": 13,
+    "oldest_days": 38
+  },
+  "code": {
+    "nutmeg_py_lines": 47044,
+    "cli_leaf_commands": 84,
+    "web_routes": 64,
+    "tests": 1634,
+    "dead_code_candidates": 13
+  }
+}

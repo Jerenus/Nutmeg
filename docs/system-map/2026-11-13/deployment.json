@@ -1,0 +1,13 @@
+{
+  "space_id": "48e06fef-6ea6-4a51-a2fe-53fff64ec556",
+  "url": "https://spacesheep.dev/@jerenus/nutmeg-system-map",
+  "version": "0fbbc8a1200a",
+  "parent_version": "eb3e91c29e61",
+  "version_name": "各条建议补进展行（两轮改造后）",
+  "deployed_at": "2026-11-13T11:45:19Z",
+  "visibility": "private",
+  "published_files": [
+    "index.html"
+  ],
+  "note": "在 2026-11-05 首版上迭代；第 2 版发出后按建议做了两轮改造，页面只补了各条的进展行与一处更正。"
+}

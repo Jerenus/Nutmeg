@@ -414,6 +414,12 @@ def month_report(data_dir: Path, month: str, *, with_draft: bool = True,
         "white_cost": white,
         "verdicts": verdicts,
     }
+    try:
+        from nutmeg.decision.preview_coverage import month as preview_month
+
+        report["preview_coverage"] = preview_month(data_dir, month)
+    except Exception as exc:  # noqa: BLE001 —— 算不出要写明，不能读成「都审过」
+        report["preview_coverage"] = {"_error": repr(exc)[:200]}
     if with_rule_v3:
         report["rule_v3"] = rule_v3_board(data_dir, month)
     if with_draft:
@@ -440,6 +446,9 @@ def render_month(report: dict) -> str:
              f"**净值 vs 空仓**：{report['net']:+,.0f}（投入 {report['stake']:,.0f}，"
              f"{report['entries']} 条入账；竞彩 {ch['jczq']:+,.0f} / 足彩 {ch['zucai']:+,.0f}）"
              f"｜止损线 −{report['stop_loss']:,}{brake}"]
+    from nutmeg.decision.preview_coverage import line as preview_line
+
+    lines.append(preview_line(report.get("preview_coverage")))
     pend = report.get("pending") or {"n": 0, "stake": 0.0}
     if pend.get("_error"):
         lines.append(f"**实质余量（含待结票）**：登记簿读不出，待结票未知——{pend['_error']}")
