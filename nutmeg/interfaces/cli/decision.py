@@ -344,9 +344,18 @@ def ops_run(
     2026-10-12：plist 里 `;` 串联只让最后一段的退出码进 launchctl，`results` 段失败
     被 `settle` 段的 0 盖住。任一段失败仍跑完余段，最后退出 1。
     """
-    from nutmeg.decision.ops_run import run_job
+    from nutmeg.decision.ops_run import auth_alert, run_job
 
-    code = run_job(label, list(commands), data_dir=Path(data_dir), cwd=Path.cwd())
+    def _alert(result) -> None:
+        # 登录失效要 Jun 去终端动手：属于「需要人动作」的那类推送（2026-11-13 连挂两天没人知道）
+        from nutmeg.notifications.notify import notify
+
+        kind, key, text = auth_alert(result)
+        notify(kind, key, "auth-failure", text,
+               ledger=Path(data_dir) / "notifications" / "ledger.jsonl")
+
+    code = run_job(label, list(commands), data_dir=Path(data_dir), cwd=Path.cwd(),
+                   on_auth_failure=_alert)
     raise _cli.typer.Exit(code=code)
 
 
@@ -383,6 +392,7 @@ def ops_status(
         launchctl_running,
         parse_launchctl,
         stale_after_days,
+        uninstalled_definitions,
     )
 
     def _read(path: Path) -> tuple[str, _datetime | None]:
@@ -397,8 +407,9 @@ def ops_status(
     loaded = parse_launchctl(listed)
     running = launchctl_running(listed)
 
+    installed_dir = Path.home() / "Library" / "LaunchAgents"
     agents = []
-    for plist, spec, error in iter_plists(Path.home() / "Library" / "LaunchAgents"):
+    for plist, spec, error in iter_plists(installed_dir):
         if spec is None:
             # 坏 plist 也要露面（2026-10-13：decision.web 的 `&&` 没转义，状态页静默少一行）
             agents.append(agent_status(
@@ -480,6 +491,8 @@ def ops_status(
     _cli.typer.echo(format_status(
         agents, jobs, pending, today=today,
         segments=failed_segments(Path(data_dir), day=today.isoformat()),
+        uninstalled=uninstalled_definitions(
+            Path(__file__).resolve().parents[3] / "ops" / "launchd", installed_dir, loaded=loaded),
     ))
 
 

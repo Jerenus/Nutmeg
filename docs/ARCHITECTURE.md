@@ -3,7 +3,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档 | 现役系统结构总图（权威） |
-| 版本 | v1.7 · 2026-10-20 |
+| 版本 | v1.9 · 2026-11-13 |
 | 范围 | 定位 · 系统总图 · 每日时序 · 判断层（含足彩人群层） · 出票审票与账务 · RSI 实验层 · 回放 gym · 数据对象 · 全量分析过程 · 工程流程 · 文档地图 · 术语表 |
 | 读者 | Jun（下注者与决策人）· Claude 主循环 · Codex / OpenClaw 会话 |
 | 权威关系 | 原则与规则以 SOP 三件套为准；数字以 `.nutmeg-data/scoreboard.json` 与内核为准；本文与它们冲突时以它们为准，并回来改本文 |
@@ -760,3 +760,4 @@ flowchart TB
 | v1.6 | 2026-10-19 | §5 RSI：判决协议 v2（按登记 bound 判、单次结账、到期、CI 只取决于样本集合、前瞻门）、出口字段与观察型、落位守卫；实验清单重排（F14/F11 v2 证伪、F14b/K2 登记、六项退役、R0/R1 转运维指标）；图 9 第 4/5 步；rubric r2 上限退役 |
 | v1.8 | 2026-11-07 | 新增独立分析线「竞彩虚拟规则赛」`nutmeg/decision/arena/` 与定时器 `arena.freeze`、`arena.settle`（全程虚拟，账本 `jczq/arena/`，不进净值和判断层，设计见 specs/2026-11-07-jczq-arena-design.md）；launchd 计数按实际更新为 21 |
 | v1.7 | 2026-10-20 | §5：F19 价内/未价判据对象化接入结账；语料去重并入板面通路孪生的研究标签（10-10 起 65 场曾丢失）；rubric r3（`F_suspension` 上限退役，起无拨动项） |
+| v1.9 | 2026-11-13 | 运维：`ops-run` 发现某段死在 claude 无人值守登录上时推一次通知（`ops.claude-auth`，一天一次）；`ops-status` 新增「仓里有定义、未安装」一节（`uninstalled_definitions`）；`day_runs.JOBS` 补 `decision.lanip`；`/api/day` 的待签积压按页面时钟算。删除无入口的 `public_report.py` 与模板（备份在仓库外）、无引用的 `update_duty_definition`。页眉版本号补齐（v1.8 当时漏改） |

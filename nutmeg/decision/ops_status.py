@@ -216,6 +216,18 @@ def iter_plists(plists_dir: Path):
             yield path, None, exc
 
 
+def uninstalled_definitions(
+    repo_dir: Path, installed_dir: Path, *, loaded: set[str] | dict[str, str],
+) -> list[tuple[str, bool]]:
+    """仓里 `ops/launchd` 有、已安装目录里没有的作业 → [(label, 此刻是否已装载)]。
+
+    状态页只遍历已安装目录：从仓库路径直接 `launchctl load` 的作业（重启后不会自己回来）
+    和压根没装的定义，在页面上都是静默缺一行（2026-11-13：zucai.lineups / decision.lanip）。"""
+    installed = {p.stem for p in Path(installed_dir).glob("com.nutmeg.*.plist")}
+    return [(p.stem, p.stem in loaded)
+            for p in sorted(Path(repo_dir).glob("com.nutmeg.*.plist")) if p.stem not in installed]
+
+
 def describe_schedule(doc: dict, *, minute_word: str = "分") -> str:
     """plist 的排程一格：日历排程走 `describe_calendar`，`StartInterval`（秒）写成「每 N 分」。
 
@@ -278,6 +290,7 @@ def format_status(
     *,
     today: date,
     segments: dict[str, list[str]] | None = None,
+    uninstalled: list[tuple[str, bool]] | None = None,
 ) -> str:
     """`segments`：{作业名: [当天失败的段…]}，来自 `ops_run.failed_segments`——
     经 `ops-run` 包装的作业，哪一段、几点、什么退出码、尾行，都印在该行下面。"""
@@ -309,6 +322,12 @@ def format_status(
             lines.append(f"      {tail[:150]}")
         for text in segments.get(agent.label.removeprefix("com.nutmeg."), []):
             lines.append(f"      ✗ {text}")
+    if uninstalled:
+        lines += ["", "## 仓里有定义、未安装（~/Library/LaunchAgents 里没有）"]
+        for label, is_loaded in uninstalled:
+            state = ("已装载（从仓库路径）：重启后不会自己回来" if is_loaded
+                     else "未装载：现在不会跑")
+            lines.append(f"  {label:34}{state}")
     lines += ["", "## OpenClaw 定时任务"]
     if not jobs:
         lines.append("  （没有 Nutmeg 相关 cron job）")

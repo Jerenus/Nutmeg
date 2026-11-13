@@ -26,6 +26,10 @@ FAILED_MARK = "NUTMEG_FAILED"
 
 Runner = Callable[[str], subprocess.CompletedProcess]
 
+AUTH_ALERT_KIND = "ops.claude-auth"
+_AUTH_CLI_MARK = "claude CLI 认证失败"
+"""`research run` / `rsi sweep` 自己打的那句；模型原话的标记在 `claude_models`。"""
+
 
 @dataclass(frozen=True)
 class SegmentResult:
@@ -51,6 +55,25 @@ def _tail(text: str, limit: int = 300) -> str:
     return " / ".join(lines[-3:])[-limit:]
 
 
+def is_auth_failure(text: str) -> bool:
+    """这一段是不是死在 claude 无人值守登录上（环境问题，要人去终端重写凭据）。"""
+    from nutmeg.decision import claude_models
+
+    return _AUTH_CLI_MARK in (text or "") or claude_models.is_auth_failure(text)
+
+
+def auth_alert(result: SegmentResult) -> tuple[str, str, str]:
+    """(kind, key, text)：key＝日期，同一天不管挂了几条作业只推一次。"""
+    text = (
+        f"⚠️ claude 无人值守登录失效：{result.label} 第 {result.step}/{result.n} 段"
+        f"（{result.ts[11:16]}）没调到模型。\n"
+        "深研、读者 B、实验闭环在修好之前都不会跑。\n"
+        "修法：普通终端运行 `claude setup-token`，把 token 写进 "
+        "~/.config/nutmeg/claude-oauth-token（chmod 600），再跑 `nutmeg claude-auth-check`。"
+    )
+    return AUTH_ALERT_KIND, result.ts[:10], text
+
+
 def run_job(
     label: str,
     commands: list[str],
@@ -61,14 +84,19 @@ def run_job(
     runner: Runner | None = None,
     echo: Callable[[str], None] = print,
     echo_err: Callable[[str], None] | None = None,
+    on_auth_failure: Callable[[SegmentResult], None] | None = None,
 ) -> int:
-    """跑完所有段，返回进程退出码（0 全成功 / 1 有段失败）。"""
+    """跑完所有段，返回进程退出码（0 全成功 / 1 有段失败）。
+
+    `on_auth_failure`：第一段死在 claude 登录上的失败段交给它（推一次通知）；它自己炸了
+    只打一行，不改作业结局。"""
     now = now or (lambda: datetime.now().astimezone())
     runner = runner or _default_runner(cwd)
     echo_err = echo_err or (lambda text: print(text, file=sys.stderr))
     ledger = Path(data_dir) / "logs" / RUNS_LEDGER
     ledger.parent.mkdir(parents=True, exist_ok=True)
     results: list[SegmentResult] = []
+    auth_hit: SegmentResult | None = None
     for step, cmd in enumerate(commands, 1):
         started = time.monotonic()
         try:
@@ -86,8 +114,15 @@ def run_job(
             tail=_tail(err if code else out),
         )
         results.append(result)
+        if code and auth_hit is None and is_auth_failure(f"{out}\n{err}"):
+            auth_hit = result
         with ledger.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(asdict(result), ensure_ascii=False) + "\n")
+    if auth_hit is not None and on_auth_failure is not None:
+        try:
+            on_auth_failure(auth_hit)
+        except Exception as exc:  # noqa: BLE001 —— 通知发不出去不该把作业再弄坏一次
+            echo_err(f"auth alert failed: {type(exc).__name__}: {exc}")
     failed = [r for r in results if r.exit != 0]
     stamp = now().isoformat(timespec="seconds")
     if failed:

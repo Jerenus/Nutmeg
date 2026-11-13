@@ -55,3 +55,51 @@ def test_failed_segments_show_under_the_job_row(tmp_path: Path):
     assert segs["day.settle"][0].startswith("09:45 段 1/2 exit=1 nutmeg day run --job results — ⚠️")
     text = format_status([], [], [], today=NOW.date(), segments=segs)
     assert "launchd" in text                           # 没有 agent 行时不崩
+
+
+def _auth_runner(cmd: str) -> subprocess.CompletedProcess:
+    if "research" in cmd:
+        return subprocess.CompletedProcess(
+            cmd, 1, "", "⚠️ claude CLI 认证失败（登录过期）：本轮已停\n")
+    return subprocess.CompletedProcess(cmd, 0, "ok\n", "")
+
+
+def test_auth_failure_segment_calls_the_alert_once(tmp_path: Path):
+    """2026-11-13：凭据被吊销，research / rsi 连挂两天，通知账里一条推送都没有。"""
+    seen: list = []
+    code = run_job(
+        "jczq.research", ["nutmeg decision-am", "nutmeg research run", "nutmeg research refresh"],
+        data_dir=tmp_path, cwd=tmp_path, now=lambda: NOW, runner=_auth_runner,
+        echo=lambda _t: None, echo_err=lambda _t: None, on_auth_failure=seen.append,
+    )
+    assert code == 1
+    assert [(r.label, r.step) for r in seen] == [("jczq.research", 2)]
+
+
+def test_ordinary_failure_does_not_call_the_auth_alert(tmp_path: Path):
+    seen: list = []
+    run_job("day.settle", ["nutmeg day run --job results"], data_dir=tmp_path, cwd=tmp_path,
+            now=lambda: NOW, runner=_runner, echo=lambda _t: None, echo_err=lambda _t: None,
+            on_auth_failure=seen.append)
+    assert seen == []
+
+
+def test_alert_that_raises_never_changes_the_job_outcome(tmp_path: Path):
+    def boom(_result):
+        raise RuntimeError("telegram down")
+
+    out: list[str] = []
+    code = run_job("rsi.sweep", ["nutmeg research run"], data_dir=tmp_path, cwd=tmp_path,
+                   now=lambda: NOW, runner=_auth_runner, echo=out.append,
+                   echo_err=lambda _t: None, on_auth_failure=boom)
+    assert code == 1 and out[-1].startswith("NUTMEG_FAILED rsi.sweep")
+
+
+def test_auth_alert_text_names_the_job_and_the_fix():
+    from nutmeg.decision.ops_run import SegmentResult, auth_alert
+
+    result = SegmentResult(ts="2026-11-13T10:01:13+08:00", label="jczq.research", step=2, n=3,
+                           cmd="nutmeg research run", exit=1, secs=1.0, tail="…")
+    kind, key, text = auth_alert(result)
+    assert (kind, key) == ("ops.claude-auth", "2026-11-13")      # 一天只推一次
+    assert "jczq.research" in text and "claude setup-token" in text

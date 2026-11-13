@@ -220,3 +220,22 @@ def test_keepalive_service_with_pid_is_running_not_failed():
     dead = agent_status("com.nutmeg.decision.web", "常驻", loaded=True, last_exit="143",
                         out_text="INFO: GET / 200", out_at=datetime(2026, 10, 13, 0, 57))
     assert dead.outcome == "失败"
+
+
+def test_repo_definitions_missing_from_the_installed_dir_are_listed(tmp_path):
+    """2026-11-13：zucai.lineups 从仓里直接装载、decision.lanip 根本没装，状态页两条都不列。"""
+    from nutmeg.decision.ops_status import uninstalled_definitions
+
+    repo, installed = tmp_path / "repo", tmp_path / "installed"
+    repo.mkdir()
+    installed.mkdir()
+    for name in ("com.nutmeg.day.brief", "com.nutmeg.zucai.lineups", "com.nutmeg.decision.lanip"):
+        (repo / f"{name}.plist").write_text("x", encoding="utf-8")
+    (installed / "com.nutmeg.day.brief.plist").write_text("x", encoding="utf-8")
+    rows = uninstalled_definitions(repo, installed, loaded={"com.nutmeg.zucai.lineups"})
+    assert rows == [("com.nutmeg.decision.lanip", False), ("com.nutmeg.zucai.lineups", True)]
+    text = format_status([], [], [], today=TODAY, uninstalled=rows)
+    assert "仓里有定义、未安装" in text
+    assert "com.nutmeg.zucai.lineups" in text and "已装载（从仓库路径）" in text
+    assert "com.nutmeg.decision.lanip" in text and "未装载" in text
+    assert "仓里有定义、未安装" not in format_status([], [], [], today=TODAY)

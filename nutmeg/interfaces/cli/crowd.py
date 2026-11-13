@@ -322,7 +322,7 @@ def sign(candidate: Path, as_: str = typer.Option(..., "--as", help="CR<k>"),
     target.write_text(json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8")
     try:
         register(doc_path=target, by=by, data_dir=data_dir, fork_from=None, population=None,
-                 window_from=None)
+                 window_from=None, prescreen=None, n_min=None, dry_run=False)
     except typer.Exit:
         target.unlink(missing_ok=True)
         raise
