@@ -446,9 +446,6 @@ def render_month(report: dict) -> str:
              f"**净值 vs 空仓**：{report['net']:+,.0f}（投入 {report['stake']:,.0f}，"
              f"{report['entries']} 条入账；竞彩 {ch['jczq']:+,.0f} / 足彩 {ch['zucai']:+,.0f}）"
              f"｜止损线 −{report['stop_loss']:,}{brake}"]
-    from nutmeg.decision.preview_coverage import line as preview_line
-
-    lines.append(preview_line(report.get("preview_coverage")))
     pend = report.get("pending") or {"n": 0, "stake": 0.0}
     if pend.get("_error"):
         lines.append(f"**实质余量（含待结票）**：登记簿读不出，待结票未知——{pend['_error']}")
@@ -461,6 +458,10 @@ def render_month(report: dict) -> str:
     if report["unknown"]:
         shown = ", ".join(report["unknown"][:6])
         lines.append(f"（{len(report['unknown'])} 条无法归月未计：{shown}）")
+    # 买前预审排在实质余量之后：分析包与播报按约定只读第二行「实质余量（含待结票）」
+    from nutmeg.decision.preview_coverage import line as preview_line
+
+    lines.append(preview_line(report.get("preview_coverage")))
     lines.append(_white_line_text(report.get("white_cost")))
     ex = report["exploration"]
     lines += ["", f"**探索预算**：本月 {len(ex['slips'])} 张 EXP 票，¥{ex['stake']:,.0f}"
