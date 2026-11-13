@@ -66,10 +66,6 @@ class ActionService:
     def __init__(self, unit_of_work_factory: UnitOfWorkFactory) -> None:
         self._unit_of_work_factory = unit_of_work_factory
 
-    def unit_of_work(self):
-        """Open the same governed UOW used by Actions for typed result hydration."""
-        return self._unit_of_work_factory()
-
     def execute(
         self,
         command: ActionCommand,

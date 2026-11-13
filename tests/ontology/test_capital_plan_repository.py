@@ -58,4 +58,3 @@ def test_supersession_picks_the_leaf_and_all_latest_spans_issues(tmp_path):
         assert plan.plan_id == "zcp-2" and plan.gate_cost_pp is None
         assert len(uow.capital.plans("26130")) == 2
         assert uow.capital.latest_plan("26132") is None
-        assert [p.plan_id for p in uow.capital.all_latest()] == ["zcp-2", "zcp-3"]

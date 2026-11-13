@@ -58,15 +58,6 @@ class CapitalRepository:
         leaves = [plan for plan in plans if plan.plan_id not in superseded]
         return leaves[-1]
 
-    def all_latest(self) -> list[CapitalPlanRow]:
-        table = sc.zucai_capital_plans
-        issues = self._connection.execute(select(table.c.issue).distinct()).scalars().all()
-        return [
-            plan
-            for issue in sorted(issues)
-            if (plan := self.latest_plan(issue)) is not None
-        ]
-
     @staticmethod
     def _row(row) -> CapitalPlanRow:
         values = dict(row)

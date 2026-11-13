@@ -496,6 +496,78 @@ def ops_status(
     ))
 
 
+_SNAPSHOT_OUT_OPTION = _cli.typer.Option(None, "--out", help="另存一份 JSON（默认只打印）")
+_SNAPSHOT_DAYS_OPTION = _cli.typer.Option(7, "--days", min=1, help="作业成败统计回看几天")
+
+
+@_cli.app.command("ops-snapshot")
+def ops_snapshot(
+    data_dir: Path = _AUDIT_DATA_DIR_OPTION,
+    out: Path | None = _SNAPSHOT_OUT_OPTION,
+    days: int = _SNAPSHOT_DAYS_OPTION,
+) -> None:
+    """版图快照：代码规模、内核表、作业定义与装载、近几天作业成败、实验状态、待签积压。**只读。**
+
+    系统版图页的数字原先靠手工逐项核查；这条命令把同一组数字出成一份 JSON，
+    两次快照一比就知道结构变了什么。只数结构，不带票面、资金与账号。"""
+    import json as _json
+    import subprocess
+    from datetime import datetime as _datetime
+    from datetime import timedelta as _timedelta
+
+    from nutmeg.decision import system_snapshot as snap
+    from nutmeg.decision.ops_status import launchctl_list, parse_launchctl
+
+    root = Path(__file__).resolve().parents[3]
+    now = _datetime.now().astimezone()
+
+    def _git(*args: str) -> str:
+        return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True,
+                              check=True).stdout
+
+    def _leaves(command) -> int:
+        subs = getattr(command, "commands", None)
+        return sum(_leaves(c) for c in subs.values()) if subs else 1
+
+    def _code() -> dict:
+        return {**snap.code_stats(root),
+                "cli_leaf_commands": _leaves(_cli.typer.main.get_command(_cli.app))}
+
+    def _working_tree() -> dict:
+        status = _git("status", "--porcelain").splitlines()
+        return {"commit": _git("rev-parse", "--short", "HEAD").strip(),
+                "tracked_modified": sum(not ln.startswith("??") for ln in status),
+                "untracked_paths": sum(ln.startswith("??") for ln in status)}
+
+    def _inbox() -> dict:
+        from nutmeg.decision.proposals import inbox
+
+        return snap.inbox_stats(inbox(data_dir, today=now.date().isoformat()))
+
+    def _deadcode() -> dict:
+        path = Path(data_dir) / "analytics" / "deadcode" / "latest.json"
+        return _json.loads(path.read_text(encoding="utf-8"))
+
+    doc = snap.snapshot({
+        "working_tree": _working_tree,
+        "code": _code,
+        "kernel": lambda: snap.kernel_stats(Path(data_dir) / "ontology" / "ontology.db"),
+        "launchd": lambda: snap.launchd_stats(
+            root / "ops" / "launchd", Path.home() / "Library" / "LaunchAgents",
+            loaded=parse_launchctl(launchctl_list())),
+        "runs": lambda: snap.runs_stats(
+            data_dir, since=(now.date() - _timedelta(days=days - 1)).isoformat()),
+        "rsi": lambda: snap.rsi_stats(data_dir, root / "experiments" / "registry"),
+        "inbox": _inbox,
+        "deadcode": _deadcode,
+    }, captured_at=now.isoformat(timespec="seconds"))
+    text = _json.dumps(doc, ensure_ascii=False, indent=2)
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(text + "\n", encoding="utf-8")
+    _cli.typer.echo(text)
+
+
 @_cli.app.command("zucai-official")
 def zucai_official(
     issue: str = _cli.typer.Option(..., "--issue", help="期号 如 26103"),
