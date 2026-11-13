@@ -337,7 +337,11 @@ def write_day_ledgers(data_dir: Path, day: str, *, now: str,
 
 
 def brief_cell(row: dict | None) -> str:
-    """初判包「损耗」一格：休 主/客 · 14天 主/客 + 旗 + 伤停缩写（只看不拨动）。"""
+    """初判包「损耗」一格：休 主/客 · 14天 主/客 + 伤停缩写。只列事实。
+
+    机器旗标（单边密集 / 下场≤3天 / 长歇）2026-11-13 起不再显示（Jun 签 P-574c4d0b ③）：
+    F16 已退役，样本外 4,685 场与外部 79,595 场回测效应≈0，旗标假阳性多。
+    台账行里的 `flags` 字段照写，只是不进阅读层。"""
     if not row:
         return "—"
 
@@ -351,11 +355,6 @@ def brief_cell(row: dict | None) -> str:
             f"14天{h['matches_14d']}/{a['matches_14d']}")
     side_mark = {"home": "主", "away": "客", "both": "双"}
     marks = []
-    for flag in row.get("flags") or []:
-        name, _, side = flag.partition(":")
-        symbol = {"单边密集": "⚑密", "下场≤3天": "⇢", "长歇": "⏸"}.get(name)
-        if symbol:
-            marks.append(f"{symbol}{side_mark.get(side, side)}")
     hurt = row.get("absences") or {}
     for side in ("home", "away"):
         if hurt.get(side):

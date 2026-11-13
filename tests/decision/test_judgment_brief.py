@@ -138,7 +138,7 @@ def test_jczq_brief_shows_the_team_load_cell_from_the_ledger(tmp_path: Path) -> 
         json.dumps({"rows": {"周六001": _LOAD_ROW}}, ensure_ascii=False), encoding="utf-8")
     brief = jczq_brief(data, DAY)
     a, b = brief["rows"]
-    assert a["load"] == "休3/19 14天4/0 ⚑密主 ⇢客 ⏸客 主缺" and b["load"] == "—"
+    assert a["load"] == "休3/19 14天4/0 主缺" and b["load"] == "—"
     text = render_jczq(brief)
     assert "| 损耗 |" in text and "休息差历史上已被定价" in text
 

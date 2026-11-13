@@ -148,3 +148,33 @@ def test_shared_excluded_faces_are_a_v2_veto_too() -> None:
     v2 = [v for v in out["verdicts"] if v["code"] == "V2"]
     assert len(v2) == 1 and v2[0]["level"] == "veto" and out["vetoed"]
     assert "与同组计划票共享排除面 1 处（1开1 35%）" in v2[0]["text"]
+
+
+def test_win_prize_estimates_what_a_winning_renjiu_ticket_pays() -> None:
+    """2026-11-13（Jun 签 P-f3689160）：任九票「中了大约拿多少」对比票价，只提醒不否决。
+    26162：T2 1单8双 ¥512 中了估派约 ¥284，中了也不回本。"""
+    import math
+
+    from nutmeg.decision.review import win_prize
+
+    model = {"renjiu": {"median": 3774.0, "a": -5.2547, "b": 1.007, "resid_sd": 0.62, "n": 41}}
+    hot = {"home": 0.70, "draw": 0.18, "away": 0.12}
+    market = {str(i): hot for i in range(1, 15)}
+    # 九条热门单：选中的场只可能开主胜；未选五场按市场分布
+    out = win_prize(_zucai_slip(hot, "3"), model=model, market=market)
+    low_s = 14 * -math.log(0.70)                       # 十四场全开主胜是最便宜的赛果
+    assert out["median"] > math.exp(-5.2547 + 1.007 * low_s)
+    assert out["low"] < out["median"] < out["high"] and out["stake"] == 2
+    assert out["pays_back"] is True and out["p_short"] < 0.5
+    # 九条全双 ¥1,024（2^9 注）：票价涨了 512 倍，中时奖金只涨十几倍 → 多半不回本
+    wide = win_prize(_zucai_slip(hot, "31"), model=model, market=market)
+    assert wide["stake"] == 1024 and wide["pays_back"] is False and wide["p_short"] > 0.5
+    lines = review(_zucai_slip(hot, "31"), {"shared_naked": []}, prize_model=model,
+                   market=market)
+    v6 = [v for v in lines["verdicts"] if v["code"] == "V6"]
+    assert v6 and v6[0]["level"] == "warn" and "中了也不回本" in v6[0]["text"]
+    assert lines["vetoed"] == any(v["level"] == "veto" for v in lines["verdicts"])
+    # 缺市场分布、没有模型系数、不是任九 → 不给估计（不猜）
+    assert win_prize(_zucai_slip(hot, "3"), model=model, market={}) is None
+    assert win_prize(_zucai_slip(hot, "3"), model={"renjiu": {"median": 3774.0}},
+                     market=market) is None

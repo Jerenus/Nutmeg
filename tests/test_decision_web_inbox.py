@@ -17,10 +17,11 @@ def _client(data: Path) -> TestClient:
 
 def _seed(data: Path) -> dict[str, str]:
     data.mkdir(parents=True, exist_ok=True)
+    far = "2099-01-01T00:00:00+08:00"   # 到期落账另有测试；这里要它们一直待签
     ids = {"k1": px.propose(data, title="K1 修正案", body="合并 κ", blocks="K1 判决",
-                            at="2026-10-06T12:00:00+08:00"),
+                            at="2026-10-06T12:00:00+08:00", deadline=far),
            "cr": px.propose(data, title="CR-cand-1", body="人群平局",
-                            at="2026-10-07T12:00:00+08:00"),
+                            at="2026-10-07T12:00:00+08:00", deadline=far),
            "old": px.propose(data, title="旧的", body="x", at="2026-10-01T12:00:00+08:00")}
     px.answer(data, ids["old"], "sign", words="可以", at="2026-10-02T09:00:00+08:00")
     return ids

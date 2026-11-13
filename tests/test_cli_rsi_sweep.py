@@ -52,6 +52,9 @@ def _prepare_duty(
         "rule_ids": [],
         "source_doc": "test",
         "registered_at": "2099-09-18",
+        # 判断类新实验要先过外部样本（2026-11-13）；巡检测试不关心这一条，给一份合格的
+        "external_prescreen": {"source": "test", "n": 5000, "effect_pp": 2.0,
+                               "ci_low_pp": 0.5, "ci_high_pp": 3.5, "script": "test.py"},
         "duties": [
             {
                 "name": "sample",

@@ -35,6 +35,13 @@ VERDICTS = {"sign": "签", "modify": "改", "reject": "否", "stale": "已过时
 STATUSES = {"pending": "待签", **VERDICTS, "done": "已执行"}
 EXECUTABLE = ("sign", "modify")
 """签 / 改之后才许标「已执行」。"""
+DEFAULTS = {"sign": "做", "stale": "不做"}
+"""到期不答按什么办（2026-11-13 Jun 签 P-574c4d0b ①）：做＝按提案执行；不做＝维持现状、作废。
+每条提案都带默认动作与到期时刻；到期没答就按默认动作记一条答复（by=default），
+Jun 之后再答，以他最近一次答复为准。闭环里开着的 RSI 项不在此列（它们跟着实验走）。"""
+DEFAULT_ACTION = "stale"
+DEFAULT_TTL_DAYS = 14
+DEFAULT_BY = "default"
 NAG_ASKED = 3
 NAG_DAYS = 7
 """问过 ≥3 次或积压 ≥7 天 → `overdue`（页面用否决色）。"""
@@ -47,7 +54,7 @@ RSI_DIR = Path("analytics") / "rsi-loop"
 
 
 def labels() -> dict:
-    return {"verdicts": VERDICTS, "statuses": STATUSES}
+    return {"verdicts": VERDICTS, "statuses": STATUSES, "defaults": DEFAULTS}
 
 
 def _now() -> datetime:
@@ -90,14 +97,21 @@ def _created(data_dir: Path | str) -> set[str]:
     return {e["id"] for e in _events(data_dir) if e.get("op") == "create"}
 
 
+def _check_default(default: str) -> None:
+    if default not in DEFAULTS:
+        raise ValueError(f"default 须为 {' / '.join(DEFAULTS)} 之一（收到 {default!r}）")
+
+
 def _create(data_dir: Path | str, *, title: str, body: str, blocks: str, deadline: str | None,
             source: str, ref: str, at: str | None, asked_base: int | None = None,
-            pid: str | None = None) -> tuple[str, bool]:
+            pid: str | None = None, default: str | None = None) -> tuple[str, bool]:
     """→ (id, 是否新写)。同 id 已在账上就不再写（种子可反复跑）。"""
     from nutmeg.decision.bj_time import parse_bj
 
     if not str(title).strip():
         raise ValueError("title 不能为空")
+    if default is not None:
+        _check_default(default)
     if deadline and parse_bj(deadline) is None:
         raise ValueError("deadline 须为 ISO 时刻，如 2026-11-01T21:00:00+08:00"
                          f"（收到 {deadline!r}）")
@@ -109,6 +123,8 @@ def _create(data_dir: Path | str, *, title: str, body: str, blocks: str, deadlin
         return pid, False
     row = {"op": "create", "id": pid, "at": at, "title": title, "body": body, "blocks": blocks,
            "deadline": deadline or None, "source": source, "ref": ref}
+    if default is not None:
+        row["default"] = default
     if asked_base:
         row["asked_base"] = int(asked_base)
     _append(data_dir, row)
@@ -117,10 +133,18 @@ def _create(data_dir: Path | str, *, title: str, body: str, blocks: str, deadlin
 
 def propose(data_dir: Path | str, *, title: str, body: str = "", blocks: str = "",
             deadline: str | None = None, ref: str = "", source: str = "session",
-            at: str | None = None) -> str:
-    """起草一条待签提案 → id。同一条（同 source/标题/时刻）已在账上就原样返回 id、不重写。"""
+            at: str | None = None, default: str | None = None) -> str:
+    """起草一条待签提案 → id。同一条（同 source/标题/时刻）已在账上就原样返回 id、不重写。
+    没写条款的按通例：起草后 `DEFAULT_TTL_DAYS` 天到期，到期不做。"""
+    from datetime import timedelta
+
+    from nutmeg.decision.bj_time import parse_bj
+
+    at = at or _iso(_now())
+    if not deadline and (born := parse_bj(at)) is not None:
+        deadline = _iso(born + timedelta(days=DEFAULT_TTL_DAYS))
     pid, _ = _create(data_dir, title=title, body=body, blocks=blocks, deadline=deadline,
-                     source=source, ref=ref, at=at)
+                     source=source, ref=ref, at=at, default=default or DEFAULT_ACTION)
     return pid
 
 
@@ -212,6 +236,47 @@ def answer(data_dir: Path | str, pids: list[str] | str, verdict: str, *, words: 
     return events
 
 
+def terms(data_dir: Path | str, pids: list[str] | str, *, default: str, deadline: str,
+          note: str = "", at: str | None = None) -> list[dict]:
+    """给账上的提案补写（或改写）默认动作与到期时刻；后写的盖先写的。不认识的 id → KeyError。"""
+    from nutmeg.decision.bj_time import parse_bj
+
+    _check_default(default)
+    if parse_bj(deadline) is None:
+        raise ValueError(f"deadline 须为 ISO 时刻（收到 {deadline!r}）")
+    ids = [pids] if isinstance(pids, str) else list(dict.fromkeys(pids))
+    for pid in ids:
+        _ensure(data_dir, pid)
+    at = at or _iso(_now())
+    events = [{"op": "terms", "id": pid, "at": at, "default": default, "deadline": deadline,
+               "note": str(note or "").strip()} for pid in ids]
+    for event in events:
+        _append(data_dir, event)
+    return events
+
+
+def expire(data_dir: Path | str, *, now: str | None = None) -> list[dict]:
+    """到期没答的提案按默认动作记一条答复（by=default）→ 这次写下的事件。
+    没有默认动作或到期时刻的旧账不动；已答的不动；同一条不会记两次。"""
+    from nutmeg.decision.bj_time import parse_bj
+
+    at = parse_bj(now) if now else _now()
+    if at is None:
+        raise ValueError(f"now 须为 ISO 时刻（收到 {now!r}）")
+    events: list[dict] = []
+    for row in load(data_dir, today=at.date().isoformat()):
+        due = parse_bj(row.get("deadline"))
+        if row["status"] != "pending" or row.get("default") not in DEFAULTS or due is None \
+                or due > at:
+            continue
+        words = f"到期未答，按默认动作：{DEFAULTS[row['default']]}"
+        if row.get("default_note"):
+            words += f"（{row['default_note']}）"
+        events += answer(data_dir, row["id"], row["default"], words=words, by=DEFAULT_BY,
+                         at=_iso(at))
+    return events
+
+
 def done(data_dir: Path | str, pid: str, *, result: str, at: str | None = None) -> dict:
     """签 / 改过的提案执行完了 → 该事件。没答或答的是否 / 已过时 → ValueError。"""
     if not str(result).strip():
@@ -236,6 +301,12 @@ def _days(start: str, today: str) -> int:
 
 def _fold_row(base: dict, history: list[dict], today: str) -> dict:
     row = {k: v for k, v in base.items() if k != "op"}
+    row.setdefault("default", None)
+    row["default_note"] = ""
+    for h in history:
+        if h["op"] == "terms":      # 后写的盖先写的
+            row["default"], row["deadline"] = h["default"], h["deadline"]
+            row["default_note"] = h.get("note", "")
     asks = [h for h in history if h["op"] == "ask"]
     answered = [i for i, h in enumerate(history) if h["op"] == "answer"]
     last = history[answered[-1]] if answered else None
@@ -249,6 +320,7 @@ def _fold_row(base: dict, history: list[dict], today: str) -> dict:
     row["verdict"] = last["verdict"] if last else None
     row["words"] = last.get("words", "") if last else ""
     row["by"] = last.get("by") if last else None
+    row["by_default"] = bool(last) and last.get("by") == DEFAULT_BY
     row["answered_at"] = last["at"] if last else None
     row["batch"] = last.get("batch", "") if last else ""
     row["result"] = executed[-1]["result"] if executed else ""
@@ -286,7 +358,7 @@ def load(data_dir: Path | str, *, today: str | None = None) -> list[dict]:
         if op == "create":
             bases.setdefault(pid, event)
             history.setdefault(pid, [])
-        elif op in ("ask", "answer", "done") and event.get("at"):
+        elif op in ("ask", "answer", "done", "terms") and event.get("at"):
             history.setdefault(pid, []).append(event)
     rows = [_fold_row(bases[pid], history[pid], today) for pid in bases]
     batches = Counter(r["batch"] for r in rows if r["batch"])
@@ -296,7 +368,12 @@ def load(data_dir: Path | str, *, today: str | None = None) -> list[dict]:
 
 
 def inbox(data_dir: Path | str, *, today: str | None = None) -> list[dict]:
-    """账 + 闭环里还开着、账上还没有的 RSI 项。"""
+    """账 + 闭环里还开着、账上还没有的 RSI 项。读之前先把到期的按默认动作落账：
+    给了 `today`（页面时钟）只落到期日早于它的，没给就按此刻。账写不进去不挡读。"""
+    try:
+        expire(data_dir, now=f"{today}T00:00:00+08:00" if today else None)
+    except OSError:
+        pass
     rows = load(data_dir, today=today)
     known = {r["id"] for r in rows}
     return _order(rows + [r for r in rsi_items(data_dir, today=today) if r["id"] not in known])

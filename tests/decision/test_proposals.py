@@ -244,3 +244,64 @@ def test_reopened_rsi_item_is_pending_again(tmp_path: Path) -> None:
     rows = {r["id"]: r["status"] for r in px.inbox(tmp_path, today=TODAY)
             if r["id"].startswith("RSI-abc123")}
     assert rows == {RID: "sign", "RSI-abc123@2026-10-29": "pending"}
+
+
+# ---- 默认动作与到期（2026-11-13 Jun 签 P-574c4d0b ①） ----------------------
+
+def test_new_proposal_carries_a_default_and_a_deadline(tmp_path):
+    pid = px.propose(tmp_path, title="不写条款", at="2026-11-13T10:00:00+08:00")
+    row = _row(tmp_path, pid)
+    assert row["default"] == "stale"
+    assert row["deadline"] == "2026-11-27T10:00:00+08:00"   # 起草后 14 天
+    pid2 = px.propose(tmp_path, title="写了条款", at="2026-11-13T10:00:00+08:00",
+                      default="sign", deadline="2026-11-15T21:00:00+08:00")
+    row2 = _row(tmp_path, pid2)
+    assert (row2["default"], row2["deadline"]) == ("sign", "2026-11-15T21:00:00+08:00")
+    with pytest.raises(ValueError, match="default"):
+        px.propose(tmp_path, title="坏条款", default="reject")
+
+
+def test_terms_rewrites_default_and_deadline_of_an_existing_proposal(tmp_path):
+    (tmp_path / px.LEDGER).write_text(json.dumps(
+        {"op": "create", "id": "P-old", "at": "2026-10-06T10:00:00+08:00", "title": "旧提案",
+         "body": "", "blocks": "", "deadline": None, "source": "session", "ref": ""},
+        ensure_ascii=False) + "\n", encoding="utf-8")
+    assert _row(tmp_path, "P-old")["default"] is None            # 旧账没有条款：不会自己到期
+    px.terms(tmp_path, ["P-old"], default="stale", deadline="2026-11-27T21:00:00+08:00",
+             note="维持现状")
+    row = _row(tmp_path, "P-old")
+    assert (row["default"], row["deadline"], row["default_note"]) == (
+        "stale", "2026-11-27T21:00:00+08:00", "维持现状")
+    with pytest.raises(KeyError):
+        px.terms(tmp_path, ["P-nope"], default="stale", deadline="2026-11-27T21:00:00+08:00")
+
+
+def test_expire_books_the_default_once_and_only_after_the_deadline(tmp_path):
+    late = px.propose(tmp_path, title="到期·做", at="2026-11-01T10:00:00+08:00",
+                      default="sign", deadline="2026-11-10T21:00:00+08:00")
+    soon = px.propose(tmp_path, title="没到期", at="2026-11-01T11:00:00+08:00",
+                      default="stale", deadline="2026-11-20T21:00:00+08:00")
+    answered = px.propose(tmp_path, title="已答", at="2026-11-01T12:00:00+08:00",
+                          default="stale", deadline="2026-11-10T21:00:00+08:00")
+    px.answer(tmp_path, answered, "reject", at="2026-11-02T09:00:00+08:00")
+
+    events = px.expire(tmp_path, now="2026-11-13T09:00:00+08:00")
+    assert [e["id"] for e in events] == [late]
+    row = _row(tmp_path, late)
+    assert row["status"] == "sign" and row["by"] == "default" and row["by_default"] is True
+    assert "到期未答" in row["words"]
+    assert _row(tmp_path, soon)["status"] == "pending"
+    assert _row(tmp_path, answered)["by"] == "jun"
+    assert px.expire(tmp_path, now="2026-11-13T09:05:00+08:00") == []      # 不重复落账
+    # 到期之后 Jun 改答：以他最近一次答复为准
+    px.answer(tmp_path, late, "reject", words="不做了", at="2026-11-14T09:00:00+08:00")
+    assert _row(tmp_path, late)["status"] == "reject"
+    assert _row(tmp_path, late)["by_default"] is False
+
+
+def test_inbox_books_expired_defaults_when_read(tmp_path, monkeypatch):
+    pid = px.propose(tmp_path, title="读时落账", at="2026-11-01T10:00:00+08:00",
+                     default="stale", deadline="2026-11-10T21:00:00+08:00")
+    rows = px.inbox(tmp_path, today="2026-11-13")
+    row = next(r for r in rows if r["id"] == pid)
+    assert row["status"] == "stale" and row["by_default"] is True

@@ -27,17 +27,20 @@ def inbox_propose(
     title: str = _cli.typer.Option(..., "--title"),
     body: str = _cli.typer.Option(..., "--body"),
     blocks: str = _cli.typer.Option("", "--blocks", help="拦住了什么"),
-    deadline: str | None = _cli.typer.Option(None, "--deadline", help="ISO 时刻"),
+    deadline: str | None = _cli.typer.Option(
+        None, "--deadline", help="到期时刻（ISO）；不写＝起草后 14 天"),
+    default: str | None = _cli.typer.Option(
+        None, "--default", help="到期不答按什么办：sign＝做 / stale＝不做；不写＝不做"),
     ref: str = _cli.typer.Option("", "--ref", help="会话 / 证据 / 记忆指针"),
     source: str = _cli.typer.Option("session", "--source"),
     data_dir: Path = _DATA_DIR,
 ) -> None:
-    """起草一条待签提案，打印 id。"""
+    """起草一条待签提案，打印 id。每条都带默认动作与到期时刻：到期没答按默认动作落账。"""
     from nutmeg.decision.proposals import propose
 
     try:
         pid = propose(data_dir, title=title, body=body, blocks=blocks, deadline=deadline,
-                      ref=ref, source=source)
+                      ref=ref, source=source, default=default)
     except ValueError as error:
         _fail(error)
     _cli.typer.echo(pid)
@@ -98,13 +101,33 @@ def inbox_done(
     _cli.typer.echo(f"{pid} → 已执行")
 
 
+@inbox_app.command("terms")
+def inbox_terms(
+    pids: list[str] = _IDS,
+    default: str = _cli.typer.Option(..., "--default", help="sign＝做 / stale＝不做"),
+    deadline: str = _cli.typer.Option(..., "--deadline", help="到期时刻（ISO）"),
+    note: str = _cli.typer.Option("", "--note", help="默认动作的一句说明"),
+    data_dir: Path = _DATA_DIR,
+) -> None:
+    """给账上的提案补写（或改写）默认动作与到期时刻。"""
+    from nutmeg.decision.proposals import DEFAULTS, terms
+
+    try:
+        terms(data_dir, pids, default=default, deadline=deadline, note=note)
+    except KeyError as error:
+        _fail(f"收件箱里没有 {error.args[0]}")
+    except ValueError as error:
+        _fail(error)
+    _cli.typer.echo(f"{' '.join(pids)} → 到期 {deadline[:16]} 不答按「{DEFAULTS[default]}」")
+
+
 @inbox_app.command("list")
 def inbox_list(
     pending: bool = _cli.typer.Option(False, "--pending", help="只列待签"),
     data_dir: Path = _DATA_DIR,
 ) -> None:
     """每条一行：id 日期 状态 问过/积压 标题（待签在前）；含闭环里开着的 RSI 项。"""
-    from nutmeg.decision.proposals import STATUSES, inbox
+    from nutmeg.decision.proposals import DEFAULTS, STATUSES, inbox
 
     rows = inbox(data_dir)
     if pending:
@@ -112,8 +135,11 @@ def inbox_list(
     for r in rows:
         tail = f" · {r['words']}" if r.get("words") else ""
         flag = "!" if r.get("overdue") else " "
+        due = ""
+        if r["status"] == "pending" and r.get("default") in DEFAULTS and r.get("deadline"):
+            due = f" [到期 {str(r['deadline'])[5:10]}·{DEFAULTS[r['default']]}]"
         _cli.typer.echo(f"{r['id']} {str(r['at'])[:10]} {STATUSES[r['status']]} {flag}"
-                        f"问{r['asked_count']}/{r['age_days']}天 {r['title']}{tail}")
+                        f"问{r['asked_count']}/{r['age_days']}天 {r['title']}{due}{tail}")
     if not rows:
         _cli.typer.echo("（无）")
 

@@ -15,9 +15,9 @@ from nutmeg.decision.files import read_json
 from nutmeg.decision.team_load import brief_cell
 
 FAV = 0.70
-LOAD_READING = ("损耗＝休 主/客天 · 14 天场数 主/客（⚑密＝单边密集，⇢＝下场≤3天，⏸＝长歇；"
-                "缺/停/轮/中＝rubric 伤停），**只看不拨动**：休息差历史上已被定价，"
-                "单边密集在 F16 前瞻检验中。")
+LOAD_READING = ("损耗＝休 主/客天 · 14 天场数 主/客（缺/停/轮/中＝rubric 伤停；天数带 ? ＝"
+                "赛程覆盖缺口），**只查事实、不拨动**：休息差历史上已被定价；机器旗标 "
+                "2026-11-13 起不再显示（F16 退役，样本外与外部回测效应≈0）。")
 ATTENTION_READING = ("关注度＝Polymarket 成交 ≥$2 万的场：成交量 · 三向归一价 · "
                      "与市场基线差最大的一面，"
                      "**只看不拨动**：名气热门历史上不比市场更易翻车（高关注 n=181 +3.5pp）；"

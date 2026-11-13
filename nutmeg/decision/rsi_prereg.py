@@ -28,6 +28,38 @@ ROLES = ("display_only", "monitor")
 PRESCREEN_N_MIN = 60
 
 
+EXTERNAL_FIRST_FROM = "2026-11-13"
+EXTERNAL_N_MIN = 5000
+_EXTERNAL_REQUIRED = ("source", "n", "effect_pp", "ci_low_pp", "ci_high_pp", "script")
+
+
+def require_external_first(doc: dict) -> None:
+    """判断类新实验先过外部样本（2026-11-13 Jun 签 P-574c4d0b ⑤）。
+
+    24 个实验里没有一条判断类主张变成拦截或拨动规则，五轮因子挖掘在同一张内部样本表上
+    没有可复现信号；外部 6–8 万场回测两次改写了内部小样本的读数（平局排序、损耗格）。
+    所以 `registered_at` 在 `EXTERNAL_FIRST_FROM` 之后的 judgment 层登记，原件里必须带
+    `external_prescreen`：{source, n ≥ EXTERNAL_N_MIN, effect_pp, ci_low_pp, ci_high_pp,
+    script}，且 CI 不含 0。内部样本只用来确认，不用来发现。
+    不在此列：结构类实验、规矩之前登记的原件、口径变更的续登记（`epoch_of`）。"""
+    if (doc.get("layer") != Layer.JUDGMENT.value or doc.get("epoch_of")
+            or str(doc.get("registered_at") or "") < EXTERNAL_FIRST_FROM):
+        return
+    ext = doc.get("external_prescreen")
+    if not isinstance(ext, dict):
+        raise ValueError(
+            f"{doc.get('exp_id')} 是判断类新实验：先过外部样本再登记（原件缺 "
+            "external_prescreen；2026-11-13 Jun 签 P-574c4d0b ⑤）")
+    missing = [k for k in _EXTERNAL_REQUIRED if ext.get(k) in (None, "")]
+    if missing:
+        raise ValueError(f"external_prescreen 缺字段: {missing}")
+    if int(ext["n"]) < EXTERNAL_N_MIN:
+        raise ValueError(f"external_prescreen.n={ext['n']} 不够：外部样本至少 {EXTERNAL_N_MIN} 场")
+    if float(ext["ci_low_pp"]) <= 0 <= float(ext["ci_high_pp"]):
+        raise ValueError(
+            f"外部样本 CI [{ext['ci_low_pp']}, {ext['ci_high_pp']}] 含 0：没有信号，不登记")
+
+
 def load_registry_doc(path: Path) -> dict:
     doc = json.loads(Path(path).read_text(encoding="utf-8"))
     missing = [k for k in _REQUIRED if k not in doc]

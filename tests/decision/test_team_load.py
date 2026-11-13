@@ -196,7 +196,7 @@ def test_brief_cell_marks_implausible_rest_days_as_a_coverage_gap():
            "away_load": {"rest_days": None, "matches_14d": 0, "next_days": None,
                          "long_break": False},
            "flags": ["长歇:home"], "absences": {"home": [], "away": []}}
-    assert brief_cell(row) == "休42?/? 14天0/0 ⏸主"
+    assert brief_cell(row) == "休42?/? 14天0/0"   # 机器旗标 2026-11-13 起不显示
 
 
 def test_ledger_rows_carry_the_kernel_match_id_for_duty_fulfilment(tmp_path: Path):

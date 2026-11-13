@@ -137,6 +137,70 @@ def zucai_return(slip: BetSlip, *, model: dict[str, dict],
             "basis": "model"}
 
 
+def win_prize(slip: BetSlip, *, model: dict[str, dict],
+              market: dict[str, dict] | None = None) -> dict | None:
+    """任九票「中了大约拿多少」（2026-11-13，Jun 签 P-f3689160）。
+
+    奖金模型 log(奖金) = a + b·S，S = −Σ ln p(赛果)（14 场，p＝市场概率）。给定这张票中了：
+    选中的场只可能开在所选面里（按判断概率分摊），没选的场按市场分布；S 的分布逐场卷积
+    （四舍五入到 0.001），取中位数 → 每注奖金中位数 × 倍数。带宽 ±1sd 含赛果离散与模型残差。
+    `p_short`＝中了也不回本的概率（奖金 < 票价，含模型残差）；过半才算「不回本」。
+    → {median, low, high, stake, p_short, pays_back}；不是任九、没有模型系数、缺任一场市场
+    分布 → None。
+    26162：T2 1单8双 ¥512 中了估派 ¥284，同样 9/9 的 W3 ¥128 估 +¥156——形状越宽，票价涨得
+    比中时奖金快。只提醒，不否决，不改规则 a。"""
+    coeffs = model.get(slip.channel) or {}
+    market = market or {}
+    if slip.channel != "renjiu" or "a" not in coeffs or not slip.stake_yuan \
+            or len(market) < BOARD_MATCHES:
+        return None
+    a, b, sd = coeffs["a"], coeffs["b"], coeffs["resid_sd"]
+    chosen: dict[str, tuple[dict, list[str]]] = {}
+    for leg in slip.legs:
+        keys = list(dict.fromkeys(normalize_selection("had", x) for x in leg.selections))
+        if leg.market != "had" or not leg.fair or not keys or any(k is None for k in keys):
+            return None
+        chosen[leg.key] = (leg.fair, keys)
+    dist: dict[float, float] = {0.0: 1.0}
+    for no in sorted(market, key=str)[:BOARD_MATCHES]:
+        p = market[no]
+        if no in chosen:
+            q, keys = chosen[no]
+            total = sum(float(q[k]) for k in keys)
+            if total <= 0:
+                return None
+            steps = [(-math.log(float(p[k])), float(q[k]) / total) for k in keys]
+        else:
+            steps = [(-math.log(float(p[f])), float(p[f])) for f in FACES]
+        nxt: dict[float, float] = {}
+        for s_now, w_now in dist.items():
+            for x, w in steps:
+                key = round(s_now + x, 3)
+                nxt[key] = nxt.get(key, 0.0) + w_now * w
+        dist = nxt
+    if set(chosen) - set(market):
+        return None
+    mass = sum(dist.values())
+    acc, s_median = 0.0, None
+    for s_value in sorted(dist):
+        acc += dist[s_value]
+        if acc >= mass / 2:
+            s_median = s_value
+            break
+    mean = sum(k * w for k, w in dist.items()) / mass
+    var = sum((k - mean) ** 2 * w for k, w in dist.items()) / mass
+    spread = math.sqrt(b * b * var + sd * sd)
+    centre = a + b * mean
+    median = math.exp(a + b * s_median) * slip.multiplier
+    need = math.log(slip.stake_yuan / slip.multiplier)       # 每注奖金要过这条线才回本
+    p_short = sum(w * 0.5 * (1 + math.erf((need - a - b * k) / (sd * math.sqrt(2))))
+                  for k, w in dist.items()) / mass
+    return {"median": round(median), "low": round(math.exp(centre - spread) * slip.multiplier),
+            "high": round(math.exp(centre + spread) * slip.multiplier),
+            "stake": slip.stake_yuan, "p_short": round(p_short, 3),
+            "pays_back": p_short < 0.5}
+
+
 def expected_return_ratio(slip: BetSlip, *, prize_model: dict[str, dict],
                           market: dict[str, dict] | None = None) -> float | None:
     """E[派奖]/投入。竞彩：每串 P(全中)×模态赔率连乘；足彩：奖金模型（见 `zucai_return`）。"""
@@ -260,6 +324,13 @@ def review(slip: BetSlip, diagnosis: dict, *, prize_model: dict[str, dict],
                          "text": f"任九选了 {n_matches} 场：>9 场的容错复式渠道不可购"
                                  "（2026-10-12）——改成 9 场"})
     verdicts.extend(structure_notes(slip))
+    won = win_prize(slip, model=prize_model, market=market)
+    if won:
+        text = (f"中了估派 ¥{won['median']:,}（±1sd ¥{won['low']:,}–{won['high']:,}，奖金模型），"
+                f"票价 ¥{won['stake']:,}，中了也不回本的概率 {won['p_short'] * 100:.0f}%")
+        verdicts.append({"code": "V6", "level": "info" if won["pays_back"] else "warn",
+                         "text": text if won["pays_back"]
+                         else text + "：多半中了也不回本（只提醒，不否决）"})
     vetoed = any(v["level"] == "veto" for v in verdicts)
     mark = {"veto": "⛔", "warn": "⚠️", "info": "ℹ️"}
     lines = [f"{mark[v['level']]}{v['code']} {v['text']}" for v in verdicts]

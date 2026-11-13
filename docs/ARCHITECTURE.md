@@ -3,7 +3,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档 | 现役系统结构总图（权威） |
-| 版本 | v1.10 · 2026-11-13 |
+| 版本 | v1.11 · 2026-11-13 |
 | 范围 | 定位 · 系统总图 · 每日时序 · 判断层（含足彩人群层） · 出票审票与账务 · RSI 实验层 · 回放 gym · 数据对象 · 全量分析过程 · 工程流程 · 文档地图 · 术语表 |
 | 读者 | Jun（下注者与决策人）· Claude 主循环 · Codex / OpenClaw 会话 |
 | 权威关系 | 原则与规则以 SOP 三件套为准；数字以 `.nutmeg-data/scoreboard.json` 与内核为准；本文与它们冲突时以它们为准，并回来改本文 |
@@ -134,7 +134,7 @@ flowchart TB
 | 判断 | `research_runner.py` `research_prompt.py` `rubric_items.py` `rubric.py` `stance.py` `jczq_reads.py` `zucai_auto_judgment.py` `pool.py` `overrides.py` `rubric_reader.py` `judgment_projection.py`；人群层 `crowd_source.py` `crowd_trigger.py` `crowd_model.py` `crowd_clues.py` | `research-<code>.json` / `<期>-research-m<N>.json`、`reads.json`、`legs-base`、内核 forecast revision；`<期>-zgzcw.json` `<期>-clues.jsonl` |
 | 面板 | `day_brief.py` `day_session.py` `day_publish.py` `verdict_page.py` `judgment_brief.py` `zucai_draft.py` `signals.py` | `daily/<日>/brief.md` `session.md`、`site/`、`verdict.html`、`<期>-draft.md` |
 | Polymarket 关注度（2026-10-09，只展示） | `data/polymarket.py`（只读公开接口）、`crowd_polymarket.py`（`nutmeg crowd polymarket [--flow]` / `polymarket-backfill`；备料链与入板旁支；`--flow` 2026-10-18：分市场量 + data-api 逐笔 → `money_to`/`lopsided`） | `zucai/<期>-polymarket.json`、`jczq/daily/<日>/polymarket.json` → 初判包「关注度」列、人群 DSL `pm_volume_k`/`pm_rank`、语料行 `polymarket` → F17 结账；CR2 用 `pm_rank` |
-| 损耗台账（2026-10-09，只展示） | `team_load.py`（`nutmeg load ledger`；`research refresh` 旁支自动写） | `jczq/daily/<日>/team-load.json`、`zucai/<期>-team-load.json` → 初判包「损耗」列、语料行 `team_load` → F16 结账；`nutmeg rsi team-load` 履约逐场义务 |
+| 损耗台账（2026-10-09，只展示） | `team_load.py`（`nutmeg load ledger`；`research refresh` 旁支自动写） | `jczq/daily/<日>/team-load.json`、`zucai/<期>-team-load.json` → 初判包「损耗」列（只列事实，机器旗标 2026-11-13 起不显示）、语料行 `team_load`；F16 已退役、逐场义务 2026-11-13 停，`rsi team-load` 随之删除 |
 | 审票与账务 | `review.py` `review_runner.py` `betslip.py` `betslip_diagnosis.py` `slip_group.py` `bankroll.py` `account.py` `retro_encoder.py` `white_line.py` | `betslips.jsonl` `scoreboard.json` `analytics/account/<月>.md` |
 | 实验 | `rsi_loop.py` `rsi_grading.py` `rsi_samples.py` `crowd_model.py` `experiments/*.py` `nutmeg/gym/` | 内核 rsi_* 表、`experiments/corpus-v2.json` `rsi-samples.json` `factors.json` `registry/`（含 `CR*.json`）`candidates/`、`analytics/rsi-loop/` |
 | 运行 | `day_runner.py` `day_decisions.py` `day_broadcast.py` `day_ops.py` `day_runs.py` `ops_status.py`（launchd / plist / 日程只在这里解析一次）、`nutmeg/notifications/notify.py` | `daily/<日>/timeline.json` `decisions.json` `broadcasts.jsonl` `previews.jsonl`、`notifications/ledger.jsonl` |
@@ -291,7 +291,7 @@ flowchart TB
 4. **永不因 rubric 拒收**：漏写＝全部弃权（`rubric_missing`），不合法选项改弃权（`rubric_notes`）。
 5. **改判**：有 rubric 的研究，改判必须落到项并给封闭理由（新官宣信息 / 证据层级不够 / 已被价格吸收 / 研究自相矛盾 / 回市场），tilt 从合并后的 rubric 重新派生；改判账在判决页按理由分层。
 6. **判断唯一事实**：Read 自报 `kind / board_key / code`，内核每个序列取最高 revision 投影回 `reads.json`；自动通路不再经过手工 `decision-read`（命令仍注册，只作手工落 Read 的备用口，退役待 10-08 §7 手工足彩通路一并裁）。
-7. **两读**：读者 B 只读分析员写下的证据层，逐项作答；κ<0.4 的项要重写或删；B 的整体概率只记账（F9 已证 LLM 整体概率≈市场）。研究一落盘（`research run` 写出新研究、12:30/18:45 `research refresh`）就对还没开球、还没有侧车的研究补读（`rubric read --pending`，2026-10-05），侧车才是前瞻的、简报才有两读 κ；10:45 闭环的补读只兜底。
+7. **两读**：读者 B 只读分析员写下的证据层，逐项作答；κ<0.4 的项要重写或删；B 的整体概率只记账（F9 已证 LLM 整体概率≈市场）。研究一落盘（`research run` 写出新研究、12:30/18:45 `research refresh`）就对还没开球、还没有侧车的研究补读（`rubric read --pending`，2026-10-05），侧车才是前瞻的、简报才有两读 κ；10:45 闭环的补读只兜底。**2026-11-13 起抽样**：约一成、每周约 20 场，去留按「日目录/文件名」哈希定（`rubric_reader.in_sample`），`rubric read --all` 逐份都读。
 
 ### 3.3 足彩泳道的 legs-base 与机器初稿
 
@@ -763,3 +763,4 @@ flowchart TB
 | v1.7 | 2026-10-20 | §5：F19 价内/未价判据对象化接入结账；语料去重并入板面通路孪生的研究标签（10-10 起 65 场曾丢失）；rubric r3（`F_suspension` 上限退役，起无拨动项） |
 | v1.9 | 2026-11-13 | 运维：`ops-run` 发现某段死在 claude 无人值守登录上时推一次通知（`ops.claude-auth`，一天一次）；`ops-status` 新增「仓里有定义、未安装」一节（`uninstalled_definitions`）；`day_runs.JOBS` 补 `decision.lanip`；`/api/day` 的待签积压按页面时钟算。删除无入口的 `public_report.py` 与模板（备份在仓库外）、无引用的 `update_duty_definition`。页眉版本号补齐（v1.8 当时漏改） |
 | v1.10 | 2026-11-13 | 账房：月账第二行与账房页新增「买前预审」——实购票里开球前留过同一张预审痕的张数（`preview_coverage.py`，只读；竞彩按同日同场次、足彩按同期同票面，购买时刻不入账所以以开球为界）。运维：`nutmeg ops-snapshot` 只读出一份结构快照 JSON（代码规模、内核表与空表、作业定义/安装/装载、近几天各作业成败、实验状态、待签积压），系统版图页的数字从它来（`system_snapshot.py`）。删除无引用的 `ActionService.unit_of_work`、`CapitalRepository.all_latest` |
+| v1.11 | 2026-11-13 | Jun 签 P-574c4d0b / P-f3689160 后的一组收缩与治理：①待签提案带默认动作与到期时刻，到期没答按默认动作落账（`proposals.expire`，`inbox terms`；宪法 §6）；②读者 B 改抽样（约一成）；③损耗台账停逐场义务与机器旗标，删 `rsi team-load`；④分析包 §1 自 26165 起拆主表六列 + 折叠附表；⑤判断类新实验登记前必须带外部样本证据（`rsi_prereg.require_external_first`）。审票新增 V6 提醒：任九票「中了估派多少、不回本的概率」（`review.win_prize`，只提醒）。删除从未生效的 `decision.lanip` 作业定义（内网域名未配置）。此前悬空的白防线、SOP 恢复、别名与预筛脚本同日分主题入库 |

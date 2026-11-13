@@ -198,3 +198,36 @@ def test_role_is_validated_and_epoch_ids_derive(tmp_path):
         load_registry_doc(p)
     assert base_exp_id("F19.v2") == "F19" and base_exp_id("F19") == "F19"
     assert next_epoch_id("F19") == "F19.v2" and next_epoch_id("F19.v2") == "F19.v3"
+
+
+# ---- 外部样本先行（2026-11-13 Jun 签 P-574c4d0b ⑤） ------------------------
+
+_EXTERNAL = {"source": "football-data 2012–2025", "n": 64485, "effect_pp": 2.4,
+             "ci_low_pp": 0.9, "ci_high_pp": 3.9, "script": "experiments/prescreen/x.py"}
+
+
+def test_new_judgment_experiment_needs_external_evidence_before_registering():
+    from nutmeg.decision.rsi_prereg import require_external_first
+
+    new = {**deepcopy(GOOD), "exp_id": "F20", "registered_at": "2026-11-14"}
+    with pytest.raises(ValueError, match="外部样本"):
+        require_external_first(new)
+    require_external_first({**new, "external_prescreen": _EXTERNAL})          # 有证据 → 放行
+    with pytest.raises(ValueError, match="n"):
+        require_external_first({**new, "external_prescreen": {**_EXTERNAL, "n": 300}})
+    with pytest.raises(ValueError, match="含 0"):
+        require_external_first(
+            {**new, "external_prescreen": {**_EXTERNAL, "ci_low_pp": -0.5}})
+    with pytest.raises(ValueError, match="script"):
+        require_external_first(
+            {**new, "external_prescreen": {k: v for k, v in _EXTERNAL.items() if k != "script"}})
+
+
+def test_external_first_leaves_old_structural_and_epoch_registrations_alone():
+    from nutmeg.decision.rsi_prereg import require_external_first
+
+    require_external_first(deepcopy(GOOD))                                   # 规矩之前登记的
+    require_external_first({**deepcopy(GOOD), "exp_id": "S9", "layer": "structural",
+                            "registered_at": "2026-11-14"})                  # 结构类不在此列
+    require_external_first({**deepcopy(GOOD), "exp_id": "F9.v2", "epoch_of": "F9",
+                            "registered_at": "2026-11-14"})                  # 口径变更续登记

@@ -206,9 +206,11 @@ def test_glance_missing_sidecar_is_an_error_not_a_500(tmp_path: Path):
 def _seed_todo(data: Path) -> dict:
     from nutmeg.decision import corrections, proposals
 
-    ids = {"old": proposals.propose(data, title="旧提案", at="2026-10-01T12:00:00+08:00"),
+    far = "2099-01-01T00:00:00+08:00"   # 到期落账另有测试；这里要它们一直待签
+    ids = {"old": proposals.propose(data, title="旧提案", at="2026-10-01T12:00:00+08:00",
+                                    deadline=far),
            "new": proposals.propose(data, title="新提案", blocks="六条件",
-                                    at=_NOW.isoformat(timespec="seconds"))}
+                                    at=_NOW.isoformat(timespec="seconds"), deadline=far)}
     ids["cx"] = corrections.record(data, obj="issue:26152/m7", old="④ ✓", new="④ ✗",
                                    kind="premise", found_by="machine")
     return ids

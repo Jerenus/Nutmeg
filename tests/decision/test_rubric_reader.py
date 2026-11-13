@@ -166,8 +166,12 @@ def test_kickoff_comes_from_schedule_board_legs_or_the_zucai_issue(tmp_path: Pat
     assert research_kickoff(day / "research-周一002.json", prose) == "2026-10-06T02:45:00+08:00"
 
 
-def test_pending_research_is_unstarted_and_unread_and_sidecar_is_prospective(tmp_path: Path):
+def test_pending_research_is_unstarted_and_unread_and_sidecar_is_prospective(
+        tmp_path: Path, monkeypatch):
+    from nutmeg.decision import rubric_reader
     from nutmeg.decision.rubric_reader import pending_research
+
+    monkeypatch.setattr(rubric_reader, "SAMPLE_RATE", 1.0)      # 抽样另有测试
 
     now = datetime(2026, 10, 5, 12, 30, tzinfo=BJ)
     day = tmp_path / "jczq" / "daily" / "2026-10-05"
@@ -193,3 +197,33 @@ def test_pending_research_is_unstarted_and_unread_and_sidecar_is_prospective(tmp
     assert [p.name for p in paths] == ["research-周一001.json", "26135-research-m1.json"]
     doc = read_file(paths[1], claude=_fake, now=now)
     assert doc["prospective"] is True
+
+
+def test_reader_b_reads_a_stable_sample_of_about_one_in_ten(tmp_path: Path):
+    """2026-11-13（Jun 签 P-574c4d0b ②）：读者 B 从每日全量改成抽样，每周约 20 场。
+    去留只看文件标识的哈希：同一份研究每次判断一致，不随到达先后偏向周初。"""
+    from nutmeg.decision.rubric_reader import SAMPLE_RATE, in_sample, sample
+
+    paths = [tmp_path / "jczq" / "daily" / f"2026-11-{d:02d}" / f"research-周一{n:03d}.json"
+             for d in range(1, 29) for n in range(1, 31)]
+    kept = sample(paths)
+    assert kept == sample(paths) == [p for p in paths if in_sample(p)]
+    assert 0.07 < len(kept) / len(paths) < 0.13 and SAMPLE_RATE == 0.10
+    assert sample(paths, everything=True) == paths
+    # 换个数据根目录不改变去留（只认日目录/文件名）
+    other = [Path("/elsewhere") / p.relative_to(tmp_path) for p in paths]
+    assert [p.name for p in sample(other)] == [p.name for p in kept]
+
+
+def test_pending_research_only_offers_the_sample(tmp_path: Path, monkeypatch):
+    from nutmeg.decision import rubric_reader
+
+    now = datetime(2026, 10, 5, 12, 30, tzinfo=BJ)
+    day = tmp_path / "jczq" / "daily" / "2026-10-05"
+    day.mkdir(parents=True)
+    later = {**RESEARCH, "kickoff_bj": "2026-10-06T00:00:00+08:00"}
+    for n in range(1, 41):
+        (day / f"research-周一{n:03d}.json").write_text(json.dumps(later), "utf-8")
+    (tmp_path / "zucai").mkdir()
+    offered = rubric_reader.pending_research(tmp_path, now=now)
+    assert 0 < len(offered) < 12 and all(rubric_reader.in_sample(p) for p in offered)

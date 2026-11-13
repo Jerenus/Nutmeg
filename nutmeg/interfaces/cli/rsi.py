@@ -415,9 +415,16 @@ def register(
 ) -> None:
     """摄入登记原件（人）。同一 exp_id 二次登记拒绝。
 
+    外部样本先行（2026-11-13）：判断类新实验的原件必须带 `external_prescreen`
+    （外部样本 n ≥5,000、CI 不含 0），否则拒登记；结构类与口径变更续登记不受限。
+
     --prescreen（两段式 2026-10-26）：读回溯预筛结果——不过地板拒登记；过地板但 |效应| <10pp
     → role=display_only 只做展示列；否则 n_min=60（--n-min 可抬高）。改写后的原件回写文件。"""
-    from nutmeg.decision.rsi_prereg import apply_prescreen, load_registry_doc
+    from nutmeg.decision.rsi_prereg import (
+        apply_prescreen,
+        load_registry_doc,
+        require_external_first,
+    )
 
     k = _kernel(data_dir)
     try:
@@ -435,6 +442,8 @@ def register(
                 window_from=str(window_from),
             )
         doc = load_registry_doc(doc_path)
+        if fork_from is None:      # 分人群的 fork 不是新主张
+            require_external_first(doc)
         if prescreen is not None:
             doc = apply_prescreen(doc, json.loads(prescreen.read_text(encoding="utf-8")),
                                   n_min=n_min)
@@ -1174,41 +1183,6 @@ def price_band(
         )
     for line in lines:
         typer.echo(line)
-
-
-@rsi_app.command("team-load")
-def team_load(day: str = _DAY, data_dir: Path = _DATA_DIR) -> None:
-    """F16（2026-10-09）：写当天两渠道损耗台账，并为已排的逐场义务履约。
-
-    与 price-band 同一模式；已开球的场不调用履约（开球后写的不是前瞻，每小时巡检重跑也不该
-    往观测链里塞非前瞻版本）。F16 没登记 / 当天没排义务时只写台账。"""
-    from nutmeg.decision.team_load import write_day_ledgers
-
-    k = _kernel(data_dir)
-    captured = _now()
-    out = write_day_ledgers(data_dir, day, now=captured.isoformat(timespec="seconds"))
-    paths = [p for p in [out["jczq"], *out["zucai"].values()] if p]
-    fulfilled = 0
-    for path in paths:
-        raw = Path(path).read_bytes()
-        for row in (json.loads(raw).get("rows") or {}).values():
-            match_id, kickoff = row.get("match_id"), row.get("kickoff")
-            if not match_id or not kickoff or datetime.fromisoformat(kickoff) <= captured:
-                continue
-            with OntologyUnitOfWork(k.engine) as uow:
-                instance = uow.rsi.duty_instance("F16:team-load-ledger", day, match_id)
-            if instance is None or instance.fulfilled_at is not None:
-                continue
-            _run(k.rsi_actions.fulfill_duty, FulfillDutyRequest(
-                exp_id="F16", duty_name="team-load-ledger", day=day,
-                artifact_path=str(path), artifact_bytes=raw, n_rows=1,
-                population_stratum=None, judgment_tier_hist={"price_only": 1},
-                captured_at=captured, earliest_kickoff=kickoff, match_id=match_id,
-                idempotency_key=(f"rsi-ful:F16:team-load-ledger:{day}:{match_id}:"
-                                 f"{hashlib.sha256(raw).hexdigest()[:16]}"),
-                requested_at=captured, **_SYSTEM))
-            fulfilled += 1
-    typer.echo(f"team-load {day}: 台账 {len(paths)} 份，履约 {fulfilled} 场")
 
 
 @rsi_app.command("grade")

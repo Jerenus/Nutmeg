@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable
 from datetime import datetime, timedelta
@@ -238,12 +239,29 @@ def research_files(data_dir: Path, *, day: str | None = None,
     return []
 
 
+SAMPLE_RATE = 0.10
+"""读者 B 抽样（2026-11-13 Jun 签 P-574c4d0b ②）：每周约 180–200 份研究里读约 20 份。
+K1（两读一致）已成立，K2 只监测不判决，κ 不进任何排序；每场都读是每天一批模型调用，
+还多一个会被登录故障拖垮的环节。抽样是无偏的，K2 的读数只是攒得慢一些。"""
+
+
+def in_sample(path: Path) -> bool:
+    """这份研究归不归读者 B 读：只看「日目录/文件名」的哈希——同一份研究每次判断一致，
+    不随到达先后偏向周初，也不随数据根目录变。"""
+    key = f"{path.parent.name}/{path.name}"
+    return int(hashlib.sha1(key.encode()).hexdigest()[:8], 16) / 0x100000000 < SAMPLE_RATE
+
+
+def sample(paths: list[Path], *, everything: bool = False) -> list[Path]:
+    return list(paths) if everything else [p for p in paths if in_sample(p)]
+
+
 def pending_research(data_dir: Path, *, now: datetime | None = None) -> list[Path]:
     """还没开球、还没有侧车的研究（2026-10-05）。读者 B 原来只在 10:45 闭环里读：那时当天竞彩
     研究多半还没落（12 点后才有），足彩只读「最新期次文件」（新一期 11:00 才建），次日再读时比赛
     已开球——侧车全成了非前瞻，读者 B 的逐项因子没有前瞻档，简报也从来显示不了两读 κ。
     研究一落盘（`research run` / 12:30·18:45 刷新）就补读这一批：竞彩看昨天到明天的板面目录，
-    足彩看最近三期里还有未开球场次的研究。"""
+    足彩看最近三期里还有未开球场次的研究。只给抽中的那些（`in_sample`）。"""
     data_dir = Path(data_dir)
     now = now or datetime.now(BJ)
     today = now.astimezone(BJ).date()
@@ -253,7 +271,7 @@ def pending_research(data_dir: Path, *, now: datetime | None = None) -> list[Pat
     for issue_file in sorted((data_dir / "zucai").glob("*-issue.json"))[-3:]:
         candidates += research_files(data_dir, issue=issue_file.name.split("-", 1)[0])
     out: list[Path] = []
-    for path in candidates:
+    for path in sample(candidates):
         if sidecar_path(path).exists():
             continue
         try:

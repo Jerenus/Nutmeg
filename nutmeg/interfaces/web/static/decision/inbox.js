@@ -146,7 +146,11 @@
     add(card, el("h3", "ib-title", r.title));
     if (r.body) add(card, el("p", "ib-text", r.body));
     if (r.blocks) add(card, add(el("p", "ib-blocks"), el("b", null, "拦住了什么 "), document.createTextNode(r.blocks)));
-    if (r.deadline) add(card, add(el("p", "ib-deadline"), el("b", null, "截止 "), el("span", "mono", mdhm(r.deadline))));
+    if (r.deadline) {
+      var due = add(el("p", "ib-deadline"), el("b", null, "到期 "), el("span", "mono", mdhm(r.deadline)));
+      if (r.default) add(due, document.createTextNode(" · 到期不答按「" + label("defaults", r.default) + "」" + (r.default_note ? "（" + r.default_note + "）" : "")));
+      add(card, due);
+    }
     add(card, meta(r), buttons(r));
     if (state.pick[r.id]) add(card, confirmBox(r));
     if (state.rowErr[r.id]) add(card, el("p", "ib-row-err", state.rowErr[r.id]));
@@ -159,7 +163,7 @@
     add(card, add(el("div", "ib-done-top"),
       el("span", "ib-tag ib-st-" + r.status, label("statuses", r.status)),
       el("h3", "ib-title", r.title)));
-    var when = "答于 " + mdhm(r.answered_at) + (r.by && r.by !== "jun" ? " · " + r.by : "");
+    var when = (r.by_default ? "到期按默认动作落账 " : "答于 ") + mdhm(r.answered_at) + (r.by && r.by !== "jun" && !r.by_default ? " · " + r.by : "");
     if (r.batch_size > 1) when += " · 同批 " + r.batch_size + " 条";
     if (r.words) add(card, el("blockquote", "ib-quote", r.words));
     add(card, el("p", "ib-when mono", when));

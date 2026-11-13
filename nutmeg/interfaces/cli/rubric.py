@@ -15,6 +15,7 @@ _LIMIT = _cli.typer.Option(None, "--limit", help="最多读几份（历史重打
 _FREE = _cli.typer.Option(False, "--free", help="再跑一次不看问题表的整体概率（防游戏对照）")
 _FORCE = _cli.typer.Option(False, "--force", help="已有侧车也重跑")
 _WORKERS = _cli.typer.Option(4, "--workers", help="并发读者数（每份一个 claude -p）")
+_ALL = _cli.typer.Option(False, "--all", help="不抽样，逐份都读（历史重打分用）")
 _PENDING = _cli.typer.Option(False, "--pending",
                              help="只读还没开球、还没有侧车的研究（竞彩昨天到明天 + 足彩近三期）")
 
@@ -29,19 +30,27 @@ def rubric_read(
     force: bool = _FORCE,
     workers: int = _WORKERS,
     pending: bool = _PENDING,
+    everything: bool = _ALL,
 ) -> None:
-    """让读者 B（haiku）读当天/当期每份研究的证据层，逐项作答并与分析员算 kappa，写侧车。"""
-    from nutmeg.decision.rubric_reader import pending_research, read_many, research_files
+    """让读者 B（haiku）读研究的证据层，逐项作答并与分析员算 kappa，写侧车。
+
+    2026-11-13 起默认抽样（约一成，每周约 20 场；去留按文件标识哈希定）；`--all` 逐份都读。"""
+    from nutmeg.decision.rubric_reader import (
+        pending_research,
+        read_many,
+        research_files,
+        sample,
+    )
 
     if (bool(day) + bool(issue) + pending) != 1:
         _cli.typer.echo("rubric error: --day / --issue / --pending 三选一")
         raise _cli.typer.Exit(code=2)
     paths = (pending_research(data_dir) if pending
-             else research_files(data_dir, day=day, issue=issue))
+             else sample(research_files(data_dir, day=day, issue=issue), everything=everything))
     out = read_many(paths, free=free, force=force, limit=limit, workers=workers)
     _cli.typer.echo(f"rubric read {day or issue or '开球前待读'}：读 {len(out['done'])} · "
                     f"跳过 {len(out['skipped'])} · 失败 {len(out['failed'])}"
-                    f"（共 {len(paths)} 份研究）")
+                    f"（{'全部' if everything else '抽中'} {len(paths)} 份研究）")
     for row in out["failed"]:
         _cli.typer.echo(f"   ✗ {row['path']}: {row['error']}")
     if out["failed"] and not out["done"]:
