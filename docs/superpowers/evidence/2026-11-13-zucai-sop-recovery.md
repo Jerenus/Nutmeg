@@ -48,3 +48,15 @@
 - 仍待：8–10 合格报价（售日 11:00 备料链会自动再抓）、期前预算 P-3a56d39e、完整初稿/主形/替代、桥、售日复核。
 - 16:04 Jun 答复（AskUserQuestion）：期前预算「¥800 / ¥1,600」→ `account precommit --issue 26164 --slip-yuan 800 --issue-yuan 1600` 已写，P-3a56d39e 签并 done；缺价口径「等售日备料」→ 不改书目口径、不用辅助价，售日 11:00/14:00 备料后再出完整初稿，仍缺则如实报缺、按空仓读。packet.md / packet.json 同次改写预算与口径表述。
 - `launchctl list`：`jczq.research`、`rsi.loop`、`rsi.sweep` 上次退出码 1（与 token 吊销同期，未逐个核因）。
+
+## 22:02–22:25 整期重研与新版式重建（Claude Code 会话，Jun 要求）
+
+- Jun 22:00 前后要求「新版式重新跑一次 26164 的完整 SOP、逐场深研」。无人值守 token 当晚已重建，`research run` 可用。
+- 旧研究 14 份与读者 B 侧车 14 份移到 `zucai/archive-rerun/26164-*.codex-1113.json`；V1 包备份为 `26164-packet.V1.md/.json`。
+- 重研：`env -u CLAUDE_EFFORT NUTMEG_MODEL_RESEARCH=opus uv run nutmeg research run --day 2026-11-14 --concurrency 5`（22:05–22:15，11 场 11 次尝试 11 份，全部收敛）；场 8/9/10 无 match_id/fair 不在研究池，改由 `jczq-match-analyst` 分析员定义单独派发三份（22:10–22:45 采集），原件落 `26164-research-m{8,9,10}.json`，`market_snapshot.status=missing_market`。读者 B 按抽样只读了场 3（κ 0.73）。
+- 刷新：Read 11 条入内核（同判断新版本 11，分歧 0），legs-base 仍为 partial；`judgment brief --write` 重写，整期初稿仍因缺 8/9/10 拒出；`counter-matrix --write`、`structure_align`、`dead_match_align` 重跑（样本表重建到 11-16，前瞻有赛果 781 行）；人群快照与 Polymarket 22:08 重拉（11 场，全部 <$2 万）。
+- 研究处方 V1→V2 改写 10 格（收窄 9、换保险面 1），第一面 14 场不变；六条件按新研究重数，已知 11 场最高 3/6（3 挪威、12 克罗地亚），许可单 0，机器默认空仓不变。
+- 包：`26164-packet.md`（V2，新版式：§1 主表六列 + 折叠取证附表）与 `26164-packet.json` 同次重写；`load_packet` errors 只有 8–10 三行；`judgment packet-check` 仍未齐全，缺项与此前相同（8–10 的档/条件/分表、字典主形、替代、draft.json、市场输入）。条件参考票形只含已知 11 场，`preview-set --alternatives` 22:20：W2 ¥256 10.92% / W1 ¥512 14.15% / 处方 D0 ¥16 3.17% / 9双 ¥1,024 16.79%（超期前定额）。
+- 页面：Claude 侧新发一页 https://claude.ai/artifact/54LovQtaepZfD5ojyisfQr（仅本人可见，页首标「未验收草稿」）；记录在 `zucai/26164-page-claude.json`。本地校验 24 张表、16 个折叠块、标签闭合；没有做页面读回。ChatGPT 那页未动。
+- **仍是草稿，不是赛前终稿。** 恢复条件：售日 11:00 / 14:00 备料链抓到 8/9/10 的合格报价 → `research refresh` → `judgment brief --issue 26164 --write`（整期初稿）→ 补三行与 §0 板型、§2 主形/替代/固定参考形、`preview-set` → `packet-check` → 页面读回。没有为此启动任何后台任务。
+
