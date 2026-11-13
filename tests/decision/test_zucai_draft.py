@@ -109,7 +109,10 @@ def test_build_draft_writes_files_reviews_and_registers_candidates_once(tmp_path
     data = _data(tmp_path)
     doc = build_draft(data, ISSUE, cap_yuan=400)
     drop_c = [c for c in doc["candidates"] if c["label"] == "参考·丢光C档形"]
-    labels = [(c["channel"], c["label"]) for c in doc["candidates"] if c not in drop_c]
+    white = [c for c in doc["candidates"] if c["label"] == "参考·白防线形"]
+    labels = [(c["channel"], c["label"]) for c in doc["candidates"]
+              if c not in drop_c and c not in white]
+    assert [c["channel"] for c in white] == ["renjiu", "shengfucai"]   # 2026-11-08 两渠道都出
     assert labels == [("renjiu", "初稿"), ("renjiu", "刹车档"), ("renjiu", "参考·帽内max-P"),
                       ("shengfucai", "初稿"), ("shengfucai", "刹车档"),
                       ("shengfucai", "参考·帽内max-P")]
@@ -131,11 +134,11 @@ def test_build_draft_writes_files_reviews_and_registers_candidates_once(tmp_path
     assert len(json.loads((zdir / f"{ISSUE}-legs-draft-shengfucai.json")
                           .read_text("utf-8"))["legs"]) == 14
     events = [e for e in read_events(data / "jczq", "2026-10-04") if e.get("kind") == "candidate"]
-    assert len(events) == 7 and all(      # 2026-10-25：+「参考·丢光C档形」（只出任九）
+    assert len(events) == 9 and all(      # +丢光C档形（只出任九）+白防线形（两渠道，11-08）
         e["payload"]["version"].startswith("draft:") for e in events)
     build_draft(data, ISSUE, cap_yuan=400)                      # 幂等：同 hash 不重复登记
     events = [e for e in read_events(data / "jczq", "2026-10-04") if e.get("kind") == "candidate"]
-    assert len(events) == 7                      # 幂等：第二次 build 不再追加（含丢光C档形）
+    assert len(events) == 9                      # 幂等：第二次 build 不再追加
     text = render_draft(doc)
     assert "# 足彩初稿 · 26135（帽 ¥400，规则：处方忠实）" in text
     assert "## 初稿·任九：¥256（128 注，帽 ¥400）" in text and "丢场：" in text
@@ -172,3 +175,31 @@ def test_cli_draft_and_brief_include_the_draft(tmp_path: Path) -> None:
     missing = CliRunner().invoke(app, ["judgment", "draft", "--issue", "26999", "--data-dir",
                                        str(data)])
     assert missing.exit_code == 0 and "未出" in missing.output
+
+
+def test_build_draft_adds_the_white_line_reference_for_both_channels(tmp_path: Path):
+    """白防线形（2026-11-08 Jun 批）：全单起步，按一赔条件从低到高补双到帽满，只作并排。"""
+    doc = build_draft(_data(tmp_path), ISSUE, write=False)
+    refs = {c["channel"]: c for c in doc["candidates"] if c["label"] == "参考·白防线形"}
+    assert set(refs) == {"renjiu", "shengfucai"}
+    rj = refs["renjiu"]
+    assert rj["rule"] == "white_line" and rj["alerts"] == []
+    # 预算＝¥256（字典冷板默认价），不是 ¥800 帽：
+    # 5–9 双 0.60 最低先补，再补 1、2（0.795），3、4 留单
+    assert rj["cap_yuan"] == 256
+    assert rj["faces"] == {"1": "31", "2": "31", "3": "3", "4": "3",
+                           **{str(n): "31" for n in range(5, 10)}}
+    assert rj["stake_yuan"] == 256 and rj["note"] == "帽满：线下 2 场留单（场 3、4）"
+    assert "review" in rj
+    assert "白防线形" in render_draft(doc)
+
+
+def test_white_line_reference_follows_a_lower_precommit(tmp_path: Path):
+    from nutmeg.decision.bankroll import write_precommit
+
+    data = _data(tmp_path)
+    write_precommit(data, ISSUE, slip_yuan=128, issue_yuan=128, now="2026-10-03T10:00:00+08:00")
+    doc = build_draft(data, ISSUE, write=False)
+    rj = next(c for c in doc["candidates"]
+              if c["label"] == "参考·白防线形" and c["channel"] == "renjiu")
+    assert rj["cap_yuan"] == 128 and rj["stake_yuan"] == 128

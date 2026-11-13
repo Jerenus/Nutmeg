@@ -104,3 +104,71 @@ def test_day_cap_check_counts_all_channels_on_the_same_day():
     assert day_cap_check("2026-10-12", 800, already_yuan=1200) is None           # 正好 2,000
     line = day_cap_check("2026-10-12T15:00:00", 288, already_yuan=1800)
     assert line.startswith("⛔日帽") and "2026-10-12" in line and "¥2,000" in line
+
+
+def test_precommit_tightens_the_brake_but_never_loosens_it(tmp_path: Path):
+    """期前定额（2026-11-08 Jun 批）：事前承诺与连续全灭刹车同时在 → 各取更严的一项。
+    此前承诺优先，承诺 ¥800 会把刹车的 ¥400 放宽。"""
+    from nutmeg.decision.bankroll import issue_brake
+
+    wiped = {"26159": {"stake": 888, "payout": 0}, "26160": {"stake": 720, "payout": 0}}
+
+    def board(caps):
+        (tmp_path / "scoreboard.json").write_text(json.dumps(
+            {"tickets": wiped, "adjudications": {"precommit-26162": {"caps": caps}}}),
+            encoding="utf-8")
+
+    board({"issue": "26162", "slip_yuan": 600, "issue_yuan": 1200})
+    loose = issue_brake(tmp_path, "26162")
+    assert (loose["slip_yuan"], loose["issue_yuan"]) == (400, 800)
+    assert "连续两期全灭" in loose["reason"] and "事前承诺" in loose["reason"]
+    board({"issue": "26162", "slip_yuan": 128, "issue_yuan": 256})
+    tight = issue_brake(tmp_path, "26162")
+    assert (tight["slip_yuan"], tight["issue_yuan"]) == (128, 256)
+
+
+def test_write_precommit_records_caps_that_issue_brake_reads(tmp_path: Path):
+    from nutmeg.decision.bankroll import brake_check, write_precommit
+
+    (tmp_path / "scoreboard.json").write_text(json.dumps({"tickets": {}}), encoding="utf-8")
+    key = write_precommit(tmp_path, "26162", slip_yuan=128, issue_yuan=256, note="期前定额",
+                          now="2026-11-08T10:30:00+08:00")
+    sb = json.loads((tmp_path / "scoreboard.json").read_text(encoding="utf-8"))
+    assert key == "precommit-26162"
+    assert sb["adjudications"][key] == {"caps": {"issue": "26162", "slip_yuan": 128,
+                                                 "issue_yuan": 256},
+                                        "note": "期前定额", "at": "2026-11-08T10:30:00+08:00"}
+    assert brake_check(tmp_path, "26162", 128) is None
+    assert brake_check(tmp_path, "26162", 256).startswith("⛔刹车：事前承诺 precommit-26162")
+
+
+def test_post_win_check_blocks_raising_stakes_for_three_issues(tmp_path: Path):
+    """中奖后三期不加码（2026-11-08 Jun 批）：中奖期之后三期，本期合计不高于中奖前三期均投入。"""
+    from nutmeg.decision.bankroll import post_win_check
+
+    (tmp_path / "scoreboard.json").write_text(json.dumps({"tickets": {
+        "26149": {"stake": 600, "payout": 0}, "26150": {"stake": 0, "payout": 0},
+        "26151": {"stake": 300, "payout": 0}, "26152": {"stake": 300, "payout": 0},
+        "26153": {"stake": 400, "payout": 1471.0}}}), encoding="utf-8")
+    line = post_win_check(tmp_path, "26154", 256, already_yuan=200)
+    assert line.startswith("⛔中奖后不加码：26153 中奖后第 1 期")
+    assert "中奖前三期均 ¥400" in line                 # 26149/26151/26152；空仓期不算
+    assert post_win_check(tmp_path, "26154", 256) is None
+    assert post_win_check(tmp_path, "26156", 512).startswith("⛔中奖后不加码：26153 中奖后第 3 期")
+    assert post_win_check(tmp_path, "26157", 2000) is None  # 三期以后不管
+
+
+def test_account_precommit_cli_writes_the_caps(tmp_path: Path):
+    from typer.testing import CliRunner
+
+    from nutmeg.interfaces.cli import app
+
+    (tmp_path / "scoreboard.json").write_text(json.dumps({"tickets": {}}), encoding="utf-8")
+    out = CliRunner().invoke(app, ["account", "precommit", "--issue", "26162", "--slip-yuan", "128",
+                                   "--issue-yuan", "256", "--note", "热板定额",
+                                   "--data-dir", str(tmp_path)])
+    assert out.exit_code == 0, out.output
+    assert "期前定额 26162：单票 ≤¥128、本期合计 ≤¥256" in out.output
+    caps = json.loads((tmp_path / "scoreboard.json").read_text("utf-8"))["adjudications"]
+    assert caps["precommit-26162"]["caps"] == {"issue": "26162", "slip_yuan": 128,
+                                               "issue_yuan": 256}

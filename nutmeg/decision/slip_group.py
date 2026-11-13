@@ -49,6 +49,37 @@ def co_death(tickets: list[dict], fair: dict) -> tuple[float, list[tuple[str, st
     return 1 - prod(1 - p for _, _, p in points), points
 
 
+def arithmetic_ready(slip) -> bool:
+    """整组算术只认「每注就是整张票」的足彩票：胜负彩 14 场、任九恰 9 场，且每场有 fair。
+    任九选 >9 场是复式（中 9 即中），全对连乘不是它的中奖概率。"""
+    from nutmeg.decision.betslip import RENJIU_PICK, SFC_MATCHES
+
+    need = SFC_MATCHES if slip.channel == "shengfucai" else RENJIU_PICK
+    return (slip.channel != "jczq" and len(slip.faces) == need
+            and all(leg.fair for leg in slip.legs))
+
+
+TICKETS_PER_ISSUE = 2
+SECOND_TICKET_MIN = 0.03
+"""一期最多两张，第二张至少中一张要多 ≥3pp（2026-11-08 Jun 批）：Jun 29 期足彩 25 期多票、多票期
+均投入 ¥718 对单票期 ¥376；26160 T1+T2 只多 0.04pp。5 次全中里当期第三张以后的票一次没中。"""
+
+
+def ticket_cap_check(others: list[dict], this: dict, fair: dict) -> str | None:
+    """本期已有的票（实购 + 同组计划）→ 这张该不该买：第三张起否决；第二张增量 <3pp 否决。"""
+    if len(others) >= TICKETS_PER_ISSUE:
+        return (f"⛔两张上限：本期第 {len(others) + 1} 张（一期最多 {TICKETS_PER_ISSUE} 张）"
+                "→ 只买前两张（人坚持就登记并另立裁决）")
+    if not others:
+        return None
+    before, after = p_any(others, fair), p_any([*others, this], fair)
+    if after - before >= SECOND_TICKET_MIN:
+        return None
+    return (f"⛔两张上限：第二张只把至少中一张从 {before * 100:.2f}% 提到 {after * 100:.2f}%"
+            f"（+{(after - before) * 100:.2f}pp，<{SECOND_TICKET_MIN * 100:.0f}pp）"
+            "→ 这组是一注，只买一张（换单和排除面后再审）")
+
+
 SHARED_EXCLUDED_MIN = 0.30
 """跨票共享排除面的门槛（§8a 第 4 条，2026-10-14）：所有票同时排掉的 ≥30% 面＝共享裸单同类项。
 26138 2·0(45%)、26139 3·10/8·31(25%/19%)、26140 两胆 6·3/8·0 的被排面——四期死因都在这里。"""

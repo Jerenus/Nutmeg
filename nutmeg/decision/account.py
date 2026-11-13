@@ -120,6 +120,16 @@ def _add(bucket: dict, slip, settled: dict[str, dict]) -> None:
         bucket["payout"] += float(row["payout"])
 
 
+def white_cost(data_dir: Path, month: str) -> dict:
+    """白防成本（2026-11-08 Jun 批）：本月足彩实票里一赔条件 ≥0.80 的双多花的钱与已结白防数。"""
+    from nutmeg.decision.white_line import month_cost
+    from nutmeg.gym.prizes import load_prizes
+
+    prizes = load_prizes(Path(data_dir) / "zucai")
+    results = {k: str(v["results"]).split() for k, v in prizes.items() if v.get("results")}
+    return month_cost(_month_slips(data_dir, month), results)
+
+
 def pending_ledger(data_dir: Path, month: str) -> dict:
     """本月实购、记分牌尚无派奖的票（待结）：{n, stake, slips:[{slip_id, issue, stake}]}。
 
@@ -382,6 +392,10 @@ def month_report(data_dir: Path, month: str, *, with_draft: bool = True,
         deviations = vetoed = {"_error": repr(exc)[:200]}
         pending = {"n": 0, "stake": 0.0, "slips": [], "_error": repr(exc)[:200]}
     state = with_pending(net, pending)
+    try:
+        white = white_cost(data_dir, month)
+    except Exception as exc:  # noqa: BLE001 —— 算不出要写明，不能读成「没有白防」
+        white = {"_error": repr(exc)[:200]}
     board = experiment_board(data_dir)
     verdicts: dict[str, int] = {}
     for exp, row in board.items():
@@ -397,6 +411,7 @@ def month_report(data_dir: Path, month: str, *, with_draft: bool = True,
         "stop_loss": state["stop_loss"], "tripped": state["tripped"], "room": state["room"],
         "pending": pending, "effective_net": state["effective_net"],
         "exploration": spend, "deviations": deviations, "vetoed": vetoed, "experiments": board,
+        "white_cost": white,
         "verdicts": verdicts,
     }
     if with_rule_v3:
@@ -404,6 +419,17 @@ def month_report(data_dir: Path, month: str, *, with_draft: bool = True,
     if with_draft:
         report["draft"] = draft_board(data_dir, month)
     return report
+
+
+def _white_line_text(w: dict | None) -> str:
+    from nutmeg.decision.white_line import LINE
+
+    if not w or w.get("_error"):
+        return f"**白防成本**：算不出——{(w or {}).get('_error', '缺数据')}"
+    if not w["doubles"]:
+        return f"**白防成本**（线 {LINE:.2f}）：本月没有线以上的双"
+    return (f"**白防成本**（线 {LINE:.2f}）：{w['slips']} 张足彩票有 {w['doubles']} 条线以上的双，"
+            f"多花 ¥{w['extra_yuan']:,.0f}；已结 {w['settled']} 条，白防 {w['white']} 条")
 
 
 def render_month(report: dict) -> str:
@@ -426,6 +452,7 @@ def render_month(report: dict) -> str:
     if report["unknown"]:
         shown = ", ".join(report["unknown"][:6])
         lines.append(f"（{len(report['unknown'])} 条无法归月未计：{shown}）")
+    lines.append(_white_line_text(report.get("white_cost")))
     ex = report["exploration"]
     lines += ["", f"**探索预算**：本月 {len(ex['slips'])} 张 EXP 票，¥{ex['stake']:,.0f}"
                   f"（上限 ¥{EXP_BUDGET_PER_DAY}/日；只给预登记实验）"]

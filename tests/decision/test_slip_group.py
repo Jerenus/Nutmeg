@@ -123,3 +123,16 @@ def test_death_list_marks_coin_band_faces_so_the_bridge_asks_why_a_d_band_match_
     assert is_coin(fair["1"]) and not is_coin(fair["2"])
     line = death_list_lines([a, b], fair)[0]
     assert "1开0 33%·D档、2开10 33%｜" in line        # B 档那一格不标
+
+
+def test_ticket_cap_check_blocks_the_third_ticket_and_a_second_that_adds_under_3pp():
+    """一期最多两张（2026-11-08 Jun 批）：第三张起否决；第二张的至少中一张增量 <3pp 否决。"""
+    from nutmeg.decision.slip_group import ticket_cap_check
+
+    assert ticket_cap_check([], A, FAIR) is None
+    near = {"1": "3", "2": "3"}                      # 是 A 的子集：增量 0
+    line = ticket_cap_check([A], near, FAIR)
+    assert line.startswith("⛔两张上限：第二张只把至少中一张从 42.50% 提到 42.50%（+0.00pp")
+    far = {"1": "10", "2": "10"}                      # 换排除面：增量 0.5×0.4 = 20pp
+    assert ticket_cap_check([A], far, FAIR) is None
+    assert ticket_cap_check([A, far], B, FAIR).startswith("⛔两张上限：本期第 3 张")

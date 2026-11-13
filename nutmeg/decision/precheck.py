@@ -101,6 +101,38 @@ def issue_brake_line(slip: BetSlip, data_dir: Path, *, extra_yuan: int = 0) -> s
     return brake_check(data_dir, slip.issue, slip.stake_yuan, already_yuan=bought + extra_yuan)
 
 
+def money_discipline_lines(slip: BetSlip, data_dir: Path, *, planned=(),
+                           extra_yuan: int = 0) -> list[str]:
+    """足彩人性纪律（2026-11-08 Jun 批）：中奖后三期不加码、一期最多两张且第二张增量 ≥3pp。"""
+    if slip.channel == "jczq" or not slip.issue:
+        return []
+    from nutmeg.decision.bankroll import post_win_check
+    from nutmeg.decision.slip_group import arithmetic_ready, ticket_cap_check
+
+    bought = [s for s in load_slips(data_dir, issue=slip.issue)
+              if s.purchased and s.channel != "jczq" and s.slip_id != slip.slip_id]
+    lines = [post_win_check(data_dir, slip.issue, slip.stake_yuan,
+                            already_yuan=sum(s.stake_yuan for s in bought) + extra_yuan)]
+    others = [s for s in [*bought, *planned] if s.issue == slip.issue and s.channel != "jczq"
+              and s is not slip]
+    if arithmetic_ready(slip) and all(arithmetic_ready(s) for s in others):
+        fair = {leg.key: leg.fair for s in [*others, slip] for leg in s.legs}
+        lines.append(ticket_cap_check([s.faces for s in others], slip.faces, fair))
+    return [x for x in lines if x]
+
+
+def white_line_reminders(slip: BetSlip, data_dir: Path) -> list[str]:
+    """白防线提醒（只提醒不否决）：线以上的双值多少钱、线以上的场有没有 ≥2 条研究预警。"""
+    if slip.channel == "jczq" or not slip.faces:
+        return []
+    from nutmeg.decision.review_runner import _legs_base
+    from nutmeg.decision.white_line import reminder_lines
+
+    fair = {leg.key: leg.fair for leg in slip.legs if leg.fair}
+    return reminder_lines(slip.faces, fair, _legs_base(data_dir, slip.issue),
+                          stake_yuan=slip.stake_yuan)
+
+
 def day_cap_line(slip: BetSlip, data_dir: Path, *, extra_yuan: int = 0) -> str | None:
     """日总帽 ¥2,000（宪法 §4，2026-10-12 入预审）：同一下单日已登记实购（所有渠道）
     + extra + 这张 是否超帽；预审否决，登记不受限。"""
@@ -161,7 +193,8 @@ def precheck(slip: BetSlip, data_dir: Path, *, planned=(), extra_issue_yuan: int
     brake = brake_line(data_dir, slip.placed_at)
     issue_brake = issue_brake_line(slip, data_dir, extra_yuan=extra_issue_yuan)
     day_cap = day_cap_line(slip, data_dir, extra_yuan=extra_day_yuan)
-    discipline = [x for x in (issue_brake, day_cap) if x]
+    discipline = [x for x in (issue_brake, day_cap) if x] + money_discipline_lines(
+        slip, data_dir, planned=planned, extra_yuan=extra_issue_yuan)
     # 月度止损触发、期级刹车超帽、日帽超帽（宪法 §4）与 V1/V2 同级否决（2026-10-06）：
     # 预审否决，登记不受此限——连亏之后最需要这条线的时候，不该只靠意志力读一行字
     vetoed = bool(verdict["vetoed"] or brake.startswith("⛔") or discipline)
@@ -171,7 +204,7 @@ def precheck(slip: BetSlip, data_dir: Path, *, planned=(), extra_issue_yuan: int
             "diagnosis_lines": diagnosis.get("lines", []), "verdicts": verdict["verdicts"],
             "ratio": verdict["ratio"], "review_lines": verdict["lines"],
             "discipline": discipline, "brake_line": brake, "vetoed": vetoed,
-            "log_warning": warning}
+            "reminders": white_line_reminders(slip, data_dir), "log_warning": warning}
 
 
 def register_reviewed(slip: BetSlip, data_dir: Path) -> dict:
@@ -192,18 +225,22 @@ def register_reviewed(slip: BetSlip, data_dir: Path) -> dict:
         verdict = {"lines": [f"审票失败：{exc!r}"[:160]]}
         slip.diagnosis["review"] = {"error": repr(exc)[:200]}
     discipline = [x for x in (issue_brake_line(slip, data_dir), day_cap_line(slip, data_dir),
-                              brake_line(data_dir, slip.placed_at)) if x and x.startswith("⛔")]
+                              brake_line(data_dir, slip.placed_at),
+                              *money_discipline_lines(slip, data_dir))
+                  if x and x.startswith("⛔")]
     if discipline and "error" not in slip.diagnosis["review"]:
         record = slip.diagnosis["review"]
         record["vetoed"] = True
         record["codes"] = [*record["codes"],
                            *(["BRAKE"] if any("刹车" in x for x in discipline) else []),
                            *(["DAYCAP"] if any("日帽" in x for x in discipline) else []),
+                           *(["POSTWIN"] if any("中奖后不加码" in x for x in discipline) else []),
+                           *(["TWOCAP"] if any("两张上限" in x for x in discipline) else []),
                            *(["STOP"] if any("止损" in x or "已触发" in x
                                              for x in discipline) else [])]
     summary = register_slip(data_dir, slip)
     return {"summary": summary,
             "lines": [*slip.diagnosis.get("lines", []), *verdict["lines"],
-                      *[x for x in discipline if "刹车" in x or "日帽" in x]],
+                      *[x for x in discipline if not ("止损" in x or "已触发" in x)]],
             "after_kickoff": bool(slip.deviation_after_kickoff),
             "brake_line": brake_line(data_dir, slip.placed_at)}

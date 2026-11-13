@@ -147,20 +147,75 @@ def issue_brake(data_dir: Path, issue: str, *, scoreboard_path: Path | None = No
     针对本期的事前承诺（`caps.issue == 本期`，可带 slip_yuan / issue_yuan 覆盖默认减半）。
     → {"reason", "slip_yuan", "issue_yuan"} 或 None。"""
     sb = read_json(scoreboard_path or Path(data_dir) / "scoreboard.json", {}) or {}
-    for key, adj in (sb.get("adjudications") or {}).items():
-        caps = adj.get("caps") if isinstance(adj, dict) else None
-        if isinstance(caps, dict) and str(caps.get("issue")) == str(issue):
-            return {"reason": f"事前承诺 {key}",
-                    "slip_yuan": int(caps.get("slip_yuan") or BRAKE_SLIP_YUAN),
-                    "issue_yuan": int(caps.get("issue_yuan") or BRAKE_ISSUE_YUAN)}
+    found = []
     tickets = sb.get("tickets") or {}
     prior = sorted((k for k, d in tickets.items()
                     if k.isdigit() and k < str(issue) and isinstance(d, dict)
                     and ((d.get("stake") or 0) > 0 or (d.get("net") or 0) < 0)), reverse=True)[:2]
     if len(prior) == 2 and all(_wiped(tickets[k]) is True for k in prior):
-        return {"reason": f"连续两期全灭（{prior[1]}、{prior[0]}）",
-                "slip_yuan": BRAKE_SLIP_YUAN, "issue_yuan": BRAKE_ISSUE_YUAN}
-    return None
+        found.append({"reason": f"连续两期全灭（{prior[1]}、{prior[0]}）",
+                      "slip_yuan": BRAKE_SLIP_YUAN, "issue_yuan": BRAKE_ISSUE_YUAN})
+    for key, adj in (sb.get("adjudications") or {}).items():
+        caps = adj.get("caps") if isinstance(adj, dict) else None
+        if isinstance(caps, dict) and str(caps.get("issue")) == str(issue):
+            found.append({"reason": f"事前承诺 {key}",
+                          "slip_yuan": int(caps.get("slip_yuan") or BRAKE_SLIP_YUAN),
+                          "issue_yuan": int(caps.get("issue_yuan") or BRAKE_ISSUE_YUAN)})
+    if not found:
+        return None
+    # 承诺只能收紧不能放宽（2026-11-08）：此前承诺优先，承诺 ¥800 会把刹车的 ¥400 放开
+    return {"reason": "；".join(f["reason"] for f in found),
+            "slip_yuan": min(f["slip_yuan"] for f in found),
+            "issue_yuan": min(f["issue_yuan"] for f in found)}
+
+
+def write_precommit(data_dir: Path, issue: str, *, slip_yuan: int, issue_yuan: int,
+                    note: str = "", now: str = "") -> str:
+    """期前定额（2026-11-08 Jun 批）：开包前把本期单票 / 合计上限写进记分牌 `adjudications`，
+    预审按刹车同级否决。同期再写覆盖上一条；只能收紧刹车（见 `issue_brake`）。"""
+    import json
+    import os
+    from datetime import datetime
+
+    path = Path(data_dir) / "scoreboard.json"
+    sb = read_json(path, {}) or {}
+    key = f"precommit-{issue}"
+    sb.setdefault("adjudications", {})[key] = {
+        "caps": {"issue": str(issue), "slip_yuan": int(slip_yuan), "issue_yuan": int(issue_yuan)},
+        "note": note, "at": now or datetime.now().astimezone().isoformat(timespec="seconds")}
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(sb, ensure_ascii=False, indent=1), encoding="utf-8")
+    os.replace(tmp, path)
+    return key
+
+
+POST_WIN_ISSUES = 3
+"""中奖后不加码（2026-11-08 Jun 批）：中奖期之后这么多期，本期合计不高于中奖前三期有下注的
+均投入。依据 Jun 29 期足彩实票：中奖后下一期均 ¥750，连亏 ≥3 期 ¥639（没有追亏，有赢后加码）。"""
+
+
+def post_win_check(data_dir: Path, issue: str, stake_yuan: int, *, already_yuan: int = 0,
+                   scoreboard_path: Path | None = None) -> str | None:
+    """本期在最近一次中奖之后 3 期内，且这张连同本期已买超过中奖前三期均投入 → 一行 ⛔。"""
+    sb = read_json(scoreboard_path or Path(data_dir) / "scoreboard.json", {}) or {}
+    tickets = {k: d for k, d in (sb.get("tickets") or {}).items()
+               if k.isdigit() and isinstance(d, dict) and (d.get("stake") or 0) > 0}
+    if not str(issue).isdigit():
+        return None
+    hits = sorted(k for k, d in tickets.items() if k < str(issue) and (d.get("payout") or 0) > 0)
+    if not hits:
+        return None
+    hit = hits[-1]
+    gap = int(issue) - int(hit)
+    before = sorted(k for k in tickets if k < hit)[-3:]
+    if not 1 <= gap <= POST_WIN_ISSUES or not before:
+        return None
+    base = sum(float(tickets[k]["stake"]) for k in before) / len(before)
+    total = already_yuan + stake_yuan
+    if total <= base:
+        return None
+    return (f"⛔中奖后不加码：{hit} 中奖后第 {gap} 期，本期合计 ¥{total:,} > 中奖前三期均 "
+            f"¥{base:,.0f}（{'、'.join(before)}）→ 超额（改票后再审；人坚持就登记并另立裁决）")
 
 
 def brake_check(data_dir: Path, issue: str, stake_yuan: int, *,

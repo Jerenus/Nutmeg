@@ -133,7 +133,7 @@ def betslip_preview(
         _cli.typer.echo(f"预览 {channel} {out['notes']} 注 × {multiplier} 倍 = ¥{out['stake']:,}"
                         + (f"｜P(全对)={p * 100:.2f}%" if p is not None else ""))
         for line in [*out["diagnosis_lines"], *out["review_lines"], out["brake_line"],
-                     *out["discipline"]]:
+                     *out["discipline"], *out["reminders"]]:
             _cli.typer.echo("   " + line)
         if out["log_warning"]:
             _cli.typer.echo(out["log_warning"], err=True)
@@ -177,19 +177,10 @@ def _plan_slips(plan: Path, data_dir: Path) -> tuple[list[dict], list]:
     return rows, slips
 
 
-def _arithmetic_ready(slip) -> bool:
-    """整组算术只认「每注就是整张票」的足彩票：胜负彩 14 场、任九恰 9 场，且每场有 fair。
-    任九选 >9 场是复式（中 9 即中），全对连乘不是它的中奖概率。"""
-    from nutmeg.decision.betslip import RENJIU_PICK, SFC_MATCHES
-
-    need = SFC_MATCHES if slip.channel == "shengfucai" else RENJIU_PICK
-    return (slip.channel != "jczq" and len(slip.faces) == need
-            and all(leg.fair for leg in slip.legs))
-
-
 def _group_lines(slips, data_dir: Path, alternatives: bool, pins: dict[str, str]) -> list[str]:
     """按期号出整组算术（至少中一张 / 两两同死 / 钉住赛果），已登记的本期实购票一起算。"""
     from nutmeg.decision.betslip import load_slips
+    from nutmeg.decision.slip_group import arithmetic_ready as _arithmetic_ready
     from nutmeg.decision.slip_group import report_lines
 
     lines = []
@@ -265,7 +256,7 @@ def betslip_preview_set(plan: Path = _PLAN, data_dir: Path = _DATA_DIR,
             for line in out["diagnosis_lines"]:
                 _cli.typer.echo("   " + line)
             review_lines = [*out["review_lines"], *out["discipline"]]
-            for line in review_lines:
+            for line in [*review_lines, *out["reminders"]]:
                 _cli.typer.echo("   " + line)
             # 逐张否决不含月度止损（止损在整组末行报一次、单独决定退出码）
             veto = any(line.startswith("⛔") for line in review_lines)
@@ -319,6 +310,7 @@ def betslip_complement(plan: Path = _BASE_PLAN, channel: str = _SEARCH_CHANNEL,
         BetslipError,
     )
     from nutmeg.decision.precheck import zucai_fair
+    from nutmeg.decision.slip_group import arithmetic_ready as _arithmetic_ready
     from nutmeg.decision.slip_group import best_complement, death_text, p_all, p_any, pct
 
     try:

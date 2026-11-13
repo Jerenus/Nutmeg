@@ -346,6 +346,9 @@
     for (const line of r.discipline || []) {
       rev.append(verdictBox(lineLevel(line), lineLevel(line) === "veto" ? "⛔纪律" : "纪律", line.replace(/^⛔/, "")));
     }
+    for (const line of r.reminders || []) {
+      rev.append(verdictBox(lineLevel(line), "白防", line.replace(/^(⚠️|ℹ️)/, "")));
+    }
     if (r.brake_line) {
       const lvl = lineLevel(r.brake_line);
       rev.append(verdictBox(lvl, lvl === "veto" ? "⛔止损" : "止损", r.brake_line.replace(/^⛔/, "")));

@@ -25,6 +25,8 @@ from pathlib import Path
 from nutmeg.decision.betslip import BetSlip, SlipLeg
 from nutmeg.decision.faces import FACE_OF, FACES
 from nutmeg.decision.files import read_json
+from nutmeg.decision.white_line import budget as white_line_budget
+from nutmeg.decision.white_line import reference as white_line_reference
 
 RENJIU_PICK = 9
 PRICE_PER_NOTE = 2
@@ -38,6 +40,9 @@ def load_board(data_dir: Path, issue: str) -> dict:
     doc = read_json(zdir / f"{issue}-legs-base.json", None)
     if not doc:
         raise FileNotFoundError(f"{issue}-legs-base.json 缺失：先跑 B4 zucai-build-reads")
+    if (doc.get("auto") or {}).get("complete") is False:
+        missing = ", ".join((doc["auto"].get("missing") or {}).keys())
+        raise ValueError(f"{issue} 自动腿表不完整，缺场 {missing}：补齐报价后再出整期初稿")
     legs_raw = doc.get("legs") or {k: v for k, v in doc.items() if str(k).isdigit()}
     prescription = doc.get("prescription") or {}
     judgment = read_json(zdir / f"{issue}-judgment-v1.json", {}) or {}
@@ -235,6 +240,11 @@ def build_draft(data_dir: Path, issue: str, *, cap_yuan: int = DEFAULT_CAP,
         if dc:
             candidates.append({"label": "参考·丢光C档形", "channel": channel,
                                "cap_yuan": cap_yuan, **dc, "rule": "drop_c", "downgrades": []})
+        wl_cap = min(cap_yuan, white_line_budget(data_dir, issue))
+        wl = white_line_reference(legs, channel=channel, cap_yuan=wl_cap)
+        if wl:
+            candidates.append({"label": "参考·白防线形", "channel": channel,
+                               "cap_yuan": wl_cap, **wl, "rule": "white_line", "downgrades": []})
     for i, cand in enumerate(candidates):
         if not cand.get("faces"):
             continue
@@ -375,6 +385,14 @@ def render_draft(doc: dict) -> str:
             lines.append("（丢光 C 档形：A/B/b 全单 + D 全包 + C 全丢；2026-10-25 起与字典形并排"
                          "计数 10 期，只作对照，不是建议"
                          + (f"；{c['note']}" if c.get("note") else "") + "）")
+        elif c["label"] == "参考·白防线形":
+            lines.append("（白防线形：全单起步，一赔条件 p1/(p1+p2) 从低到高补双到预算"
+                         "（默认 ¥256，期前定额更低取它），线 0.80 以上留单；"
+                         "2026-11-08 起并排计数，只作对照，规则 a 未改"
+                         + (f"；{c['note']}" if c.get("note") else "") + "）")
+            for a in c.get("alerts") or []:
+                lines.append(f"⚠️预警 {len(a['flags'])} 条在线以上：场 {a['no']}（{a['ratio']:.2f}）"
+                             f"{'、'.join(a['flags'])}——单还是双，开球前复核再定")
         for line in (c.get("review") or {}).get("lines") or []:
             lines.append(f"审票 {line}")
     lines += ["", "> 读法：初稿 = 处方面集合装进帽（只丢场不降档）；市场口径下任何形状的期望回报都"

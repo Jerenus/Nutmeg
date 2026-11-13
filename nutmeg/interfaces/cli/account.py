@@ -33,6 +33,26 @@ def account_month(month: str | None = _MONTH, data_dir: Path = _DATA_DIR,
         _cli.typer.echo(f"→ {target}")
 
 
+_PRE_ISSUE = _cli.typer.Option(..., "--issue", help="足彩期号")
+_PRE_SLIP = _cli.typer.Option(..., "--slip-yuan", help="本期单票上限（元）")
+_PRE_TOTAL = _cli.typer.Option(..., "--issue-yuan", help="本期合计上限（元）")
+_PRE_NOTE = _cli.typer.Option("", "--note")
+
+
+@account_app.command("precommit")
+def account_precommit(issue: str = _PRE_ISSUE, slip_yuan: int = _PRE_SLIP,
+                      issue_yuan: int = _PRE_TOTAL, note: str = _PRE_NOTE,
+                      data_dir: Path = _DATA_DIR) -> None:
+    """期前定额（2026-11-08 Jun 批）：开包前写下本期上限，预审按刹车同级否决；只能收紧刹车。"""
+    from nutmeg.decision.bankroll import issue_brake, write_precommit
+
+    key = write_precommit(data_dir, issue, slip_yuan=slip_yuan, issue_yuan=issue_yuan, note=note)
+    brake = issue_brake(data_dir, issue) or {}
+    _cli.typer.echo(f"期前定额 {issue}：单票 ≤¥{slip_yuan:,}、本期合计 ≤¥{issue_yuan:,}（{key}）")
+    _cli.typer.echo(f"   生效上限：单票 ≤¥{brake.get('slip_yuan', slip_yuan):,}、合计 "
+                    f"≤¥{brake.get('issue_yuan', issue_yuan):,}（{brake.get('reason', key)}）")
+
+
 _FROM = _cli.typer.Option("26136", "--from", help="起始期号（选择账自 26136 起攒）")
 _TO = _cli.typer.Option(None, "--to", help="截止期号，默认到最新")
 

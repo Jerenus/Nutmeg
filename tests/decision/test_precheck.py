@@ -38,3 +38,30 @@ def test_register_reviewed_keeps_deviation_and_review_record(tmp_path):
     saved = load_slips(tmp_path, issue="26151")[0]
     assert saved.deviation == "fact_self_judged" and saved.prediction
     assert "review" in saved.diagnosis and "codes" in saved.diagnosis["review"]
+
+
+def test_precheck_vetoes_a_second_ticket_that_adds_nothing(tmp_path):
+    """一期两张上限（2026-11-08）：同面第二张至少中一张增量 0 → 预审否决，登记照收。"""
+    register_reviewed(_slip(_NINE, slip_id="26151-T1"), tmp_path)
+    out = precheck(_slip(_NINE), tmp_path, log=False)
+    assert any(x.startswith("⛔两张上限：第二张") for x in out["discipline"])
+    assert out["vetoed"] is True
+
+
+def test_precheck_vetoes_raising_stakes_right_after_a_win(tmp_path):
+    import json
+
+    (tmp_path / "scoreboard.json").write_text(json.dumps({"tickets": {
+        "26148": {"stake": 64, "payout": 0}, "26149": {"stake": 64, "payout": 0},
+        "26150": {"stake": 64, "payout": 900.0}}}), encoding="utf-8")
+    out = precheck(_slip(_NINE), tmp_path, log=False)       # ¥128 > 中奖前均 ¥64
+    assert any(x.startswith("⛔中奖后不加码：26150 中奖后第 1 期") for x in out["discipline"])
+
+
+def test_precheck_reminds_white_doubles_without_vetoing(tmp_path):
+    hot = {**_FAIR, "2": {"home": 0.73, "draw": 0.16, "away": 0.11}}
+    slip = build_slip(slip_id="preview", channel="renjiu", placed_at="2026-10-27", faces=_NINE,
+                      issue="26151", fair=hot)
+    out = precheck(slip, tmp_path, log=False)
+    assert out["reminders"][0].startswith("ℹ️白防线 0.80：场 2 双 31（一赔条件 0.82）")
+    assert not any("白防" in x for x in out["discipline"])

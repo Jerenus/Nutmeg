@@ -319,3 +319,23 @@ def test_no_pending_tickets_says_so(tmp_path: Path, monkeypatch) -> None:
     assert report["pending"]["n"] == 0 and report["room"] == report["stop_loss"] + 180
     assert "**实质余量**：无待结票，同上" in render_month(report)
     assert "｜实质余 ¥8,180" in render_month(report)
+
+
+def test_month_report_prices_the_white_doubles(tmp_path: Path, monkeypatch) -> None:
+    """账房「白防成本」（2026-11-08 Jun 批）：线 0.80 以上的双多花的钱，已结的白防几条。"""
+    data = _data(tmp_path)
+    hot, coin = {"home": 0.73, "draw": 0.16, "away": 0.11}, {"home": 0.5, "draw": 0.3, "away": 0.2}
+    legs = [{"key": "1", "selections": ["home", "draw"], "fair": hot},
+            *[{"key": str(n), "selections": ["home"], "fair": coin} for n in range(2, 10)]]
+    with (data / "betslips.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"slip_id": "26135-T1", "channel": "renjiu", "placed_at": "2026-10-03",
+                             "purchased": True, "issue": "26135", "legs": legs,
+                             "faces": {"1": "31", **{str(n): "3" for n in range(2, 10)}}}) + "\n")
+    (data / "zucai" / "official-prizes.json").write_text(json.dumps({"issues": {"26135": {
+        "results": " ".join(["3"] * 14)}}}), encoding="utf-8")
+    monkeypatch.setattr("nutmeg.decision.account.experiment_board", lambda _d: {})
+    report = month_report(data, "2026-10", with_draft=False, with_rule_v3=False)
+    assert report["white_cost"] == {"slips": 1, "doubles": 1, "extra_yuan": 2.0, "settled": 1,
+                                    "white": 1}
+    assert ("**白防成本**（线 0.80）：1 张足彩票有 1 条线以上的双，多花 ¥2；已结 1 条，白防 1 条"
+            in render_month(report))
