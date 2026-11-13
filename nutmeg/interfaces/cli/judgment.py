@@ -81,12 +81,27 @@ def judgment_brief(
 _CAP = _cli.typer.Option(800, "--cap", help="初稿注金帽（元）；刹车档自动取一半")
 
 
+@judgment_app.command("packet-check")
+def packet_check(issue: str = _cli.typer.Option(..., "--issue"),
+                 data_dir: Path = _DATA_DIR) -> None:
+    """只读检查 A 三屏核心交付缺项；不替代判断或审票。"""
+    from nutmeg.decision.packet_doc import check_delivery
+
+    out = check_delivery(data_dir, issue)
+    _cli.typer.echo(f"{issue}：{'核心结构齐全' if out['ready'] else '未齐全'}")
+    _cli.typer.echo(out["scope"])
+    for error in out["errors"]:
+        _cli.typer.echo(f"- {error}")
+    if not out["ready"]:
+        raise _cli.typer.Exit(code=1)
+
+
 def _draft_text(data_dir: Path, issue: str, cap: int, write: bool) -> str:
     from nutmeg.decision.zucai_draft import build_draft, render_draft
 
     try:
         text = render_draft(build_draft(data_dir, issue, cap_yuan=cap, write=write))
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, ValueError) as exc:
         return f"# 足彩初稿 · {issue}：未出——{exc}\n"
     section = _crowd_section(data_dir, issue)
     if write:

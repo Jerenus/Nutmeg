@@ -73,6 +73,8 @@ project-level operator and command window opened at `/Users/jz71/Projects/Nutmeg
 
 ### 触发短语
 
+- "完整足彩 SOP / 逐场深研 / 分析包做成页面" → Codex 业务入口 `.agents/skills/zucai-sop/SKILL.md`；完整验收后才交终稿，不以中间包交差；`judgment packet-check --issue <期>` 与人工内容/页面验收均须通过。缺必要输入只报阻塞与恢复条件，能独立推进的步骤继续做完；各阶段不提前冒记完成。
+
 - "今天的 jczq 方案 / 今天竞彩怎么打 / 出今天的票 / today's bets" → RUNBOOK 泳道 A
 - "胜负彩 / 任九 / 26xxx 期方案" → RUNBOOK 泳道 B
 - "虚拟规则赛 / arena / 竞彩虚拟单榜单" → RUNBOOK 泳道 C（全程虚拟，不进净值和判断层）

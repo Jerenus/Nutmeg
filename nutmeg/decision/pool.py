@@ -109,7 +109,7 @@ def refresh_day(*, day: str, data_dir: Path, made_at: str,
     """
     from nutmeg.decision.jczq_reads import build_jczq_reads, intake_board
     from nutmeg.decision.kernel_submit import submit_unstarted
-    from nutmeg.decision.zucai_auto_judgment import build_auto_reads
+    from nutmeg.decision.zucai_auto_judgment import build_auto_reads, market_gaps
 
     data_dir = Path(data_dir)
     summary: dict = {"jczq": None, "zucai": {}}
@@ -129,18 +129,22 @@ def refresh_day(*, day: str, data_dir: Path, made_at: str,
     zucai_dir = data_dir / "zucai"
     for issue, issue_doc in closing_issues(zucai_dir, day):
         reads = build_auto_reads(issue=issue, data_dir=data_dir, made_at=made_at)
+        gaps = market_gaps(issue=issue, data_dir=data_dir)
         store = json.loads((zucai_dir / f"{issue}-store-ids.json").read_text(encoding="utf-8"))
         mapped = _channel_mapped_match_nos(zucai_dir, issue)
         kickoffs = {
             store[str(m["match_no"])]["match_id"]: _iso_bj(str(m["kickoff_bj"]))
             for m in issue_doc.get("matches") or []
             if int(m["match_no"]) not in mapped
+            and str(m["match_no"]) not in gaps
             and store.get(str(m["match_no"]), {}).get("match_id")
         }
         sent = submit_unstarted(reads, kickoffs=kickoffs,
                                 state_path=zucai_dir / f"{issue}-kernel-submitted.json",
                                 now=made_at, submit=submit)
         summary["zucai"][issue] = {"reads": len(reads), "submitted": len(sent)}
+        if gaps:
+            summary["zucai"][issue]["missing_market"] = gaps
         _project(project, summary["zucai"][issue], issue=issue)
         try:
             # 足彩 legs-base 自动版（机器初稿依赖它；不覆盖主循环手工版），2026-10-02

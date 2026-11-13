@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -88,6 +89,31 @@ def _from_research(research: dict, prior: dict, kickoff: str) -> dict | None:
     return entry
 
 
+def market_gaps(*, issue: str, data_dir: Path) -> dict[str, str]:
+    """逐场列报价/身份缺口，不补价；供刷新回执和交付检查使用。"""
+    zdir = Path(data_dir) / "zucai"
+    store = _load(zdir / f"{issue}-store-ids.json", {}) or {}
+    issue_doc = _load(zdir / f"{issue}-issue.json", {}) or {}
+    expected = {str(m["match_no"]) for m in issue_doc.get("matches") or []} or set(store)
+    gaps = {}
+    for no in sorted(expected | set(store), key=int):
+        ids = store.get(no) or {}
+        missing = [key for key in ("match_id", "snapshot_id") if not ids.get(key)]
+        fair = ids.get("fair")
+        try:
+            values = [fair[f] for f in ("home", "draw", "away")]
+            valid = all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                        and math.isfinite(v) and 0 <= v <= 1 for v in values)
+            valid = valid and abs(sum(values) - 1) < .001
+        except (TypeError, KeyError):
+            valid = False
+        if not valid:
+            missing.append("fair")
+        if missing:
+            gaps[no] = "缺/无效 " + "、".join(missing)
+    return gaps
+
+
 def auto_judgment(*, issue: str, data_dir: Path) -> dict:
     zucai_dir = Path(data_dir) / "zucai"
     issue_doc = _load(zucai_dir / f"{issue}-issue.json", {})
@@ -99,7 +125,10 @@ def auto_judgment(*, issue: str, data_dir: Path) -> dict:
     kickoffs = {str(m["match_no"]): str(m.get("kickoff_bj") or "")
                 for m in issue_doc.get("matches") or []}
     judgment: dict[str, dict] = {}
+    gaps = market_gaps(issue=issue, data_dir=data_dir)
     for no, ids in store.items():
+        if no in gaps:
+            continue
         if no in manual:
             judgment[no] = {**manual[no], "source": "main_loop"}
             continue
@@ -151,7 +180,8 @@ def build_auto_reads(*, issue: str, data_dir: Path, made_at: str) -> list[dict]:
         read["board_key"] = f"zucai:{issue}"
         read["kind"] = kinds.get(source, source)
         by_match[read["match_id"]] = read
-    order = [store[no]["match_id"] for no in sorted(store, key=int)]
+    order = [store[no]["match_id"] for no in sorted(store, key=int)
+             if (store[no] or {}).get("match_id")]
     reads = [by_match[mid] for mid in order if mid in by_match]
     reads_path.write_text(json.dumps(reads, ensure_ascii=False, indent=1), encoding="utf-8")
     return reads
@@ -207,7 +237,9 @@ def ensure_auto_legs_base(*, issue: str, data_dir: Path, made_at: str) -> dict:
             attach_face_status(leg, research, source=path.name if path else "market")
         except FaceStatusError as exc:
             notes.append(f"场{no} face_status：{exc}")
-    doc["auto"] = {"source": AUTO_MARK, "built_at": made_at, "notes": notes}
+    gaps = market_gaps(issue=issue, data_dir=data_dir)
+    doc["auto"] = {"source": AUTO_MARK, "built_at": made_at, "notes": notes,
+                   "complete": not gaps, "missing": gaps}
     legs_path.write_text(json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8")
-    return {"status": "written", "path": str(legs_path), "legs": len(doc["legs"]),
-            "notes": notes}
+    return {"status": "partial" if gaps else "written", "path": str(legs_path),
+            "legs": len(doc["legs"]), "notes": notes, "missing": gaps}

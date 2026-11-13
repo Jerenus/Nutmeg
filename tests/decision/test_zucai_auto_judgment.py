@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from nutmeg.decision.zucai_auto_judgment import auto_judgment, build_auto_reads
 
 STANCE = {"face": "3", "structure": "double", "cover": "1", "confidence": 3,
@@ -149,3 +151,38 @@ def test_auto_legs_base_feeds_the_draft_and_never_overwrites_a_manual_one(tmp_pa
                                  made_at="2026-09-26T18:45:00+08:00")
     assert kept["status"] == "kept_manual"
     assert json.loads((zdir / "26133-legs-base.json").read_text("utf-8")) == manual
+
+
+@pytest.mark.parametrize("bad", [{"fair": None}, {"fair": {"home": .5}},
+                                  {"match_id": None}, {"snapshot_id": None}])
+def test_missing_market_skips_only_affected_match_and_reports_gap(tmp_path, bad):
+    from nutmeg.decision.zucai_auto_judgment import market_gaps
+
+    zdir = _issue(tmp_path)
+    path = zdir / "26133-store-ids.json"
+    store = json.loads(path.read_text())
+    store["2"].update(bad)
+    path.write_text(json.dumps(store))
+    judgment = auto_judgment(issue="26133", data_dir=tmp_path)
+    assert set(judgment) == {"1", "3"}
+    assert set(market_gaps(issue="26133", data_dir=tmp_path)) == {"2"}
+    reads = build_auto_reads(issue="26133", data_dir=tmp_path,
+                             made_at="2026-09-26T14:15:00+08:00")
+    assert {r["code"] for r in reads} == {"1", "3"}
+
+
+def test_partial_automatic_legs_cannot_be_used_as_complete_draft(tmp_path):
+    from nutmeg.decision.zucai_auto_judgment import ensure_auto_legs_base
+    from nutmeg.decision.zucai_draft import load_board
+
+    zdir = _issue(tmp_path, n=14)
+    path = zdir / "26133-store-ids.json"
+    store = json.loads(path.read_text())
+    store["8"]["fair"] = None
+    path.write_text(json.dumps(store))
+    out = ensure_auto_legs_base(issue="26133", data_dir=tmp_path,
+                                made_at="2026-09-26T10:30:00+08:00")
+    assert out["status"] == "partial" and out["legs"] == 13
+    assert "8" in out["missing"]
+    with pytest.raises(ValueError, match="8"):
+        load_board(tmp_path, "26133")

@@ -100,3 +100,64 @@ def load_packet(data_dir: Path, issue: str) -> dict:
             "main_shape": doc.get("main_shape"), "alternatives": alternatives,
             "default": doc.get("default"), "signed_bold": doc.get("signed_bold") or [],
             "built_at": doc.get("built_at"), "errors": errors}
+
+
+def check_delivery(data_dir: Path, issue: str) -> dict:
+    """只读核验 A 三屏核心产物结构；不判许可、不审事实、不代表 B/C/D 完成。"""
+    from nutmeg.decision.zucai_auto_judgment import market_gaps
+
+    zdir = Path(data_dir) / "zucai"
+    packet = load_packet(data_dir, issue)
+    errors = list(packet["errors"])
+    expected = {str(i) for i in range(1, 15)}
+    nos = [str(r["no"]) for r in packet["rows"]]
+    if len(nos) != len(set(nos)):
+        errors.append("决策表场号重复")
+    if set(nos) != expected:
+        errors.append("决策表必须覆盖 1–14 场且不重复")
+    for row in packet["rows"]:
+        missing = [k for k in ("anchor", "hole", "flip", "cond", "watch", "d1")
+                   if not row.get(k)]
+        if row.get("tier") != "D" and not row.get("c1"):
+            missing.append("c1")
+        if missing:
+            errors.append(f"场 {row['no']} 取证/分表缺：{'、'.join(missing)}")
+    if not packet.get("default"):
+        errors.append("缺机器默认及理由")
+    shape = packet.get("main_shape")
+    if not shape:
+        errors.append("缺字典主形（默认空仓也应展示参考）")
+    for candidate in ([shape] if shape else []) + packet["alternatives"]:
+        faces = candidate.get("faces") or {}
+        if len(faces) not in (9, 14) or not set(faces) <= expected:
+            errors.append(f"{candidate.get('label', '主形')} 票面须为任九9场或胜负彩14场")
+        if candidate.get("price") is None or candidate.get("p") is None:
+            errors.append(f"{candidate.get('label', '主形')} 缺价格/P核算")
+    if not any(s.get("role") == "替代" for s in packet["alternatives"]):
+        errors.append("缺替代参考票")
+    for suffix in ("packet.md", "judgment-brief.md", "draft.json", "counter-matrix.md",
+                   "structure-align.md", "dead-align.md", "team-load.json", "polymarket.json"):
+        path = zdir / f"{issue}-{suffix}"
+        if not path.exists() or not path.stat().st_size:
+            errors.append(f"缺产物 {path.name}")
+    # 与自动转录使用同一研究定位（含并集竞彩），不要求复制研究文件。
+    from nutmeg.decision.zucai_auto_judgment import _jczq_research_by_match_id, _research_path
+    from nutmeg.decision.zucai_identity import load_channel_map
+
+    doc = read_json(zdir / f"{issue}-issue.json", {}) or {}
+    day = str(doc.get("sale_deadline") or "")[:10]
+    mapped = {no: mid for mid, no in load_channel_map(zdir, issue).items()}
+    jczq = _jczq_research_by_match_id(Path(data_dir), day) if day else {}
+    missing_research = [no for no in sorted(expected, key=int)
+                        if not _research_path(zdir, issue, no, mapped, jczq)]
+    if missing_research:
+        errors.append("缺逐场研究：" + ",".join(missing_research))
+    gaps = market_gaps(issue=issue, data_dir=data_dir)
+    store = read_json(zdir / f"{issue}-store-ids.json", {}) or {}
+    for no in sorted(expected - set(store), key=int):
+        gaps.setdefault(no, "缺 store-ids")
+    if gaps:
+        errors.append("市场输入缺口：" + "; ".join(f"场{n} {r}" for n, r in gaps.items()))
+    return {"issue": issue, "ready": not errors, "errors": errors,
+            "scope": ("A 三屏核心产物结构；事实、统计口径与页面仍须人工核验；"
+                      "不表示桥/实购/复盘已完成")}

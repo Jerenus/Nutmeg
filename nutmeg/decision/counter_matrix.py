@@ -16,6 +16,7 @@ from nutmeg.decision.faces import CODE_OF
 from nutmeg.decision.files import read_json
 from nutmeg.decision.research_sources import coverage_mark, extract_urls
 from nutmeg.decision.rubric_items import ITEMS
+from nutmeg.decision.zucai_identity import load_channel_map
 
 FACES = ("3", "1", "0")
 WIN_FACE = {"home": "3", "away": "0"}
@@ -202,9 +203,7 @@ def _jczq_twins(data_dir: Path, issue: str, issue_doc: dict) -> dict[int, Path]:
     只走别名表，不按队名或 fair 值反查（RULEBOOK g-scope）。"""
     import datetime as _dt
     zdir = data_dir / "zucai"
-    cmap = (read_json(zdir / f"{issue}-channel-map.json", None)
-            or read_json(zdir / f"{issue}-channel-map.auto.json", None) or {})
-    by_id = {str(k): int(v) for k, v in cmap.items() if str(v).isdigit() or isinstance(v, int)}
+    by_id = load_channel_map(zdir, issue)
     if not by_id:
         return {}
     days: set[str] = set()
@@ -240,8 +239,8 @@ def issue_matrices(data_dir: Path, issue: str) -> list[dict]:
              for m in issue_doc.get("matches") or []}
     out = []
     twins = _jczq_twins(Path(data_dir), issue, issue_doc)
-    for no in sorted(legs, key=lambda k: int(k)):
-        leg = legs[no]
+    for no in sorted(set(legs) | set(names), key=int):
+        leg = legs.get(no) or {}
         research = read_json(zdir / f"{issue}-research-m{int(no)}.json", None)
         if not isinstance(research, dict) and twins.get(int(no)):
             research = read_json(twins[int(no)], None)

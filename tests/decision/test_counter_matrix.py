@@ -125,3 +125,24 @@ def test_issue_matrices_reads_legs_base_and_research_files_and_marks_missing(tmp
     md = render_issue("26151", out)
     assert "场 1 甲-乙｜H1 锚方面 3 vs H2 翻车面 1｜研究收敛 ◇（budget）" in md
     assert "场 2 丙-丁｜无研究原件" in md and "不回答「会不会翻」" in md
+
+
+def test_partial_market_board_still_shows_research_for_every_issue_match(tmp_path):
+    import json
+
+    from nutmeg.decision.counter_matrix import issue_matrices
+
+    zdir = tmp_path / "zucai"
+    zdir.mkdir()
+    (zdir / "26164-issue.json").write_text(json.dumps({"matches": [
+        {"match_no": n, "home_team": f"H{n}", "away_team": f"A{n}"}
+        for n in (1, 8, 9)]}))
+    (zdir / "26164-legs-base.json").write_text(json.dumps({"legs": {
+        "1": {"fair": {"home": .7, "draw": .2, "away": .1}}}}))
+    research = {"anchor_side": "away", "stance": {"face": "0", "alt_face": "1"},
+                "summary": "缺市场但研究在", "license_questions": {}}
+    (zdir / "26164-research-m8.json").write_text(json.dumps(research))
+    out = issue_matrices(tmp_path, "26164")
+    assert [m["no"] for m in out] == ["1", "8", "9"]
+    assert out[1]["h1"] == "0" and not out[1].get("missing")
+    assert out[2]["missing"] is True

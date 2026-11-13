@@ -1,0 +1,4 @@
+# Use HTTP consistently with ~/.codex/config.toml; command/args would select stdio.
+[mcp_servers.spacesheep]
+url = "https://mcp.spacesheep.dev/mcp"
+startup_timeout_sec = 60

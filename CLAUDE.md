@@ -16,6 +16,8 @@
 
 ## 触发短语
 
+- "完整足彩 SOP / 逐场深研 / 分析包做成页面" → Codex 业务入口 `.agents/skills/zucai-sop/SKILL.md`；完整验收后才交终稿，不以中间包交差；`judgment packet-check --issue <期>` 与人工内容/页面验收均须通过。缺必要输入只报阻塞与恢复条件，能独立推进的步骤继续做完；各阶段不提前冒记完成。
+
 - "今天的 jczq 方案 / 今天竞彩怎么打 / 出今天的票 / today's bets" → RUNBOOK 泳道 A
 - "胜负彩 / 任九 / 26xxx 期方案" → RUNBOOK 泳道 B
 - "深度分析 / 混合投注 / X 串 Y / 审核我的方案" → 深研与审票（`docs/jczq-mixed-bet-judge-process.md`：逐场研究 → Jun 出方案 → `betslip preview` 审票 → 登记）

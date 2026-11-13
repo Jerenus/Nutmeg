@@ -176,6 +176,8 @@ def _refresh(day: str, data_dir: Path) -> None:
     _echo_projection(jczq, indent="  ")
     for issue, row in summary["zucai"].items():
         typer.echo(f"  足彩 {issue}：Read {row['reads']} 条（交本体 {row['submitted']}）")
+        for no, reason in (row.get("missing_market") or {}).items():
+            typer.echo(f"    ⚠️场 {no} 未刷新：{reason}", err=True)
         _echo_projection(row, indent="    ")
         # 自动 legs-base 是机器初稿的输入；失败只进 summary 不打印，
         # launchd 日志里就看不见（2026-10-08）

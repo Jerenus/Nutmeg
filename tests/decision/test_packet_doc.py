@@ -66,3 +66,50 @@ def test_non_canonical_faces_named(tmp_path):
     assert out["errors"] == ["场 4 默认面 01 应写 10",
                              "W4 场 4 面 01 应写 10",
                              "W1 场 9 面 13 应写 31"]
+
+
+def test_delivery_check_rejects_empty_packet_despite_clean_loader(tmp_path):
+    from nutmeg.decision.packet_doc import check_delivery
+
+    _write(tmp_path, {"issue": "26151", "rows": []})
+    assert load_packet(tmp_path, "26151")["errors"] == []
+    out = check_delivery(tmp_path, "26151")
+    assert out["ready"] is False
+    assert any("14" in e for e in out["errors"])
+    assert any("主形" in e for e in out["errors"])
+
+
+def test_delivery_check_rejects_duplicate_rows_and_uncomputed_shape(tmp_path):
+    from nutmeg.decision.packet_doc import check_delivery
+
+    row = {"no": "1", "tier": "B", "k": 2, "n": 6, "default": "31"}
+    _write(tmp_path, {"issue": "26151", "rows": [row] * 14,
+                     "main_shape": {"label": "未核算", "faces": {"1": "3"}}})
+    out = check_delivery(tmp_path, "26151")
+    assert any("重复" in e for e in out["errors"])
+    assert any("票面" in e for e in out["errors"])
+
+
+def test_complete_reference_packet_does_not_require_betting_or_bridge(tmp_path):
+    from nutmeg.decision.packet_doc import check_delivery
+
+    nos = [str(i) for i in range(1, 15)]
+    shape = {"label": "参考", "faces": {n: "31" for n in nos[:9]}, "price": 1024, "p": .1}
+    rows = [{"no": n, "tier": "B", "k": 1, "n": 6, "default": "31",
+             "anchor": "待首发", "hole": "未确认", "flip": "真实", "cond": "①否，其余未知",
+             "watch": "首发", "c1": {"q3a": "未知"}, "d1": {"n": 20}} for n in nos]
+    _write(tmp_path, {"issue": "26151", "rows": rows,
+                     "default": {"action": "空仓", "reason": "无许可胆"},
+                     "main_shape": shape, "alternatives": [{**shape, "role": "替代"}]})
+    zdir = tmp_path / "zucai"
+    (zdir / "26151-store-ids.json").write_text(json.dumps({n: {
+        "match_id": f"m{n}", "snapshot_id": f"s{n}",
+        "fair": {"home": .7, "draw": .2, "away": .1}} for n in nos}))
+    for n in nos:
+        (zdir / f"26151-research-m{n}.json").write_text('{}')
+    for suffix in ("packet.md", "judgment-brief.md", "draft.json", "counter-matrix.md",
+                   "structure-align.md", "dead-align.md", "team-load.json", "polymarket.json"):
+        (zdir / f"26151-{suffix}").write_text('reference fixture')
+    out = check_delivery(tmp_path, "26151")
+    assert out["ready"] is True and out["errors"] == []
+    assert "不表示桥/实购/复盘已完成" in out["scope"]

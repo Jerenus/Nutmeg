@@ -70,15 +70,20 @@ def sig(row: dict, depth: int = 5) -> tuple:
 
 
 def ticket(row: dict) -> tuple[str, set[str]] | None:
-    """研究票形 → (single|double, 盖住的面集合)；研究无表态返回 None。"""
+    """研究票形 → (single|double|full, 面集合)；未知/不完整表态返回 None。"""
     rs = row.get("research") or {}
+    structure = rs.get("stance_structure")
+    if structure == "full":
+        return "full", set(FACES)
     face = rs.get("stance_face")
     if face not in FACES:
         return None
-    if rs.get("stance_structure") == "single":
+    if structure == "single":
         return "single", {face}
     cover = rs.get("stance_cover")
-    return "double", {face, cover} if cover in FACES else {face}
+    if structure == "double" and cover in FACES and cover != face:
+        return "double", {face, cover}
+    return None
 
 
 def death(row: dict) -> str | None:
@@ -107,6 +112,8 @@ def ticket_form(row: dict) -> tuple[str, str | None]:
     if t is None:
         return "", None
     kind, faces = t
+    if kind == "full":
+        return "包", None
     if kind == "single" or len(faces) != 2:
         return "单", None
     excluded = next(f for f in FACES if f not in faces)
@@ -142,8 +149,11 @@ def _cell_stats(pool: list[dict]) -> str:
     if not done:
         return "n=0"
     up = sum(1 for r in done if rel_outcome(r) != "fav")
-    dd = sum(1 for r in done if death(r))
-    return f"n={len(done)} · 翻车 {up / len(done):.0%} · 排除面开/单死 {dd / len(done):.0%}"
+    known = [r for r in done if ticket(r) is not None]
+    dd = sum(1 for r in known if death(r))
+    rate = f"{dd / len(known):.0%}" if known else "—"
+    return (f"n={len(done)} · 翻车 {up / len(done):.0%} · 排除面开/单死 "
+            f"{dd}/{len(known)}（{rate}；未知票形 {len(done) - len(known)}）")
 
 
 def render(issue: str, target: list[dict], recent: list[dict], everything: list[dict],

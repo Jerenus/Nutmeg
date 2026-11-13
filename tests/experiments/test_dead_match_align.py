@@ -40,6 +40,19 @@ def test_ticket_form_names_excluded_face_relative_to_fav():
     assert dm.ticket_form(_row("x", 1, "3", structure="single", cover=None))[0] == "单"
 
 
+def test_full_cover_never_dies_and_missing_structure_is_not_a_double():
+    full = _row("26149", 1, "0", structure="full", cover=None)
+    unknown = _row("26149", 2, "0", structure=None, cover=None)
+    assert dm.ticket(full) == ("full", {"3", "1", "0"})
+    assert dm.death(full) is None
+    assert dm.ticket_form(full) == ("包", None)
+    assert dm.ticket(unknown) is None
+    assert dm.death(unknown) is None
+    # 未知票形不能稀释死亡率；全包有结果、无排除面，单列。
+    dead = _row("26149", 3, "0")
+    assert "1/2" in dm._cell_stats([full, unknown, dead])
+
+
 def test_recent_window_and_render_list_same_cell_matches():
     rows = [_row("26145", 13, "3"), _row("26149", 3, "0"), _row("26150", 7, "1", cover="0"),
             _row("26150", 2, "1"), _row("26151", 1, None), _row("26152", 6, None),
