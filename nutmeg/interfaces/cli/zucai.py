@@ -141,8 +141,14 @@ def zucai_premise_corrections(
     """
     import json as _json
 
-    from nutmeg.decision.entities import add_profile_note
-    from nutmeg.decision.premise_card import collect_corrections
+    from nutmeg.decision.entities import (
+        add_profile_note,
+        load_league_alias_table,
+        load_team_alias_table,
+        resolve_league,
+        resolve_team,
+    )
+    from nutmeg.decision.premise_card import collect_corrections, resolve_subject
     from nutmeg.decision.store import DecisionStore
 
     found = []
@@ -166,13 +172,20 @@ def zucai_premise_corrections(
         _cli.typer.echo("\n（预演。加 --apply 才回写 store 画像）")
         return
     store = DecisionStore(_cli.Path(output_dir) / "decision")
+    teams, leagues = load_team_alias_table(), load_league_alias_table()
     ok = 0
     for correction in found:
+        is_team = correction.subject_type == "team"
+        entity_id = resolve_subject(
+            correction.subject,
+            (lambda name: resolve_team(name, teams)) if is_team
+            else (lambda name: resolve_league(name, leagues)),
+        )
         try:
             _cli.typer.echo("  " + add_profile_note(
                 store,
-                team_id=correction.subject if correction.subject_type == "team" else None,
-                league_id=correction.subject if correction.subject_type == "league" else None,
+                team_id=entity_id if is_team else None,
+                league_id=None if is_team else entity_id,
                 key=correction.field,
                 note=correction.correct,
                 evidence=correction.evidence,

@@ -269,3 +269,21 @@ def collect_corrections(research: dict) -> list[PremiseCorrection]:
             )
         )
     return out
+
+
+_SIDE_SUFFIX = ("（主）", "（客）", "(主)", "(客)")
+
+
+def resolve_subject(subject: str, resolve) -> str:
+    """纠正的 subject → store 实体 id。``resolve(名字)`` 查不到返回 None。
+
+    研究有时把 subject 写成队名加主客后缀（「塞浦路斯（主）」）而不是实体 id；按字面找
+    实体会落空（26164：32 条里 13 条没回写）。去掉后缀再过别名表；仍查不到就原样返回，
+    让回写处照常报「不在 store」。"""
+    name = subject.strip()
+    for suffix in _SIDE_SUFFIX:
+        if name.endswith(suffix):
+            name = name[: -len(suffix)].strip()
+            break
+    return resolve(name) or resolve(subject.strip()) or subject
+

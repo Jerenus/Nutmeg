@@ -158,3 +158,22 @@ def test_league_subject_type_is_preserved():
 def test_missing_corrections_field_is_not_an_error():
     assert collect_corrections({"match_no": 11}) == []
     assert collect_corrections({"match_no": 11, "premise_corrections": "文字"}) == []
+
+
+def test_subject_with_home_away_suffix_resolves_to_team_id():
+    """出生事故 26164：主循环派发的研究把 subject 写成「塞浦路斯（主）」「亚美尼亚（客）」，
+    回写时按字面去 store 找实体，32 条里 13 条没写进去——纠正不回写＝白纠正。"""
+    from nutmeg.decision.premise_card import resolve_subject
+
+    table = {"塞浦路斯": "cyprus", "亚美尼亚": "armenia"}
+    resolve = table.get
+    assert resolve_subject("塞浦路斯（主）", resolve) == "cyprus"
+    assert resolve_subject("亚美尼亚(客)", resolve) == "armenia"
+    assert resolve_subject("亚美尼亚", resolve) == "armenia"
+
+
+def test_subject_already_an_id_or_unknown_is_left_alone():
+    from nutmeg.decision.premise_card import resolve_subject
+
+    assert resolve_subject("jpn-kashiwa", {}.get) == "jpn-kashiwa"
+    assert resolve_subject("不存在的队（主）", {}.get) == "不存在的队（主）"

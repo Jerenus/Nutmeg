@@ -20,6 +20,14 @@
 - **补查 / 追问**（Jun 点名某腿、出了新消息）：主循环并行派 `jczq-match-analyst`（每场一个）。约束只在 agent 文件本体里，**不在派发提示里现场口传**；要改就改文件。足彩场次先 `uv run nutmeg zucai-premise-card --issue <期>`，把卡原样贴进提示（RUNBOOK B3a）。
 - **结论先落对象再谈票**：`uv run nutmeg research override --day <日> --code <场次> --note … --items-json … --reason …`（或 `--market`）；禁止手改 `research-*.json`（RUNBOOK「信号留存」/ B5a）。只活在聊天里的结论，下一轮按 belief 重算时会被静默推翻。
 
+## 2a. 临场复核（2026-11-16，11-15 竞彩板 11 场复盘落库）
+- **先数全板**：按竞彩编号 / `businessDate` 数，次日凌晨开球的场同样算当天的板。11-15 主循环把 11 场说成 7 场，四场深研晚了两小时。
+- **体彩价先看更新时间再比价**：`had/hhad.updateDate·updateTime` 早于当日开售、或开售后没动过的，是旧价，不拿来和国际盘算每元回报或价差。11-15 两次出现「旧价对新盘」的假价差（09:30 全板、14:05 周日009）。
+- **首发出来之前只写触发条件，不动把握**：按场写「看谁首发 / 若相反怎么改」，名单到了逐场核对，再用 `research override --reason new_official_info` 把事实落到项。11-15 核过首发的 7 场里 5 场的研究实名前提被推翻；停售前看不到首发的场，伤停叙事只当背景。
+- **首发来源**（按出名单的早晚）：欧足联赛事 `https://match.uefa.com/v5/matches?fromDate=<日>&toDate=<日>&competitionId=2014` 取 id → `/v5/matches/<id>/lineups`（开球前约 45 分钟，同接口可取上一轮首发做轮换对照）；J 联赛官方页 `/match/<赛事>/<年>/<MMDDnn>/live/`（约 2 小时前）；API-Football（`lineup_watch.default_fetchers()`）最慢，只兜底，且有每日额度，别轮询。
+- **盘中刷新盘口不写正式目录**：`nutmeg.decision.fetch.fetch_day(<日>, <临时目录>)` 只抓取落盘；`decision-am` 会用当下在售场次覆盖当日 `sporttery_markets.json`。
+- **到 1 的腿只展示**：国际 fair × 体彩赔率 ≥1 的腿 11-15 出现 8 条、全没中；主让 1 让负格回测区间含 0、主受让让胜格显著为负（`jczq_hhad` 回测，2026-11-06），不作下注理由。
+
 ## 3. Jun 出方案
 - 竞彩：腿文件 + 过关方式；`uv run nutmeg jczq-combos --day <日>` 只给「同判断下 P 最高的形状」作参考（只枚举 ≥2 串）。
 - 足彩：在机器初稿上改（`uv run nutmeg judgment draft --issue <期>`；处方忠实、只丢场不降档）。
