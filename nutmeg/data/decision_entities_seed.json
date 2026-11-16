@@ -1133,9 +1133,9 @@
     },
     {
      "key": "competition_2026_27",
-     "note": "欧国联C级C2组（同组黑山、塞浦路斯、拉脱维亚），截至10/5第4轮前：3战1胜2负3分，排第三；第4轮客场对黑山（波德戈里察）。",
-     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一006.json（引 Sports Mole、VAVEL、thestatszone、armenpress）",
-     "at": "2026-10-05"
+     "note": "第 5 轮后 1 胜 2 平 2 负 5 分，第三名已锁定（10-05 客场平黑山，11-12 主场 1-1 塞浦路斯）",
+     "evidence": "https://sportaran.com/en/post/armeniya-sygrala-vnichyu-s-kiprom-v-lige-nacij-garibyan-otvetil-na-gol-pikisa/ ｜ Armenia have collected five points and sit third in Group C2",
+     "at": "2026-11-12"
     },
     {
      "key": "form_2026_10_window",
@@ -1160,6 +1160,18 @@
      "note": "研究员描述：倾向控球，但阵地战效率低、靠远射；低位防守不硬（客场先失两球）；威胁来自Spertsyan的定位球和转换进攻。",
      "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一006.json、.nutmeg-data/zucai/26134-research-m1.json（研究员未注明外部来源）",
      "at": "2026-10-05"
+    },
+    {
+     "key": "availability_2026_11_window",
+     "note": "Spertsyan、Julio Bueno、Sergey Muradyan、Henri Avagyan、Finn Geragusian 因伤缺 11 月窗口；Simonyan、Kamo Hovhannisyan、Bichakhchyan 因比赛状态不足未入选",
+     "evidence": "https://www.pan.am/en/627267 ｜ Several players will miss the fixtures through injury",
+     "at": "2026-11-13"
+    },
+    {
+     "key": "coach_2026_11",
+     "note": "已核实：11 月窗口仍由 Yeghishe Melikyan 执教",
+     "evidence": "https://www.pan.am/en/627267 ｜ Armenia head coach Yeghishe Melikyan has named a 28-man squad",
+     "at": "2026-11-13"
     }
    ]
   },
@@ -1284,6 +1296,12 @@
      "note": "研究员描述：偏反击，首回合靠德布劳内倒三角制造机会；缺组织核后主要靠卢克巴基奥/戈茨速度冲击对手中卫。",
      "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一002.json（研究员未注明该描述的外部来源）",
      "at": "2026-10-05"
+    },
+    {
+     "key": "standing_2026_11_13",
+     "note": "第5轮后9分排第3（10/5客场1-4负法国，11/12客场2-1胜土耳其），末轮必须赢",
+     "evidence": "https://www.sportsmole.co.uk/football/belgium/uefa-nations-league/preview/belgium-vs-italy-prediction-team-news-lineups_609039.html",
+     "at": "2026-11-13"
     }
    ]
   },
@@ -1618,6 +1636,12 @@
      "note": "研究员描述：预计收紧为中低位加长传，破局靠Perišić边路传中、Budimir头球与定位球；此前描述为中低位4-2-3-1。",
      "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二008.json、.nutmeg-data/jczq/daily/2026-09-29/research-周二013.json（研究员未注明外部来源）",
      "at": "2026-10-06"
+    },
+    {
+     "key": "standings_2026_11_13",
+     "note": "5轮1胜4负积3分，A3组第三（10/6主场1-2西班牙，11/12客场1-2英格兰）；末轮11/15在奥西耶克主场对捷克",
+     "evidence": "https://www.uefa.com/uefanationsleague/news/02a2-1fea7079900a-801b2c5f6c9e-1000--2026-27-uefa-nations-league-league-phase-fixtures-and-resul/",
+     "at": "2026-11-13"
     }
    ]
   },
@@ -1668,6 +1692,12 @@
      "note": "研究员描述：4-2-3-1，控球约50%，进攻靠边路Loizou、Kakoullis与定位球。",
      "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一001.json（引 sportsgambler）",
      "at": "2026-10-05"
+    },
+    {
+     "key": "competition_2026_11_window",
+     "note": "10/5 主场2-1拉脱维亚，11/12 客场1-1亚美尼亚。5轮后积8分列第二，已锁定升级附加赛名额（与亚美尼亚相互战绩2-0、1-1占优）；黑山13分、亚美尼亚5分、拉脱维亚1分。",
+     "evidence": "https://en.wikipedia.org/wiki/2026%E2%80%9327_UEFA_Nations_League_C ｜ Cyprus 5 2 2 1 6 4 +2 8 (Q) Promotion play-offs",
+     "at": "2026-11-13"
     }
    ]
   },
@@ -1718,6 +1748,12 @@
      "note": "研究员描述：4-2-3-1 中低位防守，身体型，靠定位球（高点 Hlozek）和转换；少了 Krejci 后中卫组合出球和防高空打折。",
      "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二007.json、.nutmeg-data/jczq/daily/2026-09-29/research-周二009.json（研究员未注明该描述的外部来源）",
      "at": "2026-10-06"
+    },
+    {
+     "key": "standings_2026_11_13",
+     "note": "5轮全败积0分，A3组垫底（0-2英格兰两回合，0-2西班牙），只有赢克罗地亚才能升第三、避免直接降级",
+     "evidence": "https://www.fotbalportal.cz/cesko/synot-liga/81782-cesko-spanelsko-letna-krejci-cervena-karta-osijek-denia/",
+     "at": "2026-11-13"
     }
    ]
   },
@@ -1767,6 +1803,12 @@
      "note": "研究员描述：Hjulmand/Højbjerg 组织控球，边路 Dorgu、Mæhle 推进，靠宽度和 Højlund 抢点破低位，定位球有高点。",
      "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日004.json（引 Sports Mole、goal.com）",
      "at": "2026-09-27"
+    },
+    {
+     "key": "nations_league_2026_11_13",
+     "note": "2胜2负积6分排第二（2-3挪威、2-0威尔士、2-4葡萄牙、1-0威尔士），第6轮11/17主场对挪威",
+     "evidence": "https://www.101greatgoals.com/match-previews/portugal-v-denmark-preview-expected-line-ups-stream-where-to-watch-cristiano-ronaldo/ ｜ Denmark have no suspension problems",
+     "at": "2026-11-13"
     }
    ]
   },
@@ -4072,6 +4114,18 @@
      "note": "研究员描述：4-2-3-1控球破低位，Saka/Gordon/Eze边路拉开，Alexander-Arnold长传调度，Kane回撤做球。",
      "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二007.json、.nutmeg-data/jczq/daily/2026-09-29/research-周二009.json（研究员未注明外部来源）",
      "at": "2026-10-06"
+    },
+    {
+     "key": "nations_league_2026_27_status_2026_11_12",
+     "note": "第 4 轮 3-0 捷克，11-12 主场 2-1 克罗地亚；4 胜 1 负 12 分列第二，已锁定八强。",
+     "evidence": "https://www.skysports.com/football/england-vs-croatia/report/554088",
+     "at": "2026-11-13"
+    },
+    {
+     "key": "long_absence_2026_11",
+     "note": "Saka 股四头肌伤长期缺阵，未入 11 月名单；Guehi 伤退，由 Burn 替补；Palmer、Foden 未入选。",
+     "evidence": "https://www.englandfootball.com/articles/2026/Nov/06/england-senior-mens-squad-announcement-for-croatia-spain-games-20261106",
+     "at": "2026-11-06"
     }
    ]
   },
@@ -6341,6 +6395,31 @@
      "note": "研究员描述：紧凑低位/中位防守，靠定位球与长传打第二点；首回合与对斯洛伐克均用此套路拿 1 分。",
      "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二003.json（引 local.fo）",
      "at": "2026-10-06"
+    }
+   ]
+  },
+  {
+   "team_id": "finland",
+   "name_zh": "芬兰",
+   "name_en": "Finland",
+   "aliases": [
+    "Finland"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_11",
+     "note": "主帅Jacob Friis（丹麦人，2025年初上任）；11-12负阿尔巴尼亚后下课传闻很多，截至11-13未见官方解约",
+     "evidence": "https://elmotv.com/albania-paatti-huuhkajien-rapistelyn-ja-samalla-jacob-friisin-pestin-paavalmentajana/ ｜ Friis saanee vielä johtaa Huuhkajia",
+     "at": "2026-11-13"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "2026-27欧国联C级第1组，5轮后7分排第3，升级和附加赛都已无望",
+     "evidence": "https://en.wikipedia.org/wiki/2026%E2%80%9327_UEFA_Nations_League_C ｜ Updated to match(es) played on 12 November 2026.",
+     "at": "2026-11-13"
     }
    ]
   },
@@ -9444,6 +9523,12 @@
      "key": "availability_2026_11_longterm",
      "note": "Kvaratskhelia已就右膝前十字韧带撕裂在多哈ASPETAR完成手术并开始康复。十月可用核心画像不能沿用为十一月在阵事实；官方未给复出日期。",
      "evidence": "https://www.psg.fr/en/content/medical-update-concerning-khvicha-kvaratskhelia-paris-saint-germain-2026-2027 ｜ torn anterior cruciate ligament",
+     "at": "2026-11-13"
+    },
+    {
+     "key": "nl_standing_2026_11_13",
+     "note": "4战2平2负积2分，0进球，仍垫底；第4轮客场0-0北爱尔兰",
+     "evidence": "https://en.wikipedia.org/wiki/2026%E2%80%9327_UEFA_Nations_League_B ｜ Northern Ireland 0–0 Georgia, Belfast",
      "at": "2026-11-13"
     }
    ]
@@ -13011,6 +13096,12 @@
      "note": "研究员描述：Szoboszlai 为轴控球推进，依赖定位球；缺中锋后破低位效率有限，首轮 17 射 0 进。",
      "evidence": "research .nutmeg-data/jczq/daily/2026-09-28/research-周一008.json；.nutmeg-data/zucai/26134-research-m4.json（引 MLSZ）",
      "at": "2026-09-28"
+    },
+    {
+     "key": "nl_standing_2026_11_13",
+     "note": "4战2胜1平1负积7分，排第2（0-1乌克兰、0-0北爱尔兰、1-0格鲁吉亚、2-1乌克兰）；主帅仍是Marco Rossi",
+     "evidence": "https://en.wikipedia.org/wiki/2026%E2%80%9327_UEFA_Nations_League_B ｜ Ukraine 1–2 Hungary, Trnava (Slovakia)",
+     "at": "2026-11-13"
     }
    ]
   },
@@ -15354,6 +15445,12 @@
      "note": "研究员描述：4-3-3主导控球、两翼推进；中场首轮曾被打穿，主场破低位一般，但客场对土耳其进4球。",
      "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一004.json、.nutmeg-data/jczq/daily/2026-09-28/research-周一004.json（研究员未注明外部来源）",
      "at": "2026-10-05"
+    },
+    {
+     "key": "standing_2026_11_13",
+     "note": "第5轮后10分，凭相互战绩排第1（11/12主场3-1胜法国），末轮打平即锁定前二",
+     "evidence": "https://www.sofascore.com/news/italy-france-3-1-pio-espositos-brace-sends-mancinis-azzurri-to-the-top-of-the-nations-league",
+     "at": "2026-11-13"
     }
    ]
   },
@@ -16024,9 +16121,9 @@
     },
     {
      "key": "competition_2026_27",
-     "note": "欧国联 C 级第 2 组（黑山、塞浦路斯、亚美尼亚）。截至 10-05 赛前 1 分垫底（黑山 9、塞浦路斯 4、亚美尼亚 3）；第 4 轮客场对塞浦路斯。",
-     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一001.json；.nutmeg-data/zucai/26135-research-m2.json",
-     "at": "2026-10-05"
+     "note": "第 5 轮后：黑山 13 分已拿小组第一，塞浦路斯 8、亚美尼亚 5、拉脱维亚 1；拉脱维亚锁定第四，但下届欧国联改为三级，不存在降级",
+     "evidence": "https://www.lsm.lv/raksts/sports/futbols/12.11.2026-latvijas-futbolisti-ielaiz-vartus-maca-izskana-vairakuma-zaude-melnkalnei-spilgtakie-mirkli.a671679/ ｜ Izkrišana uz zemāku līmeni Latvijas futbolistiem nedraud",
+     "at": "2026-11-12"
     },
     {
      "key": "form_2026_10_window",
@@ -16042,15 +16139,21 @@
     },
     {
      "key": "availability_2026_10_window",
-     "note": "Savaļnieks（MD3 第 28 分钟伤退）、Patijcuks 伤缺，中卫 Čerņomordijs 停赛；仅 Sports Mole 单源，未经拉脱维亚官方确认。",
-     "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一001.json（引 Sports Mole）；.nutmeg-data/zucai/26135-research-m2.json",
-     "at": "2026-10-05"
+     "note": "11 月窗口的 25 人名单里 Savaļnieks、Patijčuks、Čerņomordijs 都在；Čerņomordijs 11-12 首发对黑山。10 月的伤停已不适用",
+     "evidence": "https://sportacentrs.com/futbols/latvijas_izlase/05112026-latvijas_izlases_sastavs_naciju_ligas_nos ｜ Paolo Nikolato nosaucis 25 spēlētājus",
+     "at": "2026-11-05"
     },
     {
      "key": "style_2026_10",
      "note": "研究员描述：预计 5-4-1 低位站位，以 Uldrikis 或 Gutkovskis 为支点，长传反击；破门主要靠定位球。",
      "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一001.json；.nutmeg-data/zucai/26134-research-m2.json",
      "at": "2026-10-05"
+    },
+    {
+     "key": "coach_2026_11",
+     "note": "已核实：11 月窗口仍由 Paolo Nicolato（拉脱维亚文拼作 Nikolato）选人",
+     "evidence": "https://sportacentrs.com/futbols/latvijas_izlase/05112026-latvijas_izlases_sastavs_naciju_ligas_nos ｜ galvenais treneris Paolo Nikolato nosaucis 25 spēlētājus",
+     "at": "2026-11-05"
     }
    ]
   },
@@ -16225,6 +16328,18 @@
      "note": "研究员描述：Krstović/Osmajić提供高点与反击，Jovetić串联；对低位防守破局效率不高（对塞浦路斯要靠点球解锁）。",
      "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一006.json、.nutmeg-data/zucai/26134-research-m1.json（研究员未注明外部来源）",
      "at": "2026-10-05"
+    },
+    {
+     "key": "competition_2026_11_window",
+     "note": "10/5 主场0-0亚美尼亚，11/12 主场2-1拉脱维亚。5轮4胜1平积13分，已锁定C2组第一并升入B级，末轮不影响名次。",
+     "evidence": "https://en.wikipedia.org/wiki/2026%E2%80%9327_UEFA_Nations_League_C ｜ Montenegro 5 4 1 0 9 5 +4 13 (P) Promoted to League B",
+     "at": "2026-11-13"
+    },
+    {
+     "key": "availability_2026_11_window",
+     "note": "11/12 对拉脱维亚哈克沙巴诺维奇首发，可见他并非伤缺；马鲁希奇和约维蒂奇都不在首发，原因未证实。中场洛纳尔因对亚美尼亚吃红牌停赛一场（已在11/12服满）。",
+     "evidence": "https://www.espn.com/soccer/match/_/gameId/401861152/latvia-montenegro ｜ Sead Haksabanovic (18) ... Stefan Savic (15)",
+     "at": "2026-11-13"
     }
    ]
   },
@@ -18606,6 +18721,18 @@
      "note": "研究员描述：主场高位压迫，由Ødegaard串联，打向Haaland的直塞和传中。",
      "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日008.json（研究员未注明外部来源）",
      "at": "2026-09-27"
+    },
+    {
+     "key": "nations_league_2026_11_13",
+     "note": "4轮1胜3负积3分排小组第4：3-2丹麦、1-2葡萄牙（主）、1-2威尔士（客）、1-2葡萄牙（客）",
+     "evidence": "https://www.sportsmole.co.uk/football/wales/uefa-nations-league/preview/norway-vs-wales-prediction-team-news-lineups_608997.html",
+     "at": "2026-11-13"
+    },
+    {
+     "key": "coach_2026_11_13",
+     "note": "主帅Ståle Solbakken",
+     "evidence": "https://www.nrk.no/sport/solbakken-tok-ut-landslagstroppen-til-nasjonsligakampene-mot-wales-og-danmark-1.18073363",
+     "at": "2026-11-13"
     }
    ]
   },
@@ -18704,6 +18831,18 @@
      "note": "研究员描述：客场倾向5人中场收缩，靠Zieliński/Szymański转换和Lewandowski支点反击；缺中锋支点后前场终结变弱。",
      "evidence": "research .nutmeg-data/jczq/daily/2026-09-28/research-周一007.json、.nutmeg-data/jczq/daily/2026-10-05/research-周一007.json（研究员未注明外部来源）",
      "at": "2026-10-05"
+    },
+    {
+     "key": "nl_standing_2026_11_13",
+     "note": "10/5客场0-1负波黑，四战1胜1平2负积4分排第三；瑞典10分、波黑8分",
+     "evidence": "https://eurosport.tvn24.pl/pilka-nozna/liga-narodow/2026-2027/powolania-jana-urbana.-sklad-reprezentacji-polski-na-mecze-ligi-narodow-20262027-z-rumunia-i-szwecja.-lista-pilkarzy_sto23352761/story.shtml",
+     "at": "2026-11-13"
+    },
+    {
+     "key": "gk_injuries_2026_11_13",
+     "note": "门将Grabara（Juventus）、Bułka（NEOM）伤缺，11月窗口不在名单；Skorupski没被征召",
+     "evidence": "https://www.polsatsport.pl/wiadomosc/2026-11-13/to-on-ma-byc-bramkarzem-w-meczu-z-rumunia-urban-podjal-decyzje/",
+     "at": "2026-11-13"
     }
    ]
   },
@@ -19225,6 +19364,12 @@
      "note": "Cristiano Ronaldo已结束葡萄牙国家队生涯；11月6日Jorge Jesus发布退役后首份名单。十月核心名单中的C罗不能沿用为当前可用球员。",
      "evidence": "https://diariodistrito.sapo.pt/ultima-hora-ja-e-conhecida-a-primeira-convocatoria-de-jorge-jesus-no-pos-ronaldo/ ｜ fim da carreira internacional",
      "at": "2026-11-13"
+    },
+    {
+     "key": "nations_league_2026_11_13",
+     "note": "4战全胜积12分（1-0威尔士、2-1挪威、4-2丹麦、2-1挪威），已提前锁定欧国联八强",
+     "evidence": "https://portugoal.net/selecao/6262-portugal-vs-denmark-uefa-nations-league-preview ｜ have already sealed a spot in the quarter-finals",
+     "at": "2026-11-12"
     }
    ]
   },
@@ -19306,6 +19451,38 @@
      "note": "研究员描述：9/28 研究称三中卫加翼卫、由 Hagi 和 Man 创造；另一份称阵型可能改四后卫；10/5 称主场多用反击和定位球。",
      "evidence": "research .nutmeg-data/jczq/daily/2026-09-28/research-周一006.json、.nutmeg-data/zucai/26134-research-m5.json、.nutmeg-data/jczq/daily/2026-10-05/research-周一003.json（引 digisport、adevarul）",
      "at": "2026-10-05"
+    },
+    {
+     "key": "nl_standing_2026_11_13",
+     "note": "10/5主场0-1负瑞典（Gyökeres第13分钟进球），四战全负积0分、丢13球，B4组垫底",
+     "evidence": "https://jurnalul.ro/sport/fotbal-international/ne-asteapta-o-alta-umilinta-nationala-romaniei-fara-patru-nume-importante-contra-poloniei-1049268.html ; https://www.footballwebpages.co.uk/match/2026-2027/uefa-nations-league/romania/sweden/585336",
+     "at": "2026-11-13"
+    }
+   ]
+  },
+  {
+   "team_id": "san-marino",
+   "name_zh": "圣马力诺",
+   "name_en": "San Marino",
+   "aliases": [
+    "San Marino",
+    "圣马力"
+   ],
+   "competition_ids": [
+    "uefa-nations-league"
+   ],
+   "profile_notes": [
+    {
+     "key": "coach_2026_11",
+     "note": "主帅Roberto Cevoli（2023-12-15起执教）",
+     "evidence": "https://insider.sm/san-marino-cevoli-chiama-26-giocatori-per-le-sfide-con-bielorussia-e-finlandia/ ｜ preconvocati da Roberto Cevoli",
+     "at": "2026-11-13"
+    },
+    {
+     "key": "competition_2026_27",
+     "note": "2026-27欧国联C级第1组，5战0分、进1失18，小组垫底",
+     "evidence": "https://en.wikipedia.org/wiki/2026%E2%80%9327_UEFA_Nations_League_C ｜ Updated to match(es) played on 12 November 2026.",
+     "at": "2026-11-13"
     }
    ]
   },
@@ -19603,6 +19780,18 @@
      "note": "研究员描述：高控球、短传与肋部渗透，Yamal 边路一对一；对克罗地亚被判断为可利用其重组后的松散防线。",
      "evidence": "research .nutmeg-data/jczq/daily/2026-10-06/research-周二008.json；.nutmeg-data/zucai/26135-research-m9.json",
      "at": "2026-10-06"
+    },
+    {
+     "key": "nations_league_2026_27_status_2026_11_12",
+     "note": "第 4 轮 2-1 克罗地亚（Merino 双响），11-12 客场 2-0 捷克；五战全胜 15 分，已锁定八强，末轮主场对英格兰时平局即可获小组第一。",
+     "evidence": "https://sports.yahoo.com/articles/spain-face-england-decider-without-094300404.html ；Sports Mole 预测页 609045",
+     "at": "2026-11-13"
+    },
+    {
+     "key": "long_absence_2026_11",
+     "note": "11 月名单：Joan García、Porro、Nico Williams、Ferran Torres 伤愈回归；Rodri、Olmo、Eric García、Víctor Muñoz 伤缺；Llorente 已退出国家队。",
+     "evidence": "https://sports.yahoo.com/articles/spain-face-england-decider-without-094300404.html",
+     "at": "2026-11-07"
     }
    ]
   },
@@ -19876,6 +20065,12 @@
      "note": "研究员描述：控球推进，靠 Ayari/Bergvall 直塞找 Gyökeres 等前锋身后；临时中卫组合对高空球和身后球有风险。",
      "evidence": "research .nutmeg-data/jczq/daily/2026-10-05/research-周一003.json、.nutmeg-data/zucai/26134-research-m6.json（引 beIN、Sports Mole）",
      "at": "2026-10-05"
+    },
+    {
+     "key": "long_injury_2026_11_13",
+     "note": "Isak Hien 大腿伤6月手术，至11月窗口仍未能回归国家队；Lucas Bergvall 膝伤，热刺11/6确认仍无法出战；Emil Holm 腘绳肌术后预计休4–6个月",
+     "evidence": "https://www.tvmatchen.nu/sport/fotboll/sverige-skador-aterbud-nations-league-november-2026/ ｜ Hien 尚未能回归国家队",
+     "at": "2026-11-09"
     }
    ]
   },
@@ -20214,6 +20409,12 @@
      "note": "研究员描述：4-4-2/4-5-1低位压缩，D.James和Johnson打速度反击，Moore争定位球头球；9/24研究另推断Bellamy偏主动压迫（未证实），二者不一致。",
      "evidence": "research .nutmeg-data/jczq/daily/2026-09-27/research-周日004.json、.nutmeg-data/jczq/daily/2026-09-24/research-周四005.json（研究员未注明外部来源）",
      "at": "2026-09-27"
+    },
+    {
+     "key": "nations_league_2026_11_13",
+     "note": "4轮1胜3负积3分排小组第3：0-1葡萄牙、0-2丹麦、2-1挪威、0-1丹麦",
+     "evidence": "https://www.sportsmole.co.uk/football/wales/uefa-nations-league/preview/norway-vs-wales-prediction-team-news-lineups_608997.html",
+     "at": "2026-11-13"
     }
    ]
   }
